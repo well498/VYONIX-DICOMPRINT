@@ -89,9 +89,27 @@ def _table(rows: list[list[str]], width: float):
     data = [[Paragraph(inline(c), S["cellh" if i == 0 else "cell"]) for c in r]
             for i, r in enumerate(rows)]
     ncols = max(len(r) for r in rows)
-    lens = [max(len(r[c]) if c < len(r) else 0 for r in rows) for c in range(ncols)]
-    total = sum(max(n, 6) for n in lens)
-    widths = [width * max(n, 6) / total for n in lens]
+    pad = 14.0  # padding interno da célula (6 + 6) e folga
+    cols = [[r[c] if c < len(r) else "" for r in rows] for c in range(ncols)]
+
+    def text_w(text: str, header: bool) -> float:
+        plain = re.sub(r"[`*]", "", text)
+        return pdfmetrics.stringWidth(plain, BOLD if header else FONT, 8.6)
+
+    # Mínimo: a maior palavra cabe sem quebra. Desejado: o texto inteiro (limitado).
+    need = [max(text_w(w, i == 0) for i, cell in enumerate(col) for w in (cell.split() or [""])) + pad
+            for col in cols]
+    need = [min(n, width * 0.35) for n in need]  # caminhos/hashes longos quebram de qualquer forma
+    want = [max(min(max(text_w(cell, i == 0) for i, cell in enumerate(col)) + pad, 210), n)
+            for col, n in zip(cols, need)]
+    if sum(want) <= width:
+        widths = [w * width / sum(want) for w in want]
+    elif sum(need) <= width:
+        extra = width - sum(need)
+        grow = [w - n for w, n in zip(want, need)]
+        widths = [n + extra * g / (sum(grow) or 1) for n, g in zip(need, grow)]
+    else:
+        widths = [n * width / sum(need) for n in need]
     t = Table(data, colWidths=widths, repeatRows=1)
     t.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, 0), ALT),
@@ -123,7 +141,7 @@ def parse(md: str, width: float) -> list:
             while i < len(lines) and not lines[i].strip().startswith("```"):
                 block.append(_clean(lines[i]))
                 i += 1
-            flow.append(Preformatted("\n".join(block), S["code"]))
+            flow.append(Preformatted("\n".join(block), S["code"], maxLineLength=90, newLineChars="  "))
         elif s.startswith("|"):
             flush()
             rows = []
