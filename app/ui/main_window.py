@@ -1,0 +1,153 @@
+"""Janela principal: cabeçalho da marca, navegação com os 12 itens do menu (§13) e páginas."""
+
+from __future__ import annotations
+
+from PySide6.QtCore import QSize, Qt
+from PySide6.QtGui import QIcon, QPixmap
+from PySide6.QtWidgets import (QApplication, QHBoxLayout, QLabel, QListWidget, QListWidgetItem,
+                               QMainWindow, QStackedWidget, QVBoxLayout, QWidget)
+
+from app import __version__, brand
+from app.bootstrap import AppContext
+from app.ui import theme
+from app.ui.pages.base import Page, PlaceholderPage
+from app.ui.pages.dashboard_page import DashboardPage
+from app.ui.pages.history_page import HistoryPage
+from app.ui.pages.info_pages import AboutPage, LicensePage
+from app.ui.pages.settings_page import SettingsPage
+from app.ui.workers import wait_all
+from app.utils.logging_setup import get_logger
+from app.utils.resources import asset_path
+
+log = get_logger("ui.main_window")
+
+MENU = (
+    "Dashboard", "Equipamentos DICOM", "Servidor DICOM", "Impressoras", "Trabalhos de impressão",
+    "Regras automáticas", "Calibração", "Perfis de impressão", "Histórico", "Configurações",
+    "Licença", f"Sobre o {brand.BRAND}",
+)
+
+
+class MainWindow(QMainWindow):
+    def __init__(self, ctx: AppContext) -> None:
+        super().__init__()
+        self.ctx = ctx
+        self.setWindowTitle(f"{brand.PRODUCT_NAME} {__version__}")
+        self.setWindowIcon(QIcon(str(asset_path("vyonix_icon.svg"))))
+        self.resize(1280, 820)
+        self.setMinimumSize(QSize(980, 640))
+
+        central = QWidget()
+        root = QVBoxLayout(central)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+        root.addWidget(self._header())
+
+        body = QHBoxLayout()
+        body.setSpacing(0)
+        self.nav = QListWidget()
+        self.nav.setObjectName("nav")
+        self.nav.setFixedWidth(232)
+        self.stack = QStackedWidget()
+        body.addWidget(self.nav)
+        body.addWidget(self.stack, 1)
+        root.addLayout(body, 1)
+        self.setCentralWidget(central)
+
+        exports = ctx.paths.exports_dir
+        self.settings_page = SettingsPage(ctx.settings, exports)
+        self.settings_page.settings_saved.connect(self._on_settings_saved)
+        pages: list[Page] = [
+            DashboardPage(ctx.dashboard),
+            PlaceholderPage("Equipamentos DICOM", "Fase 2", [
+                "Cadastro com fabricante, modelo, modalidade, AE Title, IP e porta",
+                "Autorização/bloqueio por AE Title e endereço IP",
+                "Teste de conectividade (C-ECHO) e data da última comunicação",
+                "Histórico de trabalhos por equipamento; importação/exportação"]),
+            PlaceholderPage("Servidor DICOM", "Fase 2 (Storage SCP) e Fase 5 (Print SCP)", [
+                "Iniciar/parar o Storage SCP (C-ECHO, C-STORE)",
+                "Associações ativas, limites e transfer syntaxes aceitas",
+                "DICOM Print SCP: Film Session, Film Box, Image Box, Printer",
+                "AE Title, endereço e porta já podem ser definidos em Configurações"]),
+            PlaceholderPage("Impressoras", "Fase 4", [
+                "Detecção das impressoras Windows, impressora padrão e driver",
+                "Capacidades do driver: papéis, resoluções, cor",
+                "Página de teste, status do spooler e reenvio"]),
+            PlaceholderPage("Trabalhos de impressão", "Fase 4", [
+                "Fila persistente com estados, retenção, liberação e cancelamento",
+                "Reimpressão explícita e proteção contra duplicidade",
+                "Distinção entre 'enviado ao spooler' e 'concluído'"]),
+            PlaceholderPage("Regras automáticas", "Fase 6", [
+                "Editor visual de condições e ações, com prioridade",
+                "Simulação: qual regra seria aplicada a um trabalho",
+                "Exibição da origem de cada configuração aplicada"]),
+            PlaceholderPage("Calibração", "Fase 3", [
+                "Brilho, contraste, gama, inversão e escala física",
+                "Padrão de teste gerado internamente (sem arquivo fixo)",
+                "Comparação original × ajustado e histórico de perfis"]),
+            PlaceholderPage("Perfis de impressão", "Fases 4 e 6", [
+                "Papel, orientação, layout, margens, cópias e anotações",
+                "Associação a impressora, equipamento ou modalidade"]),
+            HistoryPage(ctx.events, ctx.changes, exports),
+            self.settings_page,
+            LicensePage(ctx.settings),
+            AboutPage(ctx.paths),
+        ]
+        assert len(pages) == len(MENU)
+        for label, page in zip(MENU, pages):
+            item = QListWidgetItem(label)
+            item.setSizeHint(QSize(220, 38))
+            self.nav.addItem(item)
+            self.stack.addWidget(page)
+        self.nav.currentRowChanged.connect(self._navigate)
+        self.nav.setCurrentRow(0)
+
+        self.statusBar().showMessage(
+            f"Dados: {ctx.paths.machine_root}   ·   {brand.CLINICAL_DISCLAIMER}")
+
+    # ------------------------------------------------------------------
+    def _header(self) -> QWidget:
+        header = QWidget()
+        header.setObjectName("header")
+        lay = QHBoxLayout(header)
+        lay.setContentsMargins(18, 10, 22, 10)
+        icon = QLabel()
+        pix = QPixmap(str(asset_path("vyonix_icon.svg")))
+        if not pix.isNull():
+            icon.setPixmap(pix.scaled(40, 40, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        lay.addWidget(icon)
+        names = QVBoxLayout()
+        names.setSpacing(0)
+        b = QLabel(brand.BRAND)
+        b.setObjectName("brand")
+        p = QLabel("DICOM PRINT")
+        p.setObjectName("product")
+        names.addWidget(b)
+        names.addWidget(p)
+        lay.addLayout(names)
+        lay.addStretch(1)
+        s = QLabel(brand.SLOGAN)
+        s.setObjectName("slogan")
+        lay.addWidget(s)
+        return header
+
+    def _navigate(self, row: int) -> None:
+        if row < 0:
+            return
+        self.stack.setCurrentIndex(row)
+        page = self.stack.currentWidget()
+        if isinstance(page, Page):
+            page.on_shown()
+
+    def _on_settings_saved(self, changed: dict) -> None:
+        if "ui.theme" in changed:
+            theme.apply_theme(QApplication.instance(), changed["ui.theme"])
+
+    def shutdown(self) -> None:
+        """Interrompe atualizações e aguarda operações pendentes antes de fechar o banco."""
+        for i in range(self.stack.count()):
+            timer = getattr(self.stack.widget(i), "timer", None)
+            if timer is not None:
+                timer.stop()
+        if not wait_all(10000):
+            log.warning("Operações pendentes não concluídas no encerramento")

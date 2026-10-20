@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.venv/
+build/
+dist/
+*.spec.bak
+.pytest_cache/
+# Nunca versionar chaves de licenciamento
+license_admin/keys/
+*.pem
+*.key
