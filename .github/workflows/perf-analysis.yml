@@ -1,0 +1,104 @@
+# Análise de desempenho: compara a distribuição padrão com a distribuição enxuta (VYONIX_SLIM=1).
+# Mede tamanho, tempo de inicialização, memória e CPU em Windows real e valida a versão enxuta
+# com o mesmo roteiro de instalação usado na release. Nada é publicado.
+name: Performance analysis
+
+on:
+  push:
+    branches: ["analysis/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  perf:
+    runs-on: windows-2022
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      PYTHONUTF8: "1"
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          architecture: x64
+
+      - name: Dependências
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          python -m pip install -r requirements.txt
+          python -m pip install "pyinstaller>=6.10" "pytest>=8" "pytest-qt>=4.4" pillow
+          New-Item -ItemType Directory -Force dist\perf | Out-Null
+          python -m pip freeze | Out-File dist\perf\pip-freeze.txt -Encoding utf8
+
+      - name: Testes
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          python -m pytest tests -q 2>&1 | Tee-Object dist\perf\pytest.txt
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: Tempo de importação dos módulos (python -X importtime)
+        run: |
+          python -X importtime -c "import app.ui.main_window" 2> dist\perf\importtime.txt
+          python tools/importtime_top.py dist\perf\importtime.txt dist\perf\importtime.json
+
+      - name: Versão e ícone
+        id: ver
+        run: |
+          python tools/make_version_info.py | Tee-Object -Variable out
+          $out | Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
+          python tools/make_icon.py
+
+      - name: Localizar Inno Setup
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress }
+          "ISCC=$iscc" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Build padrão
+        run: |
+          python -m PyInstaller --noconfirm --clean --distpath dist --workpath build\pyi-std Vyonix.spec
+          & $env:ISCC /Q "/DAppVersion=${{ steps.ver.outputs.APP_VERSION }}" "/DFileVersion=${{ steps.ver.outputs.FILE_VERSION }}" installer\Vyonix.iss
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: Build enxuto (VYONIX_SLIM=1)
+        env:
+          VYONIX_SLIM: "1"
+        run: |
+          python -m PyInstaller --noconfirm --clean --distpath dist-slim --workpath build\pyi-slim Vyonix.spec 2>&1 | Select-String "VYONIX_SLIM"
+          Copy-Item build\slim_removed.txt dist\perf\slim_removed.txt
+          & $env:ISCC /Q "/DAppVersion=${{ steps.ver.outputs.APP_VERSION }}" "/DFileVersion=${{ steps.ver.outputs.FILE_VERSION }}" "/DDistDir=..\dist-slim\Vyonix" "/DSuffix=_slim" installer\Vyonix.iss
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          Get-ChildItem dist\installer
+
+      - name: Medir versão padrão
+        run: |
+          $inst = (Get-ChildItem dist\installer\*_x64.exe).FullName
+          .\tools\ci_profile.ps1 -Label padrao -DistDir dist\Vyonix -Installer $inst -Out dist\perf\padrao.json
+
+      - name: Medir versão enxuta
+        run: |
+          $inst = (Get-ChildItem dist\installer\*_x64_slim.exe).FullName
+          .\tools\ci_profile.ps1 -Label enxuta -DistDir dist-slim\Vyonix -Installer $inst -Out dist\perf\enxuta.json
+
+      - name: Validar versão enxuta (executável + instalação completa)
+        run: |
+          $inst = (Get-ChildItem dist\installer\*_x64_slim.exe).FullName
+          .\tools\ci_validate.ps1 -Installer $inst -Version "${{ steps.ver.outputs.APP_VERSION }}" -DistExe dist-slim\Vyonix\Vyonix.exe -OutDir dist\perf\validate-slim
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: Publicar resultados como anotações
+        if: always()
+        run: python tools/perf_annotations.py dist\perf
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: vyonix-perf
+          path: dist/perf

@@ -16,6 +16,13 @@
   #error Informe /DFileVersion=a.b.c.d
 #endif
 
+#ifndef DistDir
+  #define DistDir "..\dist\Vyonix"
+#endif
+#ifndef Suffix
+  #define Suffix ""
+#endif
+
 #define AppName "VYONIX DICOM Print"
 #define AppPublisher "VYONIX"
 #define AppExe "Vyonix.exe"
@@ -45,7 +52,7 @@ MinVersion=10.0.17763
 ; Program Files e ProgramData exigem privilégios administrativos.
 PrivilegesRequired=admin
 OutputDir=..\dist\installer
-OutputBaseFilename=VYONIX_DICOM_Print_Setup_v{#AppVersion}_x64
+OutputBaseFilename=VYONIX_DICOM_Print_Setup_v{#AppVersion}_x64{#Suffix}
 SetupIconFile=..\build\vyonix.ico
 UninstallDisplayIcon={app}\{#AppExe}
 UninstallDisplayName={#AppName}
@@ -76,7 +83,7 @@ Name: "{#DataDir}"; Permissions: users-modify; Flags: uninsneveruninstall
 Type: filesandordirs; Name: "{app}\_internal"
 
 [Files]
-Source: "..\dist\Vyonix\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#DistDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "AVISO.txt"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
