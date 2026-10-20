@@ -168,6 +168,10 @@ def _smoke(app: QApplication, window, ctx, result: dict, translations) -> None:
     def geometry() -> str:
         avail = app.primaryScreen().availableGeometry()
         frame = window.frameGeometry()
+        if window.isMaximized():
+            # Maximizada, o Windows deixa as bordas invisíveis alguns pixels fora da tela.
+            return (f"maximizada ({frame.width()}x{frame.height()}) em tela útil "
+                    f"{avail.width()}x{avail.height()}")
         if frame.width() > avail.width() or frame.height() > avail.height():
             raise RuntimeError(f"janela {frame.width()}x{frame.height()} maior que a tela "
                                f"{avail.width()}x{avail.height()}")
