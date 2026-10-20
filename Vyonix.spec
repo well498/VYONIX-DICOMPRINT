@@ -31,7 +31,11 @@ SLIM_DROP = [re.compile(p, re.I) for p in (
     r"(^|/)opengl32sw\.dll$",                       # OpenGL por software (~20 MB)
     r"(^|/)d3dcompiler_47\.dll$",                   # compilador de shaders Direct3D
     r"(^|/)lib(EGL|GLESv2)\.dll$",                  # ANGLE (OpenGL ES sobre Direct3D, Qt 5)
-    r"(^|/)Qt[56](Quick|Qml|Pdf|Network|OpenGL|VirtualKeyboard|SvgWidgets|Multimedia|Designer|WebSockets|DBus)\w*\.dll$",
+    # Qt 6: QML e rede são módulos opcionais. Qt 5: a biblioteca base do PySide2 (pyside2.abi3.dll)
+    # depende do Qt5Qml, que depende do Qt5Network — esses dois ficam.
+    (r"(^|/)Qt6(Quick|Qml|Pdf|Network|OpenGL|VirtualKeyboard|SvgWidgets|Multimedia|Designer|WebSockets|DBus)\w*\.dll$"
+     if QT_BINDING == "PySide6" else
+     r"(^|/)Qt5(Quick|QmlModels|QmlWorkerScript|Pdf|OpenGL|VirtualKeyboard|SvgWidgets|Multimedia|Designer|WebSockets|DBus)\w*\.dll$"),
     r"/plugins/imageformats/(?!qsvg|qico)[^/]+$",
     r"/plugins/platforms/(?!qwindows|qoffscreen)[^/]+$",
     r"/plugins/(tls|networkinformation|generic|platforminputcontexts|qmltooling|multimedia|bearer|platformthemes)/",

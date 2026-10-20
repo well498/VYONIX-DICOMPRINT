@@ -89,6 +89,8 @@ jobs:
           if (-not (Test-Path dist\Vyonix\Vyonix.exe)) { exit 1 }
           Get-ChildItem dist\Vyonix | Select-Object Name, Length
           if (Test-Path build\slim_removed.txt) { Copy-Item build\slim_removed.txt dist\perf\slim_removed.txt }
+          & $env:TOOLS_PY tools/check_dll_deps.py dist\Vyonix
+          if ($LASTEXITCODE -ne 0) { exit 1 }
 
       - name: Inno Setup
         run: |

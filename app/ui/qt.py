@@ -17,15 +17,22 @@ from pathlib import Path
 _forced = os.environ.get("VYONIX_QT", "").lower()
 
 QT_API = ""
+_pyside2_error: ImportError | None = None
 if _forced != "pyside6":
     try:
         from PySide2 import QtCore, QtGui, QtSvg, QtWidgets  # noqa: F401
         QT_API = "PySide2"
-    except ImportError:
-        if _forced == "pyside2":
+    except ImportError as exc:
+        _pyside2_error = exc
+        if _forced == "pyside2" or getattr(sys, "frozen", False):
+            # O executável oficial contém só o PySide2: o erro real precisa aparecer.
             raise
 if not QT_API:
-    from PySide6 import QtCore, QtGui, QtSvg, QtWidgets  # noqa: F401,F811
+    try:
+        from PySide6 import QtCore, QtGui, QtSvg, QtWidgets  # noqa: F401,F811
+    except ImportError as exc:
+        raise ImportError(f"Nenhuma ligação Qt disponível. PySide2: {_pyside2_error}; "
+                          f"PySide6: {exc}") from exc
     QT_API = "PySide6"
 
 QT_VERSION = QtCore.qVersion()
