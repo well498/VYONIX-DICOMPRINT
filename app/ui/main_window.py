@@ -11,6 +11,7 @@ from app import __version__, brand
 from app.bootstrap import AppContext
 from app.ui import theme
 from app.ui.pages.base import Page, PlaceholderPage
+from app.ui.pages.calibration_page import CalibrationPage
 from app.ui.pages.dashboard_page import DashboardPage
 from app.ui.pages.devices_page import DevicesPage
 from app.ui.pages.server_page import ServerPage
@@ -74,10 +75,7 @@ class MainWindow(QMainWindow):
                 "Editor visual de condições e ações, com prioridade",
                 "Simulação: qual regra seria aplicada a um trabalho",
                 "Exibição da origem de cada configuração aplicada"]),
-            PlaceholderPage("Calibração", "Fase 3", [
-                "Brilho, contraste, gama, inversão e escala física",
-                "Padrão de teste gerado internamente (sem arquivo fixo)",
-                "Comparação original × ajustado e histórico de perfis"]),
+            CalibrationPage(ctx),
             PlaceholderPage("Perfis de impressão", "Fases 4 e 6", [
                 "Papel, orientação, layout, margens, cópias e anotações",
                 "Associação a impressora, equipamento ou modalidade"]),

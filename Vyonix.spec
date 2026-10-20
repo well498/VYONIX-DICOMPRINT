@@ -12,6 +12,8 @@ import os
 import re
 from pathlib import Path
 
+from PyInstaller.utils.hooks import collect_submodules, copy_metadata
+
 ROOT = Path(SPECPATH).resolve()
 
 # Ligação Qt: PySide6 (Qt 6). Requisito mínimo do produto: Windows 10 64 bits.
@@ -43,16 +45,31 @@ BUILD = ROOT / "build"
 icon = BUILD / "vyonix.ico"
 version_file = BUILD / "version_info.txt"
 
+# Decodificadores/codificadores de Pixel Data são carregados dinamicamente pelo pydicom; o
+# pylibjpeg descobre o openjpeg por entry points (exige os metadados do pacote).
+CODEC_HIDDEN = (collect_submodules("pydicom.pixels.decoders") + collect_submodules("pydicom.pixels.encoders")
+                + ["openjpeg", "jpeg_ls", "pylibjpeg"])
+CODEC_METADATA = []
+for dist in ("pylibjpeg", "pylibjpeg-openjpeg", "pyjpegls", "pydicom", "pynetdicom"):
+    try:
+        CODEC_METADATA += copy_metadata(dist)
+    except Exception:  # pacote ausente: o build segue e o autoteste aponta o codec indisponível
+        pass
+
+# Partes do Pillow que o VYONIX não usa (AVIF sozinho tem ~7,5 MB).
+PIL_EXCLUDES = ["PIL._avif", "PIL.AvifImagePlugin", "PIL._webp", "PIL.WebPImagePlugin",
+                "PIL.ImageQt", "PIL._imagingcms", "PIL.ImageCms", "PIL._imagingtk", "PIL.ImageTk"]
+
 a = Analysis(
     [str(ROOT / "packaging" / "launcher.py")],
     pathex=[str(ROOT)],
     binaries=[],
-    datas=[(str(ROOT / "assets"), "assets")],
-    hiddenimports=[f"{QT_BINDING}.QtSvg"],    # renderização do logotipo/ícone SVG
+    datas=[(str(ROOT / "assets"), "assets")] + CODEC_METADATA,
+    hiddenimports=[f"{QT_BINDING}.QtSvg"] + CODEC_HIDDEN,
     hookspath=[],
     runtime_hooks=[],
     excludes=["tkinter", "pytest", "tests", "license_admin", "unittest.mock",
-              OTHER_BINDING, "shiboken6" if QT_BINDING == "PySide2" else "shiboken2"]
+              OTHER_BINDING, "shiboken6" if QT_BINDING == "PySide2" else "shiboken2"] + PIL_EXCLUDES
              + (SLIM_EXCLUDES if SLIM else []),
     noarchive=False,
 )

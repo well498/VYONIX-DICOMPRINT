@@ -26,7 +26,8 @@ def available() -> dict[str, bool]:
     return {
         "numpy": numpy,
         "pillow": pillow,
-        "pylibjpeg-openjpeg": _has("openjpeg"),
+        "pylibjpeg": _has("pylibjpeg"),
+        "pylibjpeg-openjpeg": _has("openjpeg") and _has("pylibjpeg"),
         "pylibjpeg-rle": _has("rle"),
         "pyjpegls": _has("jpeg_ls"),
         "pylibjpeg-libjpeg": _has("libjpeg"),
@@ -41,11 +42,15 @@ def decodable_compressed() -> list[str]:
         return []
     out = [sop.RLE_LOSSLESS]    # decodificador nativo do pydicom 3
     if a["pillow"]:
-        out += [sop.JPEG_BASELINE, sop.JPEG_EXTENDED]
+        out.append(sop.JPEG_BASELINE)       # o Pillow decodifica apenas JPEG de 8 bits
+    if a["pylibjpeg-libjpeg"] or a["gdcm"]:
+        out.append(sop.JPEG_EXTENDED)       # 12 bits
     if a["pylibjpeg-openjpeg"] or a["gdcm"]:
         out += [sop.JPEG_2000_LOSSLESS, sop.JPEG_2000]
     if a["pyjpegls"] or a["gdcm"]:
         out += [sop.JPEG_LS_LOSSLESS, sop.JPEG_LS_LOSSY]
     if a["pylibjpeg-libjpeg"] or a["gdcm"]:
         out += [sop.JPEG_LOSSLESS, sop.JPEG_LOSSLESS_SV1]
+    # JPEG Lossless (Process 14) exige pylibjpeg-libjpeg (GPLv3) ou GDCM (+140 MB): não incluídos
+    # por padrão; equipamentos que o propõem também propõem a sintaxe não comprimida.
     return out

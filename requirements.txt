@@ -6,3 +6,10 @@ PySide6>=6.7,<7
 # Fase 2 — comunicação DICOM
 pydicom>=3.0,<4
 pynetdicom>=3.0,<4
+
+# Fase 3 — imagens (sem OpenCV nem GDCM: ver relatório de análise de desempenho)
+numpy>=2,<3
+Pillow>=11
+pylibjpeg>=2.0
+pylibjpeg-openjpeg>=2.3
+pyjpegls>=1.4

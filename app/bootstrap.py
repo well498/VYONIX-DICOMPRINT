@@ -32,7 +32,10 @@ from app.dicom import scu
 from app.dicom.storage import InstanceStore
 from app.dicom.storage_scp import StorageSCP
 from app.security.access import AdminAccess
+from app.imaging.cache import PreviewCache
+from app.printing.profiles import ProfileService
 from app.services.dashboard_service import DashboardService
+from app.services.imaging_service import ImagingService
 from app.services.retention import RetentionService
 from app.services.runtime import CoreRuntime
 from app.services.settings_service import SettingsService
@@ -60,6 +63,8 @@ class AppContext:
     retention: RetentionService
     access: AdminAccess
     runtime: CoreRuntime
+    imaging: ImagingService
+    profiles: ProfileService
     schema_version: int
     applied_migrations: list[int] = field(default_factory=list)
     _closed: bool = False
@@ -141,6 +146,8 @@ def bootstrap(*, data_dir: str | os.PathLike[str] | None = None, role: str = "ui
                                        access=access),
             devices=devices, store=store, storage_scp=storage_scp, retention=retention,
             access=access, runtime=runtime,
+            imaging=ImagingService(db, PreviewCache(paths.cache_dir / "previews")),
+            profiles=ProfileService(db, events),
             schema_version=schema, applied_migrations=applied,
         )
         settings.subscribe(runtime.on_settings_changed)

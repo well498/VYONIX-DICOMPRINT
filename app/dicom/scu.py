@@ -44,7 +44,8 @@ def echo(host: str, port: int, called_ae: str, *, calling_ae: str = DEFAULT_CALL
 
 
 def store_files(host: str, port: int, called_ae: str, files: Iterable[Path], *,
-                calling_ae: str = DEFAULT_CALLING_AE, timeout: float = 30.0) -> list[int | None]:
+                calling_ae: str = DEFAULT_CALLING_AE, timeout: float = 30.0,
+                only_own_syntax: bool = False) -> list[int | None]:
     """Envia arquivos DICOM por C-STORE e devolve o status de cada um (None = sem resposta)."""
     from pydicom import dcmread
     from pynetdicom import AE
@@ -54,7 +55,8 @@ def store_files(host: str, port: int, called_ae: str, files: Iterable[Path], *,
     ae.acse_timeout = ae.dimse_timeout = ae.network_timeout = timeout
     for uid in sorted({str(ds.SOPClassUID) for ds in datasets}):
         own = [str(ds.file_meta.TransferSyntaxUID) for ds in datasets if str(ds.SOPClassUID) == uid]
-        ae.add_requested_context(uid, list(dict.fromkeys(own[:1] + sop.UNCOMPRESSED)))
+        syntaxes = own[:1] if only_own_syntax else list(dict.fromkeys(own[:1] + sop.UNCOMPRESSED))
+        ae.add_requested_context(uid, syntaxes)
     assoc = ae.associate(host, int(port), ae_title=called_ae)
     out: list[int | None] = []
     try:

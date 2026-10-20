@@ -98,6 +98,29 @@ class StorageSCPTest(TempDirTestCase):
         # Nenhum arquivo temporário sobrando
         self.assertEqual(list(self.ctx.paths.temp_dir.glob("rx-*")), [])
 
+    def test_compressed_rle_is_accepted_and_kept_compressed(self):
+        try:
+            import numpy  # noqa: F401
+        except ImportError:
+            self.skipTest("numpy não instalado")
+        from pydicom import dcmread
+        from pydicom.uid import RLELossless
+
+        from app.dicom import scu
+        from tests.dicom_helpers import make_ct
+        self.authorize()
+        f = make_ct(self.tmp / "rle.dcm", rows=16, cols=16)
+        ds = dcmread(f)
+        ds.compress(RLELossless)
+        ds.save_as(f)
+        self.assertEqual(scu.store_files("127.0.0.1", self.port, "VYONIX", [f], calling_ae="CT_TESTE",
+                                         only_own_syntax=True), [0])
+        row = self.ctx.db.connection().execute("SELECT transfer_syntax, file_path FROM instances").fetchone()
+        self.assertEqual(row["transfer_syntax"], str(RLELossless))
+        from app.core.contracts import PresentationParams
+        rendered = self.ctx.imaging.render(row["file_path"], PresentationParams(), max_side=None)
+        self.assertEqual(rendered.pixels.shape, (16, 16))
+
     def test_size_limit_and_invalid_dataset(self):
         from app.core.contracts import AssociationPeer
         from app.dicom.storage import STATUS_CANNOT_UNDERSTAND, STATUS_OUT_OF_RESOURCES

@@ -60,6 +60,7 @@ jobs:
       - name: Testes automatizados
         env:
           QT_QPA_PLATFORM: offscreen
+          VYONIX_REQUIRE_CODECS: "1"
         run: |
           python -m pytest tests -v -ra --junitxml=dist\validation\pytest.xml 2>&1 | Tee-Object dist\validation\pytest.txt
           if ($LASTEXITCODE -ne 0) { exit 1 }

@@ -168,6 +168,23 @@ def _smoke(app: QApplication, window, ctx, result: dict, translations) -> None:
             raise RuntimeError(f"autoteste C-ECHO falhou: {r['detail']}")
         return f"{st.detail}; C-ECHO {r['ms']} ms"
 
+    def image_codecs() -> str:
+        from app.imaging import selftest
+        results = selftest.run()
+        bad = {k: v for k, v in results.items() if v != "ok"}
+        if bad:
+            raise RuntimeError("; ".join(f"{k}: {v}" for k, v in bad.items()))
+        return ", ".join(results)
+
+    def calibration_preview() -> str:
+        from app.core.contracts import PresentationParams
+        from app.imaging.calibration import CalibrationProfile
+        r = ctx.imaging.render("pattern", PresentationParams(), max_side=800)
+        adj = ctx.imaging.calibrated(r.pixels, CalibrationProfile(gamma=1.5, black_level=0.05))
+        if adj.shape != r.pixels.shape or (adj == r.pixels).all():
+            raise RuntimeError("calibração não alterou a imagem")
+        return f"padrão de teste {r.pixels.shape[1]}x{r.pixels.shape[0]} calibrado"
+
     def logs() -> str:
         if not ctx.log_file.exists() or ctx.log_file.stat().st_size == 0:
             raise RuntimeError("arquivo de log vazio")
@@ -196,6 +213,7 @@ def _smoke(app: QApplication, window, ctx, result: dict, translations) -> None:
                      ("tradução do Qt", translation), ("tamanho da janela", geometry),
                      ("dashboard", dashboard), ("configurações", settings_roundtrip),
                      ("temas", themes), ("histórico", history), ("servidor DICOM", dicom_server),
+                     ("codecs de imagem", image_codecs), ("calibração", calibration_preview),
                      ("logs", logs)):
         check(name, fn)
 
