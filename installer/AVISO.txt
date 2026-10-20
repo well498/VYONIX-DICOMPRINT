@@ -1,0 +1,23 @@
+﻿VYONIX DICOM Print — Precisão em cada imagem.
+
+ATENÇÃO — VERSÃO DE DESENVOLVIMENTO PARA HOMOLOGAÇÃO
+
+Esta compilação corresponde à Fase 1 (Fundação) do produto.
+
+Incluído nesta versão:
+  - Interface do VYONIX com Dashboard, Configurações, Histórico, Licença e Sobre.
+  - Banco de dados local com migrações e backups automáticos.
+  - Registro de eventos e logs, com proteção de dados de pacientes.
+
+Ainda NÃO incluído nesta versão:
+  - Recepção de imagens DICOM (C-ECHO / C-STORE) e cadastro de equipamentos.
+  - Processamento de imagens, calibração e pré-visualização.
+  - Impressão em impressoras Windows e fila de trabalhos.
+  - DICOM Print SCP, motor de regras, serviço Windows e licenciamento.
+
+Este software NÃO está validado para uso clínico e NÃO possui declaração
+de conformidade DICOM. Não o utilize para fins diagnósticos ou assistenciais.
+
+Os dados do programa ficam em:
+  %ProgramData%\VYONIX\DICOM Print
+  %LOCALAPPDATA%\VYONIX\DICOM Print

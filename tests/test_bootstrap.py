@@ -70,6 +70,25 @@ class BootstrapTest(TempDirTestCase):
         summary = json.loads(out.getvalue())
         self.assertEqual(summary["schema_version"], 1)
 
+    def test_cli_check_report_without_console(self):
+        import sys
+        report = self.tmp / "r" / "check.json"
+        saved = sys.stdout
+        sys.stdout = None  # executável empacotado sem console
+        try:
+            code = main(["--check", "--data-dir", str(self.tmp / "d"), "--report", str(report)])
+            self.assertEqual(main(["--version"]), EXIT_OK)
+        finally:
+            sys.stdout = saved
+        self.assertEqual(code, EXIT_OK)
+        data = json.loads(report.read_text(encoding="utf-8"))
+        self.assertTrue(data["ok"])
+        self.assertEqual(data["schema_version"], 1)
+
+    def test_cli_bad_argument_returns_code(self):
+        with contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(main(["--nao-existe"]), 2)
+
     def test_cli_check_reports_startup_error(self):
         db_file = self.tmp / "machine" / "database" / "vyonix.db"
         db_file.parent.mkdir(parents=True)

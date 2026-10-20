@@ -9,3 +9,4 @@ dist/
 license_admin/keys/
 *.pem
 *.key
+dist/

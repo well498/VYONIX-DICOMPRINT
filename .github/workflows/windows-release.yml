@@ -1,0 +1,146 @@
+# Compilação, testes, empacotamento e instalador do VYONIX DICOM Print em Windows x64.
+#
+# Etapas: testes (pytest, incluindo interface Qt) → PyInstaller (onedir) → Inno Setup →
+# validação do .exe e do instalador (tools/ci_validate.ps1) → documentação PDF, relatório de
+# validação e SHA-256 → publicação como pré-release no GitHub.
+#
+# Nada é publicado se qualquer etapa falhar.
+name: Windows release
+
+on:
+  push:
+    branches: [main, "build/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: windows-release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      PYTHONUTF8: "1"
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          architecture: x64
+
+      - name: Instalar dependências
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          python -m pip install -r requirements.txt
+          python -m pip install "pyinstaller>=6.10" "pytest>=8" "pytest-qt>=4.4" pillow reportlab
+          New-Item -ItemType Directory -Force dist\validation | Out-Null
+          "Python $(python -c 'import sys; print(sys.version.split()[0])')" | Out-File dist\validation\env.txt -Encoding utf8
+          python -m pip freeze | Out-File dist\validation\env.txt -Append -Encoding utf8
+
+      - name: Compilar fontes (compileall)
+        run: python -m compileall -q app tools packaging
+
+      - name: Testes automatizados
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          python -m pytest tests -v -ra --junitxml=dist\validation\pytest.xml 2>&1 | Tee-Object dist\validation\pytest.txt
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: Versão, ícone e metadados
+        id: ver
+        run: |
+          python tools/make_version_info.py | Tee-Object -Variable out
+          $out | Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
+          python tools/make_icon.py
+
+      - name: PyInstaller (dist\Vyonix\Vyonix.exe)
+        run: |
+          python -m PyInstaller --noconfirm --clean Vyonix.spec 2>&1 | Tee-Object dist\validation\pyinstaller.txt
+          if (-not (Test-Path dist\Vyonix\Vyonix.exe)) { exit 1 }
+          Get-ChildItem dist\Vyonix | Select-Object Name, Length
+
+      - name: Inno Setup
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) {
+            choco install innosetup -y --no-progress
+            $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          }
+          & $iscc "/DAppVersion=${{ steps.ver.outputs.APP_VERSION }}" "/DFileVersion=${{ steps.ver.outputs.FILE_VERSION }}" installer\Vyonix.iss 2>&1 | Tee-Object dist\validation\iscc.txt
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          Get-ChildItem dist\installer
+
+      - name: Validar executável e instalador
+        run: |
+          $inst = (Get-ChildItem dist\installer\*.exe | Select-Object -First 1).FullName
+          .\tools\ci_validate.ps1 -Installer $inst -Version "${{ steps.ver.outputs.APP_VERSION }}" -OutDir dist\validation
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: Pacote de entrega (PDFs, relatório, SHA-256, zip)
+        run: |
+          $inst = (Get-ChildItem dist\installer\*.exe | Select-Object -First 1).FullName
+          python tools/make_release.py --version "${{ steps.ver.outputs.APP_VERSION }}" --commit "${{ github.sha }}" `
+            --installer $inst --junit dist\validation\pytest.xml --validation dist\validation --env dist\validation\env.txt
+          git archive --format=zip --prefix="VYONIX_DICOM_Print_source_${{ steps.ver.outputs.APP_VERSION }}/" -o "dist\VYONIX_DICOM_Print_source_${{ steps.ver.outputs.APP_VERSION }}.zip" HEAD
+
+      - name: Publicar pré-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $v = "${{ steps.ver.outputs.APP_VERSION }}"
+          $tag = "v$v"
+          $s = Get-Content dist\release-summary.json -Raw | ConvertFrom-Json
+          $notes = @"
+          VYONIX DICOM Print $v — versão de desenvolvimento para homologação (Fase 1 — Fundação).
+          NÃO validada para uso clínico. Sem declaração de conformidade DICOM.
+
+          Instalador: $($s.installer)
+          SHA-256: $($s.installer_sha256)
+          Testes automatizados: $($s.tests.aprovado) aprovados, $($s.tests.falhou) falhas, $($s.tests.ignorado) ignorados
+          Validação do executável/instalador: $($s.validation_passed)/$($s.validation_total)
+          Commit: ${{ github.sha }}
+          "@
+          gh release delete $tag --yes --cleanup-tag 2>$null
+          gh release create $tag --target "${{ github.sha }}" --prerelease --title "VYONIX DICOM Print $v (homologação)" --notes $notes `
+            "dist\installer\$($s.installer)" "dist\$($s.zip)" "dist\VYONIX_DICOM_Print_source_$v.zip" `
+            dist\release-summary.json dist\validation\results.json dist\validation\pytest.xml
+
+      - name: Diagnóstico em caso de falha
+        if: failure()
+        run: |
+          function Note($title, $file, $n) {
+            if (Test-Path $file) {
+              $t = (Get-Content $file -Tail $n) -join "`n"
+              $t = $t.Replace('%', '%25').Replace("`r", '').Replace("`n", '%0A')
+              if ($t.Length -gt 6000) { $t = $t.Substring($t.Length - 6000) }
+              Write-Host "::error title=$title::$t"
+            }
+          }
+          Note "pytest" dist\validation\pytest.txt 80
+          Note "pyinstaller" dist\validation\pyinstaller.txt 40
+          Note "iscc" dist\validation\iscc.txt 40
+          Get-ChildItem dist\validation\smoke-*.json -ErrorAction SilentlyContinue | ForEach-Object { Note "smoke $($_.Name)" $_.FullName 60 }
+          Note "validação" dist\validation\results.json 120
+          Get-ChildItem dist\validation\work -Recurse -Filter *.log -ErrorAction SilentlyContinue | Select-Object -First 3 | ForEach-Object { Note "log $($_.Name)" $_.FullName 40 }
+
+      - name: Guardar artefatos
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vyonix-windows-build
+          path: |
+            dist/installer
+            dist/validation
+            dist/*.zip
+            dist/release-summary.json
+          if-no-files-found: ignore

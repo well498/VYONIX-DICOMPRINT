@@ -50,6 +50,17 @@ class UiSmokeTest(TempDirTestCase):
         finally:
             ctx.close()
 
+    def test_builtin_smoke_routine(self):
+        import json
+        from app.main import EXIT_OK, main
+
+        report = self.tmp / "smoke.json"
+        code = main(["--smoke-test", "--data-dir", str(self.tmp / "d"), "--report", str(report)])
+        data = json.loads(report.read_text(encoding="utf-8"))
+        failed = [c for c in data["checks"] if not c["ok"]]
+        self.assertEqual(failed, [])
+        self.assertEqual(code, EXIT_OK)
+
 
 if __name__ == "__main__":
     unittest.main()
