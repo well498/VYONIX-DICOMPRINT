@@ -10,7 +10,7 @@ import json
 import sys
 from pathlib import Path
 
-LIMIT = 6000
+LIMIT = 3500  # anotações do GitHub são truncadas em ~4 KB
 
 
 def emit(level: str, title: str, text: str) -> None:
