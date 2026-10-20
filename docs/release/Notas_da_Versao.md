@@ -4,7 +4,7 @@
 
 ## Natureza desta versão
 
-Versão de **desenvolvimento para homologação**, correspondente à **Fase 1 — Fundação** do plano de 8 fases. Não é a versão comercial 1.0.0: o número `{VERSION}` indica uma pré-versão de 1.0.0.
+Versão de **desenvolvimento para homologação**, correspondente às **Fases 1 (Fundação) e 2 (Comunicação DICOM)** do plano de 8 fases. Não é a versão comercial 1.0.0: o número `{VERSION}` indica uma pré-versão de 1.0.0.
 
 **Não validada para uso clínico. Sem declaração de conformidade DICOM.**
 
@@ -26,12 +26,18 @@ Windows 10 64 bits (versão 1809 ou posterior) ou Windows 11. O executável usa 
 - Interface com os 12 itens de menu; Dashboard, Configurações, Histórico, Licença (ID da instalação) e Sobre; temas claro e escuro.
 - Máquina de estados dos trabalhos de impressão (base da fila da Fase 4).
 - Modos de verificação automatizada: `--check` e `--smoke-test`.
+- **Servidor DICOM (Storage SCP):** C-ECHO e C-STORE para 24 classes de imagem (CT, MR, CR, DX, US, MG, XA, RF, NM, PT, captura secundária), sintaxes não comprimidas, associações simultâneas com limite configurável (padrão 10).
+- **Controle de associações:** AE Title local, AE Title e IP do equipamento, autorização; recusas com o código DICOM correto e registro no Histórico.
+- **Armazenamento seguro:** gravação atômica, confirmação só após gravar, detecção de duplicatas e conflitos, um evento por associação.
+- **Cadastro de equipamentos:** autorizar/bloquear, teste C-ECHO, histórico, desativação com preservação do histórico, importação e exportação.
+- **Retenção (LGPD):** remoção automática de imagens e eventos antigos, com sobrescrita do arquivo antes de apagar.
+- **Senha de administrador** para configurações, equipamentos e servidor.
+- **Firewall:** regra opcional criada pelo instalador e removida na desinstalação.
 
 ## Não implementado nesta versão
 
 | Recurso | Fase prevista |
 |---|---|
-| Cadastro de equipamentos, Storage SCP (C-ECHO, C-STORE), controle de acesso administrativo | 2 |
 | Decodificação e processamento de imagens, pré-visualização, calibração | 3 |
 | Impressoras Windows, layouts, papel, fila persistente de impressão | 4 |
 | DICOM Print SCP e declaração de conformidade | 5 |
@@ -42,6 +48,8 @@ Windows 10 64 bits (versão 1809 ou posterior) ou Windows 11. O executável usa 
 ## Limitações conhecidas
 
 - O executável e o instalador não possuem assinatura digital de código; o Windows SmartScreen pode exibir aviso.
-- Enquanto o serviço Windows não existir, todos os usuários do computador têm permissão de gravação na pasta de dados em `ProgramData`.
+- Enquanto o serviço Windows não existir (Fase 7), o servidor DICOM só funciona com o VYONIX aberto, e todos os usuários do computador têm permissão de gravação na pasta de dados em `ProgramData`.
+- Imagens comprimidas (JPEG, JPEG 2000, JPEG-LS, RLE) ainda não são aceitas; os equipamentos devem enviar sem compressão até a Fase 3.
+- Testes de recepção feitos com equipamento simulado (pynetdicom). Interoperabilidade com equipamentos reais deve ser verificada na homologação.
 - Os testes automatizados foram executados em Windows Server 2022 no GitHub Actions. O teste em Windows 10 e 11 limpos, sem Python, deve ser feito na homologação (ver Relatório de Validação).
 - A disponibilidade jurídica do nome VYONIX ainda deve ser verificada antes da distribuição comercial.

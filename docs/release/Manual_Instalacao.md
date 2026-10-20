@@ -2,7 +2,7 @@
 
 **VYONIX DICOM Print {VERSION}** · Windows 10 e Windows 11, 64 bits
 
-> Versão de desenvolvimento para homologação (Fase 1 — Fundação). Não validada para uso clínico.
+> Versão de desenvolvimento para homologação. Não validada para uso clínico.
 
 ## 1. Requisitos
 
@@ -22,7 +22,7 @@
 2. Confirme a solicitação de permissão do Windows (Controle de Conta de Usuário).
 3. Leia o aviso sobre o conteúdo desta versão e clique em **Avançar**.
 4. Mantenha a pasta padrão `C:\Program Files\VYONIX\DICOM Print` (recomendado).
-5. Marque **Criar um atalho na área de trabalho**, se desejar.
+5. Marque **Criar um atalho na área de trabalho**, se desejar. Mantenha marcada a opção de **Firewall** para que os equipamentos DICOM consigam se conectar.
 6. Clique em **Instalar** e, ao final, mantenha marcada a opção para abrir o programa.
 
 O instalador cria:
@@ -77,7 +77,7 @@ O código de saída `0` indica sucesso, e o arquivo indicado contém versão, pa
 
 ## 7. Firewall
 
-Esta versão não abre portas de rede. A orientação de firewall para recepção DICOM será incluída quando o servidor DICOM for entregue (Fase 2).
+O VYONIX recebe imagens na porta configurada (padrão 11112). A opção de firewall do instalador cria uma regra de entrada para o `Vyonix.exe` em redes privadas e de domínio e a remove na desinstalação. Detalhes no *Guia de Configuração DICOM*.
 
 ## 8. Problemas comuns
 

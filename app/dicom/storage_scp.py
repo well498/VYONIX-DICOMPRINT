@@ -253,7 +253,12 @@ def _bind_error(exc: OSError, address: str, port: int) -> str:
     if code in (10048, 98, 48):
         return f"a porta {port} já está em uso por outro programa"
     if code in (10013, 13):
-        return f"sem permissão para usar a porta {port} (portas abaixo de 1024 exigem administrador)"
+        # No Windows, 10013 (WSAEACCES) também indica porta em uso exclusivo por outro programa
+        # ou reservada pelo sistema (ex.: faixas do Hyper-V).
+        if port < 1024:
+            return (f"sem permissão para usar a porta {port} (portas abaixo de 1024 exigem "
+                    "administrador) ou ela já está em uso")
+        return f"a porta {port} já está em uso por outro programa ou reservada pelo Windows"
     if code in (10049, 99):
         return f"o endereço {address} não pertence a este computador"
     return f"{exc.strerror or exc} ({address}:{port})"

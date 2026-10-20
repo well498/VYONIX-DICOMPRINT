@@ -2,17 +2,18 @@
 
 ATENÇÃO — VERSÃO DE DESENVOLVIMENTO PARA HOMOLOGAÇÃO
 
-Esta compilação corresponde à Fase 1 (Fundação) do produto.
+Esta compilação corresponde às Fases 1 (Fundação) e 2 (Comunicação DICOM).
 
 Requisitos: Windows 10 64 bits (versão 1809 ou posterior) ou Windows 11.
 
 Incluído nesta versão:
   - Interface do VYONIX com Dashboard, Configurações, Histórico, Licença e Sobre.
+  - Recepção de imagens DICOM (C-ECHO / C-STORE) e cadastro de equipamentos.
+  - Senha de administrador e retenção automática de dados.
   - Banco de dados local com migrações e backups automáticos.
   - Registro de eventos e logs, com proteção de dados de pacientes.
 
 Ainda NÃO incluído nesta versão:
-  - Recepção de imagens DICOM (C-ECHO / C-STORE) e cadastro de equipamentos.
   - Processamento de imagens, calibração e pré-visualização.
   - Impressão em impressoras Windows e fila de trabalhos.
   - DICOM Print SCP, motor de regras, serviço Windows e licenciamento.

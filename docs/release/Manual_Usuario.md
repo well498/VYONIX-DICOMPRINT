@@ -2,7 +2,7 @@
 
 **VYONIX DICOM Print {VERSION}**
 
-> Este manual descreve apenas os recursos presentes nesta versão de homologação (Fase 1 — Fundação). O software não está validado para uso clínico.
+> Este manual descreve apenas os recursos presentes nesta versão de homologação. O software não está validado para uso clínico.
 
 ## 1. Visão geral da tela
 
@@ -19,8 +19,8 @@ A barra inferior mostra a pasta de dados em uso e o aviso de que a versão não 
 | Item | Situação nesta versão |
 |---|---|
 | Dashboard | Disponível |
-| Equipamentos DICOM | Não implementado — previsto na Fase 2 |
-| Servidor DICOM | Não implementado — Fases 2 e 5 |
+| Equipamentos DICOM | Disponível |
+| Servidor DICOM | Recepção disponível; impressão DICOM na Fase 5 |
 | Impressoras | Não implementado — Fase 4 |
 | Trabalhos de impressão | Não implementado — Fase 4 |
 | Regras automáticas | Não implementado — Fase 6 |
@@ -37,12 +37,40 @@ As páginas não implementadas mostram o escopo planejado e não executam nenhum
 
 Atualizado automaticamente a cada 5 segundos, com dados lidos do banco local:
 
-- **Indicadores:** trabalhos recebidos, em fila, enviados à impressão e com falha nas últimas 24 horas. Nesta versão permanecem em zero, pois a recepção e a impressão ainda não existem.
-- **Serviços:** Storage SCP, Print SCP e Serviço Windows aparecem como *Não implementado*, com a fase prevista.
+- **Indicadores:** trabalhos recebidos, em fila, enviados à impressão e com falha nas últimas 24 horas. Permanecem em zero até a fila de impressão (Fase 4).
+- **Serviços:** estado real do servidor de recepção (Storage SCP); Print SCP e Serviço Windows aparecem como *Não implementado*, com a fase prevista.
 - **Configuração DICOM:** AE Title, endereço e porta configurados.
 - **Equipamentos, Impressora selecionada, Alertas operacionais e Falhas recentes.**
 
-## 4. Configurações
+## 4. Equipamentos DICOM
+
+Lista os equipamentos que podem enviar imagens, com AE Title, IP, autorização, último contato e situação.
+
+- **Adicionar / Editar:** abre o cadastro (nome, AE Title, modalidade, IP, porta, unidade, setor, fabricante, modelo, observações). Erros aparecem ao lado de cada campo.
+- **Autorizar / bloquear:** libera ou impede o envio de imagens sem apagar o cadastro.
+- **Testar conexão (C-ECHO):** o VYONIX chama o equipamento no IP e porta cadastrados e mostra o tempo de resposta.
+- **Histórico:** eventos do equipamento (conexões, recusas, alterações).
+- **Remover:** exclui o cadastro; se o equipamento já enviou imagens, ele é apenas desativado, para preservar o histórico.
+- **Importar / Exportar:** copia os cadastros entre instalações em um arquivo JSON.
+
+Detalhes de configuração dos equipamentos estão no *Guia de Configuração DICOM*.
+
+## 5. Servidor DICOM
+
+Mostra o estado da recepção (em execução, parado ou erro, com o motivo), o AE Title, o endereço e a porta, as associações ativas e os eventos DICOM recentes.
+
+- **Iniciar / Parar / Reiniciar:** controla o servidor.
+- **Testar (C-ECHO local):** verifica o próprio servidor.
+
+Nesta versão, o servidor funciona enquanto o VYONIX estiver aberto.
+
+## 6. Senha de administrador
+
+Em **Configurações → Senha de administrador**, defina uma senha (mínimo de 8 caracteres). Com senha definida, estas ações pedem a senha: salvar, importar ou restaurar configurações; cadastrar, editar, autorizar, remover ou importar equipamentos; iniciar, parar ou reiniciar o servidor DICOM. Depois de digitada, a senha vale pelo tempo de *Bloquear administração após* (padrão 10 minutos sem uso). **Bloquear agora** encerra o desbloqueio. Cinco senhas erradas seguidas bloqueiam novas tentativas por um minuto.
+
+Sem senha definida, o Dashboard mostra um alerta.
+
+## 7. Configurações
 
 As configurações estão agrupadas em Instalação, DICOM — Recepção, DICOM — Impressão, Fila de impressão, Retenção de dados, Interface e Diagnóstico.
 
@@ -57,7 +85,7 @@ Regras de validação principais:
 - **Endereço IP:** IPv4 ou IPv6 válido; `0.0.0.0` significa todas as interfaces.
 - Recepção e impressão DICOM, quando habilitadas, devem usar portas e AE Titles diferentes.
 
-Campos marcados com ⟳ só terão efeito quando os serviços DICOM existirem e forem reiniciados.
+Ao salvar campos marcados com ⟳, o servidor DICOM é reiniciado automaticamente.
 
 Outros botões:
 
@@ -69,7 +97,7 @@ O **tema** (Seguir o Windows, Claro, Escuro) e o **nível de log** são aplicado
 
 Toda alteração é registrada com usuário do Windows, data, hora, valor anterior e novo valor.
 
-## 5. Histórico
+## 8. Histórico
 
 **Eventos:** registros operacionais e de auditoria (inicialização, encerramento, alterações de configuração, falhas).
 
@@ -81,14 +109,14 @@ Toda alteração é registrada com usuário do Windows, data, hora, valor anteri
 
 Os horários são mostrados no fuso horário do computador e armazenados em UTC. Nomes, IDs e outros dados de pacientes são mascarados automaticamente nos eventos e logs.
 
-## 6. Licença
+## 9. Licença
 
 Mostra o **ID da instalação**, que será usado para solicitar a licença quando o licenciamento offline for entregue (Fase 8). Nesta versão nenhum recurso é bloqueado por licença.
 
-## 7. Sobre o VYONIX
+## 10. Sobre o VYONIX
 
 Versão, etapa de desenvolvimento, pastas de dados em uso e componentes de terceiros.
 
-## 8. Logs
+## 11. Logs
 
 Os logs ficam em `%LOCALAPPDATA%\VYONIX\DICOM Print\logs\vyonix-ui.log`, em formato JSON (um registro por linha). Os arquivos são rotacionados a cada 10 MB, com até 10 arquivos anteriores; o histórico não é apagado ao reiniciar o programa.
