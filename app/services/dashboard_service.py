@@ -48,12 +48,13 @@ class DashboardSnapshot:
 class DashboardService:
     def __init__(self, stats: StatsRepository, settings: SettingsService,
                  events: EventRepository,
-                 service_status_provider=None) -> None:
+                 service_status_provider=None, access=None) -> None:
         self.stats = stats
         self.settings = settings
         self.events = events
         # Fase 2+: o provedor real informa o estado dos SCPs.
         self._status_provider = service_status_provider or _not_implemented_status
+        self.access = access
 
     def snapshot(self) -> DashboardSnapshot:
         s = self.settings.get_all()
@@ -67,7 +68,13 @@ class DashboardService:
             alerts.append(Alert("info", "Licença não ativada. O licenciamento offline será "
                                         "disponibilizado na Fase 8."))
         if self.stats.devices_total() == 0:
-            alerts.append(Alert("info", "Nenhum equipamento cadastrado (cadastro na Fase 2)."))
+            alerts.append(Alert("info", "Nenhum equipamento cadastrado. Cadastre em Equipamentos DICOM."))
+        if self.access is not None and not self.access.has_password():
+            alerts.append(Alert("warning", "Nenhuma senha de administrador definida: qualquer usuário "
+                                           "pode alterar configurações e equipamentos."))
+        for st in services:
+            if st.state.value == "error":
+                alerts.append(Alert("error", f"{st.name}: {st.detail}"))
         if not s["printing.default_printer"]:
             alerts.append(Alert("info", "Nenhuma impressora selecionada (gerenciamento na Fase 4)."))
         for w in self.settings.current_warnings():

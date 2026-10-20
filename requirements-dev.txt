@@ -1,4 +1,4 @@
 -r requirements.txt
-pytest>=7.4
-pytest-qt>=4.2
-pyinstaller
+pytest>=8
+pytest-qt>=4.4
+pyinstaller>=6.10

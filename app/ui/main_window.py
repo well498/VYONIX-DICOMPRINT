@@ -12,6 +12,8 @@ from app.bootstrap import AppContext
 from app.ui import theme
 from app.ui.pages.base import Page, PlaceholderPage
 from app.ui.pages.dashboard_page import DashboardPage
+from app.ui.pages.devices_page import DevicesPage
+from app.ui.pages.server_page import ServerPage
 from app.ui.pages.history_page import HistoryPage
 from app.ui.pages.info_pages import AboutPage, LicensePage
 from app.ui.pages.settings_page import SettingsPage
@@ -54,20 +56,12 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central)
 
         exports = ctx.paths.exports_dir
-        self.settings_page = SettingsPage(ctx.settings, exports)
+        self.settings_page = SettingsPage(ctx.settings, exports, ctx.access)
         self.settings_page.settings_saved.connect(self._on_settings_saved)
         pages: list[Page] = [
             DashboardPage(ctx.dashboard),
-            PlaceholderPage("Equipamentos DICOM", "Fase 2", [
-                "Cadastro com fabricante, modelo, modalidade, AE Title, IP e porta",
-                "Autorização/bloqueio por AE Title e endereço IP",
-                "Teste de conectividade (C-ECHO) e data da última comunicação",
-                "Histórico de trabalhos por equipamento; importação/exportação"]),
-            PlaceholderPage("Servidor DICOM", "Fase 2 (Storage SCP) e Fase 5 (Print SCP)", [
-                "Iniciar/parar o Storage SCP (C-ECHO, C-STORE)",
-                "Associações ativas, limites e transfer syntaxes aceitas",
-                "DICOM Print SCP: Film Session, Film Box, Image Box, Printer",
-                "AE Title, endereço e porta já podem ser definidos em Configurações"]),
+            DevicesPage(ctx.devices, ctx.access, exports),
+            ServerPage(ctx),
             PlaceholderPage("Impressoras", "Fase 4", [
                 "Detecção das impressoras Windows, impressora padrão e driver",
                 "Capacidades do driver: papéis, resoluções, cor",

@@ -8,11 +8,9 @@ Versão de **desenvolvimento para homologação**, correspondente à **Fase 1 �
 
 **Não validada para uso clínico. Sem declaração de conformidade DICOM.**
 
-## Requisito mínimo: Windows 7 SP1 64 bits
+## Requisito mínimo
 
-A partir desta versão, o VYONIX roda do Windows 7 SP1 ao Windows 11, sempre em 64 bits. Para isso, o executável passou a usar Python 3.8 e Qt 5.15 (PySide2), a última combinação compatível com o Windows 7. No Windows 7 é obrigatória a atualização KB2533623, verificada pelo instalador.
-
-Consequências conhecidas: o Windows 7 (desde 2020), o Python 3.8 (desde 2024) e o Qt 5.15 de código aberto não recebem mais correções de segurança. As próximas fases ficam limitadas a versões de bibliotecas que ainda suportam Python 3.8.
+Windows 10 64 bits (versão 1809 ou posterior) ou Windows 11. O executável usa Python 3.12 e Qt 6.
 
 ## Implementado
 
@@ -45,5 +43,5 @@ Consequências conhecidas: o Windows 7 (desde 2020), o Python 3.8 (desde 2024) e
 
 - O executável e o instalador não possuem assinatura digital de código; o Windows SmartScreen pode exibir aviso.
 - Enquanto o serviço Windows não existir, todos os usuários do computador têm permissão de gravação na pasta de dados em `ProgramData`.
-- Os testes automatizados foram executados em Windows Server 2022 no GitHub Actions, que não oferece Windows 7. O teste em Windows 7 SP1 real, em Windows limpo sem Python e em Windows 10 deve ser feito na homologação (ver Relatório de Validação).
+- Os testes automatizados foram executados em Windows Server 2022 no GitHub Actions. O teste em Windows 10 e 11 limpos, sem Python, deve ser feito na homologação (ver Relatório de Validação).
 - A disponibilidade jurídica do nome VYONIX ainda deve ser verificada antes da distribuição comercial.

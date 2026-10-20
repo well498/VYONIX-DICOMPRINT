@@ -14,13 +14,8 @@ from pathlib import Path
 
 ROOT = Path(SPECPATH).resolve()
 
-# Ligação Qt usada no build: PySide2 (Qt 5.15, Python 3.8) na distribuição oficial, que precisa
-# rodar no Windows 7 SP1 64 bits; PySide6 apenas quando o build é feito com Python mais novo.
-try:
-    import PySide2  # noqa: F401
-    QT_BINDING, OTHER_BINDING = "PySide2", "PySide6"
-except ImportError:
-    QT_BINDING, OTHER_BINDING = "PySide6", "PySide2"
+# Ligação Qt: PySide6 (Qt 6). Requisito mínimo do produto: Windows 10 64 bits.
+QT_BINDING, OTHER_BINDING = "PySide6", "PySide2"
 
 # Distribuição enxuta (padrão; VYONIX_SLIM=0 desliga): remove componentes do Qt que o VYONIX não usa.
 # A interface é Qt Widgets com renderização por software (raster): não usa OpenGL, Direct3D,

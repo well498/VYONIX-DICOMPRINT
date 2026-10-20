@@ -27,7 +27,14 @@ from app.database.migrator import current_version, migrate
 from app.database.repositories.events_repo import Category, EventRepository
 from app.database.repositories.settings_repo import ChangeHistoryRepository
 from app.database.repositories.stats_repo import StatsRepository
+from app.devices.service import DeviceService
+from app.dicom import scu
+from app.dicom.storage import InstanceStore
+from app.dicom.storage_scp import StorageSCP
+from app.security.access import AdminAccess
 from app.services.dashboard_service import DashboardService
+from app.services.retention import RetentionService
+from app.services.runtime import CoreRuntime
 from app.services.settings_service import SettingsService
 from app.utils.logging_setup import (get_logger, install_exception_hooks, set_log_level,
                                      setup_logging, shutdown_logging)
@@ -47,6 +54,12 @@ class AppContext:
     changes: ChangeHistoryRepository
     stats: StatsRepository
     dashboard: DashboardService
+    devices: DeviceService
+    store: InstanceStore
+    storage_scp: StorageSCP
+    retention: RetentionService
+    access: AdminAccess
+    runtime: CoreRuntime
     schema_version: int
     applied_migrations: list[int] = field(default_factory=list)
     _closed: bool = False
@@ -78,6 +91,10 @@ class AppContext:
         except Exception:  # encerramento é melhor esforço
             log.exception("Falha ao registrar encerramento")
         log.info("Encerrando", extra={"role": self.role})
+        try:
+            self.runtime.stop()
+        except Exception:  # noqa: BLE001
+            log.exception("Falha ao parar os serviços")
         self.db.close()
         shutdown_logging()
 
@@ -103,12 +120,31 @@ def bootstrap(*, data_dir: str | os.PathLike[str] | None = None, role: str = "ui
         settings = SettingsService(db, events)
         settings.ensure_defaults()
         stats = StatsRepository(db)
+        get = settings.get
+
+        def device_echo(device):
+            return scu.echo(device.ip_address, device.port, device.ae_title,
+                            calling_ae=get("dicom.storage.ae_title"))
+
+        devices = DeviceService(db, events, echo=device_echo)
+        store = InstanceStore(db, paths.storage_dir, paths.temp_dir)
+        storage_scp = StorageSCP(db=db, settings_get=get, devices=devices.repo, store=store,
+                                 events=events)
+        retention = RetentionService(db, events, get, paths.storage_dir)
+        runtime = CoreRuntime(storage_scp=storage_scp, retention=retention, settings_get=get)
+        access = AdminAccess(db, events, lock_minutes=lambda: int(get("security.lock_minutes")))
         ctx = AppContext(
             role=role, paths=paths, log_file=log_file, db=db, events=events, settings=settings,
             changes=ChangeHistoryRepository(db), stats=stats,
-            dashboard=DashboardService(stats, settings, events),
+            dashboard=DashboardService(stats, settings, events,
+                                       service_status_provider=runtime.service_statuses,
+                                       access=access),
+            devices=devices, store=store, storage_scp=storage_scp, retention=retention,
+            access=access, runtime=runtime,
             schema_version=schema, applied_migrations=applied,
         )
+        settings.subscribe(runtime.on_settings_changed)
+        _clean_temp(paths.temp_dir)
     except BaseException:
         log.exception("Falha na inicialização")
         db.close()
@@ -130,3 +166,13 @@ def bootstrap(*, data_dir: str | os.PathLike[str] | None = None, role: str = "ui
                details={"version": __version__, "schema_version": schema})
     log.info("Inicialização concluída", extra={"schema_version": schema})
     return ctx
+
+
+def _clean_temp(folder: Path) -> None:
+    """Remove recepções incompletas deixadas por uma queda anterior (arquivos rx-*.dcm)."""
+    for leftover in folder.glob("rx-*.dcm"):
+        try:
+            leftover.unlink()
+            log.warning("Recepção incompleta removida após reinício", extra={"file": leftover.name})
+        except OSError:
+            pass

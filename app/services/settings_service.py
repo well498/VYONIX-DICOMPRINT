@@ -73,6 +73,7 @@ GROUPS: tuple[tuple[str, str], ...] = (
     ("dicom_print", "DICOM — Impressão (Print SCP)"),
     ("jobs", "Fila de impressão"),
     ("retention", "Retenção de dados"),
+    ("security", "Segurança"),
     ("ui", "Interface"),
     ("diagnostics", "Diagnóstico"),
 )
@@ -96,6 +97,12 @@ DEFINITIONS: tuple[SettingDef, ...] = (
     SettingDef("dicom.storage.max_associations", "Associações simultâneas (máx.)",
                "dicom_storage", "int", 10, validator=v.int_range(1, 64, "Associações simultâneas"),
                minimum=1, maximum=64, restart_required=True),
+    SettingDef("dicom.storage.autostart", "Iniciar a recepção automaticamente", "dicom_storage",
+               "bool", True, help="Inicia o Storage SCP quando o VYONIX abre."),
+    SettingDef("dicom.storage.max_instance_mb", "Tamanho máximo por imagem (MB)", "dicom_storage",
+               "int", 1024, validator=v.int_range(1, 4096, "Tamanho máximo por imagem"),
+               minimum=1, maximum=4096,
+               help="Imagens maiores são recusadas com status 0xA700 (sem recursos)."),
     SettingDef("dicom.storage.accept_unknown", "Aceitar equipamentos não cadastrados",
                "dicom_storage", "bool", False,
                help="Desativado por padrão: somente equipamentos cadastrados e autorizados "
@@ -122,6 +129,11 @@ DEFINITIONS: tuple[SettingDef, ...] = (
                help="Define a política de retenção (LGPD). A remoção automática entra na Fase 2."),
     SettingDef("retention.events_days", "Reter eventos (dias)", "retention", "int", 365,
                validator=v.int_range(30, 3650, "Retenção de eventos"), minimum=30, maximum=3650),
+
+    SettingDef("security.lock_minutes", "Bloquear administração após (min)", "security", "int", 10,
+               validator=v.int_range(1, 240, "Tempo de bloqueio"), minimum=1, maximum=240,
+               help="Depois de desbloquear com a senha de administrador, as funções protegidas "
+                    "voltam a exigir a senha após este tempo sem uso."),
 
     SettingDef("ui.theme", "Tema", "ui", "choice", "system",
                choices=(("system", "Seguir o Windows"), ("light", "Claro"), ("dark", "Escuro"))),

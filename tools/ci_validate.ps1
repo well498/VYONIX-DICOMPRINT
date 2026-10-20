@@ -85,8 +85,13 @@ function Wait-Until([scriptblock]$Cond, [int]$TimeoutSec = 180) {
 }
 
 function Install-Silent([string]$Log) {
-    $code = Run-Exe $Installer @("/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/TASKS=desktopicon", "/LOG=$Log") @{} 600
+    $code = Run-Exe $Installer @("/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/TASKS=desktopicon,firewall", "/LOG=$Log") @{} 600
     if ($code -ne 0) { throw "instalador retornou $code" }
+}
+
+function Test-FirewallRule() {
+    $out = & "$env:SystemRoot\System32\netsh.exe" advfirewall firewall show rule name="VYONIX DICOM Print" verbose 2>&1
+    return @{ exists = ($LASTEXITCODE -eq 0); text = ($out -join "`n") }
 }
 
 function Uninstall-Silent() {
@@ -170,6 +175,12 @@ Invoke-Check "INS-03" "Instalador" "Atalhos (menu Iniciar e área de trabalho)" 
     if ($target -ne $InstalledExe) { throw "atalho aponta para '$target'" }
     "menu Iniciar -> $target; área de trabalho criada"
 }
+Invoke-Check "INS-03B" "Instalador" "Regra do Firewall do Windows para o VYONIX" {
+    $r = Test-FirewallRule
+    if (-not $r.exists) { throw "regra não criada" }
+    if ($r.text -notmatch [regex]::Escape($InstalledExe)) { throw "regra não aponta para o programa instalado" }
+    "regra de entrada criada para Vyonix.exe (redes privadas e de domínio)"
+}
 Invoke-Check "INS-04" "Instalador" "Pasta de dados com permissão de gravação para Usuários" {
     if (-not (Test-Path $DataDir)) { throw "$DataDir ausente" }
     $sid = New-Object Security.Principal.SecurityIdentifier("S-1-5-32-545")
@@ -204,6 +215,7 @@ Invoke-Check "INS-07" "Instalador" "Atualização sobre instalação existente p
 Invoke-Check "INS-08" "Instalador" "Desinstalação silenciosa remove programa e preserva dados" {
     Uninstall-Silent
     if (Test-Path $StartMenuLnk) { throw "atalho permaneceu" }
+    if ((Test-FirewallRule).exists) { throw "regra de firewall permaneceu" }
     if (-not (Test-Path "$DataDir\database\vyonix.db")) { throw "banco removido" }
     "programa, atalhos e registro removidos; banco preservado"
 }

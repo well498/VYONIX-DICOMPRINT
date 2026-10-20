@@ -1,16 +1,8 @@
 # VYONIX DICOM Print — dependências de execução.
-#
-# Requisito mínimo do produto: Windows 7 SP1 64 bits. Por isso a distribuição oficial é
-# Python 3.8 (64 bits, última versão que roda no Windows 7) + PySide2 5.15 (Qt 5.15).
-# PySide6 só é usado em desenvolvimento com Python >= 3.11, onde o PySide2 não existe.
-PySide2==5.15.2.1; python_version < "3.11"
-PySide6>=6.7,<7; python_version >= "3.11"
+# Requisito mínimo: Windows 10 64 bits (1809) ou Windows 11. Python 3.12 (64 bits).
+# Versões exatas são fixadas em requirements.lock ao fim de cada fase.
+PySide6>=6.7,<7
 
-# Próximas fases — versões que ainda suportam Python 3.8 (fixar em lockfile ao fim de cada fase):
-# Fase 2:  pydicom>=2.4,<3        (pydicom 3.x exige Python 3.10+)
-#          pynetdicom>=2.0,<2.1
-# Fase 3:  numpy>=1.24,<1.25      (última série para Python 3.8)
-#          Pillow>=10.4,<11       (última série para Python 3.8)
-#          pylibjpeg, pylibjpeg-openjpeg, pylibjpeg-rle (sem OpenCV/GDCM: ver relatório de análise)
-# Fase 4:  pywin32==306; sys_platform == "win32"
-# Fase 8:  cryptography (avaliar a última versão com wheel para Windows 7)
+# Fase 2 — comunicação DICOM
+pydicom>=3.0,<4
+pynetdicom>=3.0,<4

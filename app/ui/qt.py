@@ -1,40 +1,18 @@
 """Ponto único de importação do Qt.
 
-Distribuição oficial: **PySide2 (Qt 5.15) + Python 3.8**, a última combinação que roda no
-Windows 7 SP1 64 bits — requisito mínimo do produto. Em ambientes de desenvolvimento com
-Python ≥ 3.11 (onde o PySide2 não existe), o PySide6 é usado automaticamente; as telas são as
-mesmas. ``VYONIX_QT=pyside2`` ou ``VYONIX_QT=pyside6`` força uma das ligações.
-
-Os imports são literais (e não dinâmicos) para que o PyInstaller detecte a ligação usada.
+Distribuição oficial: **PySide6 (Qt 6) + Python 3.12**. Requisito mínimo do produto:
+Windows 10 64 bits (versão 1809) ou Windows 11. Todas as telas importam o Qt por este módulo,
+o que permite trocar de versão do Qt em um só lugar.
 """
 
 from __future__ import annotations
 
-import os
 import sys
 from pathlib import Path
 
-_forced = os.environ.get("VYONIX_QT", "").lower()
+from PySide6 import QtCore, QtGui, QtSvg, QtWidgets  # noqa: F401
 
-QT_API = ""
-_pyside2_error: ImportError | None = None
-if _forced != "pyside6":
-    try:
-        from PySide2 import QtCore, QtGui, QtSvg, QtWidgets  # noqa: F401
-        QT_API = "PySide2"
-    except ImportError as exc:
-        _pyside2_error = exc
-        if _forced == "pyside2" or getattr(sys, "frozen", False):
-            # O executável oficial contém só o PySide2: o erro real precisa aparecer.
-            raise
-if not QT_API:
-    try:
-        from PySide6 import QtCore, QtGui, QtSvg, QtWidgets  # noqa: F401,F811
-    except ImportError as exc:
-        raise ImportError(f"Nenhuma ligação Qt disponível. PySide2: {_pyside2_error}; "
-                          f"PySide6: {exc}") from exc
-    QT_API = "PySide6"
-
+QT_API = "PySide6"
 QT_VERSION = QtCore.qVersion()
 IS_QT5 = QT_VERSION.startswith("5.")
 
@@ -53,12 +31,14 @@ _W = QtWidgets
  QComboBox, QDateEdit, QFileDialog, QMessageBox, QFormLayout, QGridLayout, QHBoxLayout,
  QVBoxLayout, QGroupBox, QFrame, QScrollArea, QSizePolicy, QListWidget, QListWidgetItem,
  QStackedWidget, QTabWidget, QTableWidget, QTableWidgetItem, QHeaderView,
- QAbstractItemView) = (
+ QAbstractItemView, QDialog, QDialogButtonBox, QInputDialog, QPlainTextEdit,
+ QSystemTrayIcon, QMenu) = (
     _W.QApplication, _W.QWidget, _W.QMainWindow, _W.QLabel, _W.QPushButton, _W.QLineEdit,
     _W.QSpinBox, _W.QCheckBox, _W.QComboBox, _W.QDateEdit, _W.QFileDialog, _W.QMessageBox,
     _W.QFormLayout, _W.QGridLayout, _W.QHBoxLayout, _W.QVBoxLayout, _W.QGroupBox, _W.QFrame,
     _W.QScrollArea, _W.QSizePolicy, _W.QListWidget, _W.QListWidgetItem, _W.QStackedWidget,
-    _W.QTabWidget, _W.QTableWidget, _W.QTableWidgetItem, _W.QHeaderView, _W.QAbstractItemView)
+    _W.QTabWidget, _W.QTableWidget, _W.QTableWidgetItem, _W.QHeaderView, _W.QAbstractItemView,
+    _W.QDialog, _W.QDialogButtonBox, _W.QInputDialog, _W.QPlainTextEdit, _W.QSystemTrayIcon, _W.QMenu)
 
 
 def prepare_application() -> None:

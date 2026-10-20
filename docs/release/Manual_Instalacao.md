@@ -1,6 +1,6 @@
 # Manual de Instalação
 
-**VYONIX DICOM Print {VERSION}** · Windows 7 SP1 a Windows 11, 64 bits
+**VYONIX DICOM Print {VERSION}** · Windows 10 e Windows 11, 64 bits
 
 > Versão de desenvolvimento para homologação (Fase 1 — Fundação). Não validada para uso clínico.
 
@@ -8,16 +8,13 @@
 
 | Item | Requisito |
 |---|---|
-| Sistema operacional | Windows 7 SP1, 8.1, 10 ou 11, sempre 64 bits |
-| Atualização obrigatória no Windows 7 | KB2533623 (o instalador verifica e avisa se faltar) |
+| Sistema operacional | Windows 10 (versão 1809 ou posterior) ou Windows 11, 64 bits |
 | Processador | x64 com 2 núcleos |
-| Memória | 2 GB no Windows 7; 4 GB no Windows 10/11 |
-| Tela | 1366 × 768 ou maior |
+| Memória | 4 GB |
+| Tela | 1024 × 768 ou maior |
 | Permissão | Conta com direito de administrador para instalar |
 | Espaço em disco | Aproximadamente 100 MB para o programa, mais o espaço dos dados |
 | Python | Não é necessário — o instalador contém tudo o que o programa precisa |
-
-> **Windows 7:** a Microsoft encerrou as atualizações de segurança do Windows 7. O VYONIX funciona nele, mas, para uso com dados de pacientes, recomenda-se Windows 10 ou 11 atualizado, antivírus ativo e o computador sem acesso direto à internet.
 
 ## 2. Instalação
 
@@ -88,5 +85,4 @@ Esta versão não abre portas de rede. A orientação de firewall para recepçã
 |---|---|
 | Mensagem "já está aberto nesta sessão" | O VYONIX já está em execução; procure a janela na barra de tarefas. |
 | Erro informando banco de dados corrompido | Feche o programa e restaure o arquivo mais recente de `backups` para `database\vyonix.db`. |
-| Mensagem sobre a atualização KB2533623 (Windows 7) | Instale a atualização pelo Windows Update ou pelo Catálogo do Microsoft Update e execute o instalador de novo. |
 | Aviso do SmartScreen ao executar o instalador | Esta compilação de homologação não possui assinatura digital de código. Clique em **Mais informações → Executar assim mesmo** somente se o arquivo foi obtido da fonte oficial e o SHA-256 confere. |

@@ -1,8 +1,7 @@
 # Compilação, testes, empacotamento e instalador do VYONIX DICOM Print em Windows x64.
 #
-# Requisito mínimo do produto: Windows 7 SP1 64 bits. O executável é gerado com Python 3.8 +
-# PySide2 (Qt 5.15), a última combinação que roda no Windows 7. As ferramentas auxiliares
-# (ícone, PDFs, relatório) rodam em um Python 3.12 separado e não entram no executável.
+# Requisito mínimo do produto: Windows 10 64 bits (1809) ou Windows 11. Python 3.12 + PySide6.
+# As ferramentas auxiliares (ícone, PDFs, relatório) não entram no executável.
 #
 # Etapas: testes (pytest, incluindo interface Qt) → PyInstaller (onedir) → Inno Setup →
 # validação do .exe e do instalador (tools/ci_validate.ps1) → documentação PDF, relatório de
@@ -13,7 +12,7 @@ name: Windows release
 
 on:
   push:
-    branches: [main, "build/**", "platform/**"]
+    branches: [main, develop, "build/**", "phase/**"]
   workflow_dispatch:
 
 permissions:
@@ -36,18 +35,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Python 3.12 (ferramentas de build)
+      - name: Python 3.12
         id: tools
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-          architecture: x64
-
-      - name: Python 3.8 (aplicativo — compatível com Windows 7)
-        id: app
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.8"
           architecture: x64
 
       - name: Instalar dependências
@@ -58,20 +50,16 @@ jobs:
           python -m pip install --upgrade pip setuptools wheel
           python -m pip install -r requirements-dev.txt
           New-Item -ItemType Directory -Force dist\validation, dist\perf | Out-Null
-          "Aplicativo: Python $(python -c 'import sys; print(sys.version.split()[0])')" | Out-File dist\validation\env.txt -Encoding utf8
+          "Python $(python -c 'import sys; print(sys.version.split()[0])')" | Out-File dist\validation\env.txt -Encoding utf8
           python -m pip freeze | Out-File dist\validation\env.txt -Append -Encoding utf8
-          "" | Out-File dist\validation\env.txt -Append -Encoding utf8
-          "Ferramentas (não empacotadas): Python $(& $tools -c 'import sys; print(sys.version.split()[0])')" | Out-File dist\validation\env.txt -Append -Encoding utf8
-          & $tools -m pip freeze | Out-File dist\validation\env.txt -Append -Encoding utf8
           python -c "import sqlite3; print('SQLite', sqlite3.sqlite_version)"
 
-      - name: Compilar fontes (compileall, Python 3.8)
+      - name: Compilar fontes (compileall)
         run: python -m compileall -q app packaging
 
-      - name: Testes automatizados (Python 3.8 + PySide2)
+      - name: Testes automatizados
         env:
           QT_QPA_PLATFORM: offscreen
-          VYONIX_QT: pyside2
         run: |
           python -m pytest tests -v -ra --junitxml=dist\validation\pytest.xml 2>&1 | Tee-Object dist\validation\pytest.txt
           if ($LASTEXITCODE -ne 0) { exit 1 }
@@ -131,7 +119,7 @@ jobs:
           $s = Get-Content dist\release-summary.json -Raw | ConvertFrom-Json
           $notes = @"
           VYONIX DICOM Print $v — versão de desenvolvimento para homologação (Fase 1 — Fundação).
-          Requisito mínimo: Windows 7 SP1 64 bits (com KB2533623). Python 3.8 + Qt 5.15.
+          Requisito mínimo: Windows 10 64 bits (1809) ou Windows 11.
           NÃO validada para uso clínico. Sem declaração de conformidade DICOM.
 
           Instalador: $($s.installer)

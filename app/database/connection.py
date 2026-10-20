@@ -5,9 +5,9 @@
 * Modo *autocommit* do driver (``isolation_level=None``) com transações explícitas
   via ``transaction()`` — inclusive aninhadas (``SAVEPOINT``).
 * WAL + ``synchronous=FULL``: prioriza durabilidade da fila de trabalhos.
-* ``json_valid`` (usada nas restrições CHECK do esquema) é garantida em qualquer SQLite: o
-  SQLite que acompanha o Python 3.8 para Windows — exigido pelo suporte ao Windows 7 — não traz
-  as funções JSON; nesse caso uma implementação equivalente em Python é registrada.
+* ``json_valid`` (usada nas restrições CHECK do esquema) é garantida em qualquer SQLite: se a
+  biblioteca SQLite não trouxer as funções JSON (caso de compilações antigas, como a do
+  Python 3.8 para Windows), uma implementação equivalente em Python é registrada.
 """
 
 from __future__ import annotations
@@ -167,6 +167,27 @@ class Database:
             target.close()
         log.info("Backup do banco gerado", extra={"backup_file": str(destination)})
         return destination
+
+    def close_thread_connection(self) -> None:
+        """Fecha a conexão da thread atual (threads de curta duração, ex.: associações DICOM)."""
+        conn = getattr(self._local, "conn", None)
+        if conn is None:
+            return
+        with self._lock:
+            if conn in self._connections:
+                self._connections.remove(conn)
+        try:
+            if conn.in_transaction:
+                conn.execute("ROLLBACK")
+            conn.close()
+        except sqlite3.Error:  # pragma: no cover
+            pass
+        self._local.conn = None
+        self._local.depth = 0
+
+    def open_connections(self) -> int:
+        with self._lock:
+            return len(self._connections)
 
     def close(self) -> None:
         with self._lock:

@@ -1,4 +1,4 @@
-﻿; Inno Setup 6 — instalador do VYONIX DICOM Print (Windows 7 SP1 a Windows 11, x64).
+﻿; Inno Setup 6 — instalador do VYONIX DICOM Print (Windows 10 1809+ e Windows 11, x64).
 ;
 ; Pré-requisitos (gerados pelo build):
 ;   ..\dist\Vyonix\Vyonix.exe        (PyInstaller onedir)
@@ -48,8 +48,8 @@ DisableProgramGroupPage=yes
 DisableDirPage=auto
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
-; Requisito mínimo do produto: Windows 7 SP1 64 bits (Python 3.8 + Qt 5.15 no executável).
-MinVersion=6.1sp1
+; Requisito mínimo do produto: Windows 10 64 bits, versão 1809 (Qt 6 + Python 3.12).
+MinVersion=10.0.17763
 ; Program Files e ProgramData exigem privilégios administrativos.
 PrivilegesRequired=admin
 OutputDir=..\dist\installer
@@ -72,6 +72,7 @@ Name: "ptbr"; MessagesFile: "compiler:Languages\BrazilianPortuguese.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
+Name: "firewall"; Description: "Permitir que equipamentos DICOM se conectem ao VYONIX (Firewall do Windows, redes privadas e de domínio)"; GroupDescription: "Rede:"
 
 [Dirs]
 ; Dados da máquina: preservados em atualizações e, por padrão, na desinstalação.
@@ -92,43 +93,16 @@ Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppExe}"; WorkingDir: "{ap
 Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; WorkingDir: "{app}"; Tasks: desktopicon
 
 [Run]
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""VYONIX DICOM Print"""; Flags: runhidden; Tasks: firewall
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""VYONIX DICOM Print"" dir=in action=allow program=""{app}\{#AppExe}"" enable=yes profile=private,domain"; Flags: runhidden; Tasks: firewall; StatusMsg: "Configurando o Firewall do Windows..."
 Filename: "{app}\{#AppExe}"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags: nowait postinstall skipifsilent runasoriginaluser
+
+[UninstallRun]
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""VYONIX DICOM Print"""; Flags: runhidden; RunOnceId: "VyonixFirewall"
 
 [Code]
 var
   RemoveData: Boolean;
-
-// O Python 3.8 usa AddDllDirectory, que no Windows 7 só existe com a atualização KB2533623.
-function AddDllDirectory(NewDirectory: String): Integer;
-  external 'AddDllDirectory@kernel32.dll stdcall delayload';
-
-function HasKB2533623(): Boolean;
-begin
-  if GetWindowsVersion() >= $06020000 then
-  begin
-    Result := True;   // Windows 8 ou mais novo: a função faz parte do sistema
-    exit;
-  end;
-  try
-    AddDllDirectory('');
-    Result := True;
-  except
-    Result := False;
-  end;
-end;
-
-function InitializeSetup(): Boolean;
-begin
-  Result := True;
-  if not HasKB2533623() then
-  begin
-    SuppressibleMsgBox(
-      'Este Windows 7 não possui a atualização de segurança KB2533623, necessária ao VYONIX.' + #13#10 + #13#10 +
-      'Instale a atualização pelo Windows Update (ou pelo Catálogo do Microsoft Update) e execute este instalador novamente.',
-      mbCriticalError, MB_OK, IDOK);
-    Result := False;
-  end;
-end;
 
 function InitializeUninstall(): Boolean;
 begin

@@ -62,6 +62,7 @@ def run_ui(*, data_dir=None, log_level=None, console_log=False, smoke_test=False
     result: dict = {"ok": False}
     try:
         theme.apply_theme(app, ctx.settings.get("ui.theme"))
+        ctx.runtime.start()
         window = MainWindow(ctx)
         window.show_fitted()
         if smoke_test:
@@ -153,6 +154,20 @@ def _smoke(app: QApplication, window, ctx, result: dict, translations) -> None:
             raise RuntimeError(f"apenas {n} eventos registrados")
         return f"{n} eventos"
 
+    def dicom_server() -> str:
+        from app.dicom import scu
+        from app.dicom.association_manager import SELFTEST_AE
+        st = ctx.storage_scp.status()
+        if st.state.value != "running":
+            raise RuntimeError(f"Storage SCP não está em execução: {st.state.value} {st.detail}")
+        host, port = ctx.storage_scp.bound
+        host = "127.0.0.1" if host in ("0.0.0.0", "") else host
+        r = scu.echo(host, port, ctx.settings.get("dicom.storage.ae_title"), calling_ae=SELFTEST_AE,
+                     timeout=10)
+        if not r["ok"]:
+            raise RuntimeError(f"autoteste C-ECHO falhou: {r['detail']}")
+        return f"{st.detail}; C-ECHO {r['ms']} ms"
+
     def logs() -> str:
         if not ctx.log_file.exists() or ctx.log_file.stat().st_size == 0:
             raise RuntimeError("arquivo de log vazio")
@@ -180,7 +195,8 @@ def _smoke(app: QApplication, window, ctx, result: dict, translations) -> None:
     for name, fn in (("recursos visuais", assets), ("navegação", pages),
                      ("tradução do Qt", translation), ("tamanho da janela", geometry),
                      ("dashboard", dashboard), ("configurações", settings_roundtrip),
-                     ("temas", themes), ("histórico", history), ("logs", logs)):
+                     ("temas", themes), ("histórico", history), ("servidor DICOM", dicom_server),
+                     ("logs", logs)):
         check(name, fn)
 
     result.update({

@@ -7,11 +7,13 @@ from pathlib import Path
 from typing import Any
 
 from app.ui.qt import Signal
-from app.ui.qt import (QApplication, QCheckBox, QComboBox, QFileDialog, QFormLayout,
+from app.ui.qt import (QApplication, QCheckBox, QInputDialog, QComboBox, QFileDialog, QFormLayout,
                                QGroupBox, QHBoxLayout, QLabel, QLineEdit, QMessageBox,
                                QPushButton, QSpinBox, QVBoxLayout, QWidget)
 
-from app.core.errors import SettingsValidationError
+from app.core.errors import SettingsValidationError, VyonixError
+from app.security.access import AccessDenied, AdminAccess
+from app.ui.admin import ensure_admin
 from app.services.settings_service import GROUPS, SettingDef, SettingsService, UpdateResult
 from app.ui.pages.base import Page, banner
 from app.ui.workers import run_async
@@ -27,12 +29,13 @@ def current_actor() -> str:
 class SettingsPage(Page):
     settings_saved = Signal(dict)   # chaves alteradas → novos valores
 
-    def __init__(self, service: SettingsService, exports_dir: Path,
+    def __init__(self, service: SettingsService, exports_dir: Path, access: AdminAccess,
                  parent: QWidget | None = None) -> None:
         super().__init__("Configurações",
-                         "Alterações são validadas, registradas no histórico e auditadas. "
-                         "O controle de acesso administrativo será adicionado na Fase 2.", parent)
+                         "Alterações são validadas, registradas no histórico e auditadas. Com senha de "
+                         "administrador definida, salvar exige desbloqueio.", parent)
         self.service = service
+        self.access = access
         self.exports_dir = exports_dir
         self.editors: dict[str, QWidget] = {}
         self.errors: dict[str, QLabel] = {}
@@ -57,7 +60,22 @@ class SettingsPage(Page):
                 form.addRow(d.label + ("  ⟳" if d.restart_required else ""), self._field(d))
             self.body.addWidget(box)
 
-        note = QLabel("⟳ = aplicado após reiniciar os serviços DICOM.")
+        box = QGroupBox("Senha de administrador")
+        al = QVBoxLayout(box)
+        self.admin_state = QLabel("—")
+        self.admin_state.setWordWrap(True)
+        al.addWidget(self.admin_state)
+        row = QHBoxLayout()
+        for text, slot in (("Definir ou alterar senha…", self.set_password),
+                           ("Remover senha…", self.clear_password), ("Bloquear agora", self.lock_now)):
+            b = QPushButton(text)
+            b.clicked.connect(slot)
+            row.addWidget(b)
+        row.addStretch(1)
+        al.addLayout(row)
+        self.body.addWidget(box)
+
+        note = QLabel("⟳ = o servidor DICOM é reiniciado automaticamente ao salvar.")
         note.setObjectName("muted")
         self.body.addWidget(note)
 
@@ -136,6 +154,56 @@ class SettingsPage(Page):
 
     def reload(self) -> None:
         run_async(self.service.get_all, self._fill, self._show_failure)
+        run_async(self.access.has_password, self._admin_render)
+
+    def _admin_render(self, has: bool) -> None:
+        self.admin_state.setText(
+            "Senha definida. Configurações, equipamentos e o servidor DICOM exigem desbloqueio."
+            if has else "Nenhuma senha definida: qualquer usuário deste computador pode alterar a "
+                        "configuração. Recomendado definir uma senha.")
+
+    def _ask(self, title: str, label: str) -> str | None:
+        text, ok = QInputDialog.getText(self, title, label, QLineEdit.Password)
+        return text if ok else None
+
+    def set_password(self) -> None:
+        current = None
+        if self.access.has_password():
+            current = self._ask("Alterar senha", "Senha atual:")
+            if current is None:
+                return
+        new = self._ask("Nova senha", "Nova senha (mínimo de 8 caracteres):")
+        if new is None:
+            return
+        if self._ask("Nova senha", "Repita a nova senha:") != new:
+            self._message("As senhas digitadas não conferem.", "err")
+            return
+        try:
+            self.access.set_password(new, current=current, actor=current_actor())
+        except (AccessDenied, VyonixError) as exc:
+            self._message(str(exc), "err")
+            return
+        self._message("Senha de administrador definida.", "ok")
+        self._admin_render(True)
+
+    def clear_password(self) -> None:
+        if not self.access.has_password():
+            self._message("Não há senha definida.", "muted")
+            return
+        current = self._ask("Remover senha", "Senha atual:")
+        if current is None:
+            return
+        try:
+            self.access.clear_password(current=current, actor=current_actor())
+        except AccessDenied as exc:
+            self._message(str(exc), "err")
+            return
+        self._message("Senha de administrador removida.", "warn")
+        self._admin_render(False)
+
+    def lock_now(self) -> None:
+        self.access.lock()
+        self._message("Administração bloqueada.", "ok")
 
     def _fill(self, values: dict[str, Any]) -> None:
         self.loaded = dict(values)
@@ -178,11 +246,15 @@ class SettingsPage(Page):
         if not changes:
             self._message("Nenhuma alteração para salvar.", "muted")
             return
+        if not ensure_admin(self, self.access, "salvar configurações"):
+            return
         self._set_busy(True)
         run_async(lambda: self.service.update(changes, actor=current_actor()),
                   self._saved, self._save_failed)
 
     def restore_defaults(self) -> None:
+        if not ensure_admin(self, self.access, "restaurar padrões"):
+            return
         if QMessageBox.question(self, "Restaurar padrões",
                                 "Restaurar todas as configurações para os valores padrão?"
                                 ) != QMessageBox.Yes:
@@ -203,6 +275,8 @@ class SettingsPage(Page):
                   self._show_failure)
 
     def import_(self) -> None:
+        if not ensure_admin(self, self.access, "importar configurações"):
+            return
         path, _ = QFileDialog.getOpenFileName(self, "Importar configurações",
                                               str(self.exports_dir), "JSON (*.json)")
         if not path:
@@ -220,7 +294,7 @@ class SettingsPage(Page):
         else:
             parts = [f"{len(result.changed)} configuração(ões) salva(s)."]
             if result.restart_required:
-                parts.append("Algumas alterações serão aplicadas ao reiniciar os serviços DICOM.")
+                parts.append("O servidor DICOM foi reiniciado com a nova configuração.")
             parts += result.warnings
             self._message(" ".join(parts), "warn" if result.warnings else "ok")
             self.settings_saved.emit({k: new for k, (_, new) in result.changed.items()})
