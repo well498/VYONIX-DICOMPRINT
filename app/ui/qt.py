@@ -84,12 +84,47 @@ def _translation_dirs() -> list[Path]:
     return dirs
 
 
+# Textos padrão do Qt (botões e diálogos) para quando o arquivo .qm não existe. O Qt 5.15 não
+# distribui qtbase_pt_BR.qm; o Qt 6 distribui. Os diálogos de arquivo nativos do Windows já vêm
+# no idioma do sistema e não passam por aqui.
+_PT_BR = {
+    "&Yes": "&Sim", "Yes": "Sim", "&No": "&Não", "No": "Não", "Yes to &All": "Sim para &todos",
+    "N&o to All": "Nã&o para todos", "OK": "OK", "&OK": "&OK", "Cancel": "Cancelar",
+    "&Cancel": "&Cancelar", "Close": "Fechar", "&Close": "&Fechar", "Apply": "Aplicar",
+    "&Apply": "&Aplicar", "Reset": "Redefinir", "&Reset": "&Redefinir", "Help": "Ajuda",
+    "&Help": "&Ajuda", "Save": "Salvar", "&Save": "&Salvar", "Save All": "Salvar tudo",
+    "Open": "Abrir", "&Open": "&Abrir", "Discard": "Descartar", "Don't Save": "Não salvar",
+    "Abort": "Abortar", "Retry": "Tentar novamente", "Ignore": "Ignorar",
+    "Restore Defaults": "Restaurar padrões", "Show Details...": "Mostrar detalhes...",
+    "Hide Details...": "Ocultar detalhes...", "&Undo": "&Desfazer", "&Redo": "&Refazer",
+    "Cu&t": "Recor&tar", "&Copy": "&Copiar", "&Paste": "C&olar", "Delete": "Excluir",
+    "Select All": "Selecionar tudo", "Copy &Link Location": "Copiar &endereço do link",
+    "Look in:": "Examinar:", "File &name:": "&Nome do arquivo:", "Files of type:": "Arquivos do tipo:",
+}
+
+
+class _FallbackTranslator(QtCore.QTranslator):
+    def translate(self, context, source, disambiguation=None, n=-1):  # noqa: D401 - API Qt
+        return _PT_BR.get(source, "")
+
+    def isEmpty(self) -> bool:  # noqa: N802 - API Qt
+        return False
+
+
 def install_translations(app, locale: str = "pt_BR") -> str | None:
-    """Traduz os textos padrão do Qt (Sim/Não, Cancelar, diálogos de arquivo). Retorna a pasta usada."""
+    """Traduz os textos padrão do Qt (Sim/Não, Cancelar…) e define pt-BR para datas e números.
+
+    Retorna a pasta do arquivo .qm usado ou ``"interno"`` quando a tabela embutida é usada.
+    """
+    QtCore.QLocale.setDefault(QtCore.QLocale(QtCore.QLocale.Portuguese, QtCore.QLocale.Brazil))
+    keep = getattr(app, "_vyonix_translators", [])
     for folder in _translation_dirs():
         translator = QtCore.QTranslator(app)
         if translator.load(f"qtbase_{locale}", str(folder)):
             app.installTranslator(translator)
-            app._vyonix_translators = getattr(app, "_vyonix_translators", []) + [translator]
+            app._vyonix_translators = keep + [translator]
             return str(folder)
-    return None
+    translator = _FallbackTranslator(app)
+    app.installTranslator(translator)
+    app._vyonix_translators = keep + [translator]
+    return "interno"
