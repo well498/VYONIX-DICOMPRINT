@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import os
 import platform
+import sqlite3
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -62,6 +63,9 @@ class AppContext:
             "user_data": str(self.paths.user_root),
             "log_file": str(self.log_file),
             "installation_id": self.settings.get("system.installation_id"),
+            "python": platform.python_version(),
+            "sqlite": sqlite3.sqlite_version,
+            "sqlite_json": self.db.json_mode,
         }
 
     def close(self) -> None:

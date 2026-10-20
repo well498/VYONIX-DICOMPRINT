@@ -50,6 +50,49 @@ class DatabaseTest(DatabaseTestCase):
             self.db.connection()
 
 
+class PythonJsonFallbackTest(TempDirTestCase):
+    """SQLite sem JSON1 (Python 3.8 para Windows): a função em Python mantém o esquema válido."""
+
+    def test_full_schema_with_python_json_valid(self):
+        import os
+        import sqlite3
+
+        from app.database.connection import ENV_FORCE_PY_JSON
+        from app.database.migrations import MIGRATIONS
+        from app.database.migrator import migrate
+
+        os.environ[ENV_FORCE_PY_JSON] = "1"
+        try:
+            db = Database(self.tmp / "py-json.db")
+            self.assertEqual(migrate(db, MIGRATIONS), [1])
+            self.assertEqual(db.json_mode, "python")
+            conn = db.connection()
+            conn.execute("INSERT INTO settings VALUES ('ok', '{\"a\": [1, 2]}', 'x', 'y')")
+            for bad in ("not json", "{'a': 1}", ""):
+                with self.assertRaises(sqlite3.IntegrityError):
+                    conn.execute("INSERT INTO settings VALUES ('bad', ?, 'x', 'y')", (bad,))
+            conn.execute("INSERT INTO events(ts, level, category, action, message, details_json) "
+                         "VALUES ('t', 'INFO', 'c', 'a', 'm', NULL)")  # NULL continua permitido
+            db.close()
+        finally:
+            os.environ.pop(ENV_FORCE_PY_JSON, None)
+
+    def test_python_matches_native_semantics(self):
+        import sqlite3
+
+        from app.database.connection import _json_valid
+        conn = sqlite3.connect(":memory:")
+        try:
+            conn.execute("SELECT json_valid('{}')")
+        except sqlite3.OperationalError:
+            self.skipTest("SQLite local sem JSON1 para comparar")
+        for value in ('{}', '[]', '1', '"x"', 'null', 'not json', '{"a":', "{'a':1}", "",
+                      '{"a": [1, {"b": null}]}', ' {} '):
+            native = conn.execute("SELECT json_valid(?)", (value,)).fetchone()[0]
+            self.assertEqual(_json_valid(value), native, value)
+        conn.close()
+
+
 class CorruptionTest(TempDirTestCase):
     def test_corrupted_file_is_detected(self):
         path = self.tmp / "bad.db"

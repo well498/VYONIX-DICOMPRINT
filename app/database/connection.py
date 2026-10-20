@@ -5,10 +5,15 @@
 * Modo *autocommit* do driver (``isolation_level=None``) com transações explícitas
   via ``transaction()`` — inclusive aninhadas (``SAVEPOINT``).
 * WAL + ``synchronous=FULL``: prioriza durabilidade da fila de trabalhos.
+* ``json_valid`` (usada nas restrições CHECK do esquema) é garantida em qualquer SQLite: o
+  SQLite que acompanha o Python 3.8 para Windows — exigido pelo suporte ao Windows 7 — não traz
+  as funções JSON; nesse caso uma implementação equivalente em Python é registrada.
 """
 
 from __future__ import annotations
 
+import json
+import os
 import sqlite3
 import threading
 from contextlib import contextmanager
@@ -20,6 +25,41 @@ from app.utils.logging_setup import get_logger
 
 log = get_logger("database")
 
+ENV_FORCE_PY_JSON = "VYONIX_FORCE_PY_JSON"  # testes: força a implementação em Python
+
+
+def _json_valid(text) -> int:
+    """Equivalente a ``json_valid(X)`` do SQLite para textos (NULL → NULL)."""
+    if text is None:
+        return None  # type: ignore[return-value]
+    if isinstance(text, bytes):
+        try:
+            text = text.decode("utf-8")
+        except UnicodeDecodeError:
+            return 0
+    if not isinstance(text, str):
+        return 1 if isinstance(text, (int, float)) else 0
+    try:
+        json.loads(text)
+        return 1
+    except ValueError:
+        return 0
+
+
+def ensure_json_functions(conn: sqlite3.Connection, *, force_python: bool = False) -> str:
+    """Garante ``json_valid`` na conexão. Retorna ``"native"`` ou ``"python"``."""
+    if not force_python:
+        try:
+            conn.execute("SELECT json_valid('{}')").fetchone()
+            return "native"
+        except sqlite3.OperationalError:
+            pass
+    try:
+        conn.create_function("json_valid", 1, _json_valid, deterministic=True)
+    except (TypeError, sqlite3.NotSupportedError):  # SQLite muito antigo sem 'deterministic'
+        conn.create_function("json_valid", 1, _json_valid)
+    return "python"
+
 
 class Database:
     def __init__(self, path: Path, *, busy_timeout_ms: int = 5000) -> None:
@@ -29,6 +69,7 @@ class Database:
         self._lock = threading.Lock()
         self._connections: list[sqlite3.Connection] = []
         self._closed = False
+        self.json_mode = "unknown"
 
     # ------------------------------------------------------------------
     def connection(self) -> sqlite3.Connection:
@@ -54,6 +95,8 @@ class Database:
                 check_same_thread=False,  # cada thread usa a sua; o fechamento é centralizado
             )
             conn.row_factory = sqlite3.Row
+            self.json_mode = ensure_json_functions(
+                conn, force_python=os.environ.get(ENV_FORCE_PY_JSON) == "1")
             conn.execute("PRAGMA foreign_keys = ON")
             conn.execute(f"PRAGMA busy_timeout = {int(self.busy_timeout_ms)}")
             conn.execute("PRAGMA journal_mode = WAL")
