@@ -93,6 +93,14 @@ jobs:
           .\tools\ci_validate.ps1 -Installer $inst -Version "${{ steps.ver.outputs.APP_VERSION }}" -DistExe dist-slim\Vyonix\Vyonix.exe -OutDir dist\perf\validate-slim
           if ($LASTEXITCODE -ne 0) { exit 1 }
 
+      - name: Custo das bibliotecas das próximas fases
+        if: always()
+        run: python tools/bench_deps.py "$env:RUNNER_TEMP\deps" dist\perf\deps.json
+
+      - name: Gravação no SQLite (FULL x NORMAL)
+        if: always()
+        run: python tools/bench_db.py "$env:RUNNER_TEMP\bdb" dist\perf\db.json
+
       - name: Publicar resultados como anotações
         if: always()
         run: python tools/perf_annotations.py dist\perf

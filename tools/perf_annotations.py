@@ -37,6 +37,8 @@ def main(folder: str) -> None:
             r["disk"] = disk
             payload[name] = r
     payload["importtime"] = load(d / "importtime.json")
+    payload["deps"] = load(d / "deps.json")
+    payload["db"] = load(d / "db.json")
     removed = load(d / "slim_removed.txt") or ""
     rows = [ln.split("\t") for ln in removed.splitlines() if "\t" in ln]
     payload["slim_removed"] = {"count": len(rows),
