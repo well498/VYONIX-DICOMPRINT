@@ -1,14 +1,17 @@
 [project]
 name = "vyonix-dicom-print"
-version = "1.0.0.dev1"
+version = "1.0.0.dev2"
 description = "VYONIX DICOM Print — Precisão em cada imagem."
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.8"
 license = { text = "Proprietário" }
-dependencies = ["PySide6>=6.7,<7"]
+dependencies = [
+    "PySide2==5.15.2.1; python_version < '3.11'",
+    "PySide6>=6.7,<7; python_version >= '3.11'",
+]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "pytest-qt>=4.4"]
+dev = ["pytest>=7.4", "pytest-qt>=4.2", "pyinstaller"]
 
 [project.gui-scripts]
 vyonix = "app.main:main"

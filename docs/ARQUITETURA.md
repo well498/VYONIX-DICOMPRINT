@@ -1,7 +1,7 @@
 # VYONIX DICOM Print — Arquitetura Técnica
 
 > **VYONIX DICOM Print** · *Precisão em cada imagem.*
-> Documento de arquitetura — revisão 1 (Fase 1). Plataforma-alvo: Windows 10/11 64 bits.
+> Documento de arquitetura — revisão 1 (Fase 1). Plataforma-alvo: Windows 7 SP1 a Windows 11, 64 bits (decisão de 20/10/2026).
 >
 > **Aviso:** este software está em desenvolvimento e **não está validado para uso clínico**.
 > Nenhuma declaração de conformidade DICOM ou aptidão assistencial é feita por este documento.
@@ -231,19 +231,19 @@ e a chave privada nunca é versionada.
 
 | Pacote | Faixa | Fase | Motivo / observação |
 |---|---|---|---|
-| Python | 3.12.x (64 bits) | 1 | alvo do produto |
-| PySide6 | `>=6.7,<7` | 1 | UI. **LGPLv3**: distribuir em modo *onedir* (bibliotecas Qt substituíveis) e incluir avisos de licença |
-| pydicom | `>=3.0,<4` | 2 | leitura/escrita DICOM |
-| pynetdicom | `>=2.1,<3` | 2 | associações, C-ECHO, C-STORE, DIMSE-N |
-| numpy | `>=1.26,<3` | 3 | processamento numérico |
-| opencv-python-**headless** | `>=4.9,<6` | 3 | redimensionamento/rotação. Usar *headless* para não conflitar plugins Qt com o PySide6 |
-| Pillow | `>=10.3` | 3 | composição e exportação |
+| Python | **3.8.10** (64 bits) | 1 | última versão que roda no Windows 7 SP1 — requisito mínimo do produto. Sem correções de segurança desde 2024 |
+| PySide2 | 5.15.2.1 (Qt 5.15) | 1 | interface; Qt 6 exige Windows 10. **LGPLv3**: distribuir em modo *onedir*. PySide6 só em desenvolvimento com Python ≥ 3.11 (`app/ui/qt.py`) |
+| pydicom | `>=2.4,<3` | 2 | leitura/escrita DICOM (3.x exige Python 3.10+) |
+| pynetdicom | `>=2.0,<2.1` | 2 | associações, C-ECHO, C-STORE, DIMSE-N |
+| numpy | `>=1.24,<1.25` | 3 | processamento numérico (última série para Python 3.8) |
+| ~~opencv-python-headless~~ | — | 3 | **dispensado**: +112 MB medidos; numpy + Pillow cobrem as operações previstas |
+| Pillow | `>=10.4,<11` | 3 | composição e exportação (última série para Python 3.8) |
 | pylibjpeg + pylibjpeg-openjpeg / -rle | conforme pydicom | 3 | transfer syntaxes comprimidas. **Atenção:** `pylibjpeg-libjpeg` é GPLv3 — avaliar alternativa (ex.: GDCM, licença BSD) antes da distribuição comercial |
 | pywin32 | `>=306` (apenas Windows) | 4 | GDI, spooler, serviço Windows |
 | cryptography | `>=42` | 8 | Ed25519 para licenças |
 | pytest / pytest-qt | `>=8` / `>=4.4` | 1 | testes (o código de teste usa `unittest`, compatível com pytest) |
-| PyInstaller | `>=6.5` | 8 | empacotamento `Vyonix.exe` |
-| Inno Setup | 6.x | 8 | `Vyonix_Setup.exe` |
+| PyInstaller | última compatível com Python 3.8 | 1 | empacotamento `Vyonix.exe` (distribuição enxuta por padrão) |
+| Inno Setup | 6.x | 1 | instalador; gera instaladores compatíveis com Windows Vista ou mais novo |
 | DCMTK (ferramenta externa de teste) | 3.6.x | 2/5 | `echoscu`, `storescu`, `dcmprscp`/`dcmprscu` como simuladores |
 
 Versões exatas devem ser fixadas em um *lockfile* ao final de cada fase, após os testes.
@@ -265,6 +265,8 @@ Versões exatas devem ser fixadas em um *lockfile* ao final de cada fase, após 
 | 9 | **Proteção de licença em Python** — bytecode é decompilável. | Médio | Assinatura assimétrica impede *forjar* licenças; *patch* do binário continua possível (risco comercial aceito; avaliar Nuitka/assinatura de código). |
 | 10 | **Marca** — disponibilidade do nome VYONIX. | Médio | Busca no INPI e em domínios antes da distribuição. |
 | 11 | **SmartScreen / antivírus** com executáveis PyInstaller. | Baixo | Certificado de assinatura de código (EV/OV) na Fase 8. |
+
+| 12 | **Plataforma legada** — o requisito Windows 7 obriga Python 3.8 e Qt 5.15, sem correções de segurança, e limita as versões das bibliotecas das próximas fases. | Alto | Distribuição enxuta, sem rede além do DICOM; recomendação documentada de Windows 10/11 para uso com dados de pacientes; camada `app/ui/qt.py` permite migrar para Qt 6/Python atual quando o requisito mudar. |
 
 ---
 

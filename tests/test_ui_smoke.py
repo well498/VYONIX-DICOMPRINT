@@ -1,4 +1,4 @@
-"""F1-09 — teste de fumaça da interface real. Requer PySide6 (ignorado sem ele).
+"""F1-09 — teste de fumaça da interface real. Requer PySide2 ou PySide6 (ignorado sem eles).
 
 Executa com a plataforma Qt ``offscreen``, sem abrir janelas.
 """
@@ -7,7 +7,7 @@ import os
 import unittest
 
 try:
-    import PySide6  # noqa: F401
+    from app.ui import qt as _qt  # noqa: F401
     HAS_QT = True
 except ImportError:
     HAS_QT = False
@@ -15,13 +15,16 @@ except ImportError:
 from tests.helpers import TempDirTestCase
 
 
-@unittest.skipUnless(HAS_QT, "PySide6 não instalado")
+@unittest.skipUnless(HAS_QT, "PySide2/PySide6 não instalado")
 class UiSmokeTest(TempDirTestCase):
     @classmethod
     def setUpClass(cls):
         os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-        from PySide6.QtWidgets import QApplication
+        from app.ui.qt import QApplication, install_translations, prepare_application
+        if QApplication.instance() is None:
+            prepare_application()
         cls.app = QApplication.instance() or QApplication([])
+        install_translations(cls.app)
 
     def test_main_window_pages(self):
         from app.bootstrap import bootstrap

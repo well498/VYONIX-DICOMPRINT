@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
-from PySide6.QtCore import QObject, QRunnable, QThreadPool, Signal
+from app.ui.qt import QObject, QRunnable, QThreadPool, Signal
 
 from app.utils.logging_setup import get_logger
 

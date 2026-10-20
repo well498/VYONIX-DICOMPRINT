@@ -12,7 +12,7 @@ A janela do VYONIX tem três áreas:
 - **Menu lateral** com 12 itens.
 - **Área de conteúdo**, que mostra a página selecionada.
 
-A barra inferior mostra a pasta de dados em uso e o aviso de que a versão não é destinada a uso clínico. Apenas uma janela do VYONIX pode ficar aberta por usuário.
+A barra inferior mostra a pasta de dados em uso e o aviso de que a versão não é destinada a uso clínico. Apenas uma janela do VYONIX pode ficar aberta por usuário. Em telas menores que 1320 × 880 (por exemplo, 1366 × 768), a janela abre maximizada.
 
 ## 2. Itens do menu nesta versão
 

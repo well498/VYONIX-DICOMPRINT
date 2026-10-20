@@ -75,8 +75,34 @@ def md_escape(text: str) -> str:
     return str(text).replace("|", "/").replace("\n", " ")
 
 
+def perf_section(perf: dict | None) -> list[str]:
+    if not perf:
+        return []
+    ui = perf.get("ui_first_start", {})
+    d = perf.get("disk", {})
+    fmt = lambda v: f"{v:.1f}".replace(".", ",")  # noqa: E731
+    rows = [
+        ("Pasta instalada", f"{fmt(d['onedir_mb'])} MB ({d['onedir_files']} arquivos)"),
+        ("Instalador", f"{fmt(d['installer_mb'])} MB"),
+        ("Memória em uso com a janela aberta (working set, média de 30 s)", f"{fmt(ui['working_set_mb_avg'])} MB"),
+        ("Memória privada com a janela aberta", f"{fmt(ui['private_mb_avg'])} MB"),
+        ("CPU com a janela ociosa (30 s)", f"{fmt(ui['cpu_percent_of_one_core'])}% de um núcleo"),
+        ("Tempo até a janela aparecer (mediana; 4 núcleos / 1 núcleo)",
+         f"{perf['ui_window_ms_all_cores_median']} ms / {perf['ui_window_ms_one_core_median']} ms"),
+        ("Tempo do --check (mediana de 5)", f"{perf['check_ms_median']} ms"),
+    ]
+    out = ["## 4. Desempenho medido", "",
+           f"Medido no executável final, na mesma máquina ({perf.get('cpu', '').strip()}, "
+           f"{perf.get('cores')} núcleos, {fmt(perf.get('ram_gb', 0))} GB, SSD). Em PCs antigos com HDD, "
+           "os tempos tendem a ser maiores; tamanho e memória variam pouco entre máquinas.", "",
+           "| Medida | Valor |", "|---|---|"]
+    out += [f"| {a} | {b} |" for a, b in rows]
+    return out + [""]
+
+
 def validation_report(version: str, commit: str, build_date: str, installer: Path,
-                      digest: str, junit: dict, validation: dict, env_text: str) -> str:
+                      digest: str, junit: dict, validation: dict, env_text: str,
+                      perf: dict | None = None) -> str:
     v_results = validation["results"]
     v_ok = sum(1 for r in v_results if r["ok"])
     t = junit["totals"]
@@ -114,20 +140,23 @@ def validation_report(version: str, commit: str, build_date: str, installer: Pat
     for r in v_results:
         lines.append(f"| {r['id']} | {r['area']} | {md_escape(r['name'])} | "
                      f"{'Aprovado' if r['ok'] else '**FALHOU**'} | {md_escape(r['detail'])} |")
-    lines += ["", "## 4. Testes automatizados", "",
+    lines += [""] + perf_section(perf)
+    n = 5 if perf else 4
+    lines += [f"## {n}. Testes automatizados", "",
               "| Módulo | Teste | Resultado |", "|---|---|---|"]
     for c in junit["cases"]:
         mod = c["classname"].replace("tests.", "")
         res = c["status"] + (f" — {md_escape(c['detail'])}" if c["detail"] else "")
         lines.append(f"| {md_escape(mod)} | {md_escape(c['name'])} | {res} |")
     lines += [
-        "", "## 5. Não verificado neste relatório", "",
+        "", f"## {n + 1}. Não verificado neste relatório", "",
         "Os itens abaixo não podem ser verificados pelo pipeline automatizado e devem ser "
         "registrados na homologação manual:", "",
         "| Item | Motivo |", "|---|---|",
         "| Instalação em Windows limpo sem Python instalado | O runner possui Python; o teste "
         "INS-05 apenas remove o Python do PATH do processo. Requer VM limpa. |",
-        "| Windows 10 | O pipeline executa em Windows Server; Windows 10 e 11 devem ser testados em homologação. |",
+        "| Windows 7 SP1 64 bits (requisito mínimo) | Não há máquinas Windows 7 no GitHub Actions. O executável usa Python 3.8 e Qt 5.15, compatíveis com Windows 7, mas o teste em Windows 7 real é obrigatório na homologação. |",
+        "| Windows 10 e 11 | O pipeline executa em Windows Server 2022 (mesmo núcleo do Windows 10/11). |",
         "| Usuário sem privilégios administrativos | O pipeline executa como administrador. |",
         "| Aparência visual da interface | O smoke test verifica funcionamento, não a aparência. |",
         "| Recepção DICOM com equipamentos reais | Funcionalidade não implementada nesta versão (Fase 2). |",
@@ -179,6 +208,7 @@ def main() -> int:
     ap.add_argument("--validation", required=True, type=Path)
     ap.add_argument("--env", required=True, type=Path)
     ap.add_argument("--out", default=ROOT / "dist", type=Path)
+    ap.add_argument("--perf", type=Path, help="JSON de tools/ci_profile.ps1 (opcional)")
     a = ap.parse_args()
 
     build_date = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
@@ -207,14 +237,16 @@ def main() -> int:
     junit = parse_junit(a.junit)
     validation = json.loads((a.validation / "results.json").read_text(encoding="utf-8-sig"))
     report_md = validation_report(a.version, commit, build_date, installer, digest, junit,
-                                  validation, a.env.read_text(encoding="utf-8", errors="replace"))
+                                  validation, a.env.read_text(encoding="utf-8", errors="replace"),
+                                  json.loads(a.perf.read_text(encoding="utf-8-sig")) if a.perf and a.perf.exists() else None)
     (tmp / "Relatorio_de_Validacao.md").write_text(report_md, encoding="utf-8")
     convert(tmp / "Relatorio_de_Validacao.md", rel / "Testes" / "Relatorio_de_Validacao.pdf",
             title="Relatório de Validação", version=a.version)
     # Evidências brutas (JSON) junto do relatório.
     evid = rel / "Testes" / "evidencias"
     evid.mkdir()
-    for f in sorted(a.validation.glob("*.json")) + [a.junit]:
+    extra = [a.perf] if a.perf and a.perf.exists() else []
+    for f in sorted(a.validation.glob("*.json")) + [a.junit] + extra:
         shutil.copy2(f, evid / f.name)
 
     (rel / "README.txt").write_text(

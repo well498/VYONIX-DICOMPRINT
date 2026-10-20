@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
-from PySide6.QtWidgets import (QFrame, QLabel, QScrollArea, QSizePolicy, QVBoxLayout,
+from app.ui.qt import Qt
+from app.ui.qt import (QFrame, QLabel, QScrollArea, QSizePolicy, QVBoxLayout,
                                QWidget)
 
 

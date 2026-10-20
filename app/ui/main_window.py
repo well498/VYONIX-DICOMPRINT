@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QSize, Qt
-from PySide6.QtGui import QIcon, QPixmap
-from PySide6.QtWidgets import (QApplication, QHBoxLayout, QLabel, QListWidget, QListWidgetItem,
+from app.ui.qt import QSize, Qt
+from app.ui.qt import QIcon, QPixmap
+from app.ui.qt import (QApplication, QHBoxLayout, QLabel, QListWidget, QListWidgetItem,
                                QMainWindow, QStackedWidget, QVBoxLayout, QWidget)
 
 from app import __version__, brand
@@ -34,8 +34,7 @@ class MainWindow(QMainWindow):
         self.ctx = ctx
         self.setWindowTitle(f"{brand.PRODUCT_NAME} {__version__}")
         self.setWindowIcon(QIcon(str(asset_path("vyonix_icon.svg"))))
-        self.resize(1280, 820)
-        self.setMinimumSize(QSize(980, 640))
+        self.setMinimumSize(QSize(900, 560))
 
         central = QWidget()
         root = QVBoxLayout(central)
@@ -130,6 +129,18 @@ class MainWindow(QMainWindow):
         s.setObjectName("slogan")
         lay.addWidget(s)
         return header
+
+    def show_fitted(self) -> None:
+        """Abre em 1280 x 820 quando cabe; em telas menores (ex.: 1366 x 768) abre maximizada."""
+        screen = QApplication.primaryScreen()
+        avail = screen.availableGeometry() if screen else None
+        if avail is None or (avail.width() >= 1320 and avail.height() >= 880):
+            self.resize(1280, 820)
+            self.show()
+            return
+        self.setMinimumSize(QSize(min(900, avail.width()), min(560, avail.height())))
+        self.resize(min(1280, avail.width()), min(820, avail.height() - 40))
+        self.showMaximized()
 
     def _navigate(self, row: int) -> None:
         if row < 0:

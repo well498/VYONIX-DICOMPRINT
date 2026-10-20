@@ -6,8 +6,8 @@ import getpass
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import Signal
-from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFileDialog, QFormLayout,
+from app.ui.qt import Signal
+from app.ui.qt import (QApplication, QCheckBox, QComboBox, QFileDialog, QFormLayout,
                                QGroupBox, QHBoxLayout, QLabel, QLineEdit, QMessageBox,
                                QPushButton, QSpinBox, QVBoxLayout, QWidget)
 

@@ -8,9 +8,8 @@ import time
 import traceback
 from pathlib import Path
 
-from PySide6.QtCore import QLockFile, QTimer
-from PySide6.QtGui import QIcon, QPixmap
-from PySide6.QtWidgets import QApplication, QMessageBox
+from app.ui.qt import (QT_API, QT_VERSION, QApplication, QIcon, QLockFile, QMessageBox, QPixmap,
+                       QTimer, QtCore, exec_app, install_translations, prepare_application)
 
 from app import __version__, brand
 from app.core.errors import VyonixError
@@ -26,7 +25,10 @@ def run_ui(*, data_dir=None, log_level=None, console_log=False, smoke_test=False
     QApplication.setApplicationName(brand.PRODUCT_NAME)
     QApplication.setOrganizationName(brand.BRAND)
     QApplication.setApplicationVersion(__version__)
+    if QApplication.instance() is None:
+        prepare_application()
     app = QApplication.instance() or QApplication(sys.argv[:1])
+    translations = install_translations(app)
     app.setWindowIcon(QIcon(str(asset_path("vyonix_icon.svg"))))
 
     def fail_dialog(text: str) -> None:
@@ -61,10 +63,10 @@ def run_ui(*, data_dir=None, log_level=None, console_log=False, smoke_test=False
     try:
         theme.apply_theme(app, ctx.settings.get("ui.theme"))
         window = MainWindow(ctx)
-        window.show()
+        window.show_fitted()
         if smoke_test:
-            QTimer.singleShot(300, lambda: _smoke(app, window, ctx, result))
-        code = app.exec()
+            QTimer.singleShot(300, lambda: _smoke(app, window, ctx, result, translations))
+        code = exec_app(app)
         window.shutdown()
         if smoke_test:
             _write_report(report, result)
@@ -75,7 +77,7 @@ def run_ui(*, data_dir=None, log_level=None, console_log=False, smoke_test=False
         lock.unlock()
 
 
-def _smoke(app: QApplication, window, ctx, result: dict) -> None:
+def _smoke(app: QApplication, window, ctx, result: dict, translations) -> None:
     """Roteiro automático executado dentro do executável real (sem equipamentos)."""
     from app.ui.main_window import MENU
     from app.ui.workers import wait_all
@@ -157,7 +159,22 @@ def _smoke(app: QApplication, window, ctx, result: dict) -> None:
         json.loads(ctx.log_file.read_text(encoding="utf-8").splitlines()[0])
         return str(ctx.log_file.name)
 
+    def translation() -> str:
+        yes = QtCore.QCoreApplication.translate("QPlatformTheme", "&Yes")
+        if yes.replace("&", "") != "Sim":
+            raise RuntimeError(f"diálogos do Qt não traduzidos ('{yes}'); pasta: {translations}")
+        return "botões padrão em português"
+
+    def geometry() -> str:
+        avail = app.primaryScreen().availableGeometry()
+        frame = window.frameGeometry()
+        if frame.width() > avail.width() or frame.height() > avail.height():
+            raise RuntimeError(f"janela {frame.width()}x{frame.height()} maior que a tela "
+                               f"{avail.width()}x{avail.height()}")
+        return f"janela {frame.width()}x{frame.height()} em tela útil {avail.width()}x{avail.height()}"
+
     for name, fn in (("recursos visuais", assets), ("navegação", pages),
+                     ("tradução do Qt", translation), ("tamanho da janela", geometry),
                      ("dashboard", dashboard), ("configurações", settings_roundtrip),
                      ("temas", themes), ("histórico", history), ("logs", logs)):
         check(name, fn)
@@ -166,6 +183,8 @@ def _smoke(app: QApplication, window, ctx, result: dict) -> None:
         "ok": all(c["ok"] for c in checks),
         "version": __version__,
         "frozen": bool(getattr(sys, "frozen", False)),
+        "qt_api": QT_API, "qt_version": QT_VERSION,
+        "python": sys.version.split()[0],
         "qt_platform": QApplication.platformName(),
         "data_dir": str(ctx.paths.machine_root),
         "checks": checks,

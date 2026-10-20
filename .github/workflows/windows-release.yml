@@ -1,5 +1,9 @@
 # Compilação, testes, empacotamento e instalador do VYONIX DICOM Print em Windows x64.
 #
+# Requisito mínimo do produto: Windows 7 SP1 64 bits. O executável é gerado com Python 3.8 +
+# PySide2 (Qt 5.15), a última combinação que roda no Windows 7. As ferramentas auxiliares
+# (ícone, PDFs, relatório) rodam em um Python 3.12 separado e não entram no executável.
+#
 # Etapas: testes (pytest, incluindo interface Qt) → PyInstaller (onedir) → Inno Setup →
 # validação do .exe e do instalador (tools/ci_validate.ps1) → documentação PDF, relatório de
 # validação e SHA-256 → publicação como pré-release no GitHub.
@@ -9,7 +13,7 @@ name: Windows release
 
 on:
   push:
-    branches: [main, "build/**"]
+    branches: [main, "build/**", "platform/**"]
   workflow_dispatch:
 
 permissions:
@@ -32,26 +36,42 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - name: Python 3.12 (ferramentas de build)
+        id: tools
+        uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           architecture: x64
 
+      - name: Python 3.8 (aplicativo — compatível com Windows 7)
+        id: app
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.8"
+          architecture: x64
+
       - name: Instalar dependências
         run: |
+          $tools = "${{ steps.tools.outputs.python-path }}"
+          "TOOLS_PY=$tools" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          & $tools -m pip install -q -r requirements-tools.txt
           python -m pip install --upgrade pip setuptools wheel
-          python -m pip install -r requirements.txt
-          python -m pip install "pyinstaller>=6.10" "pytest>=8" "pytest-qt>=4.4" pillow reportlab
-          New-Item -ItemType Directory -Force dist\validation | Out-Null
-          "Python $(python -c 'import sys; print(sys.version.split()[0])')" | Out-File dist\validation\env.txt -Encoding utf8
+          python -m pip install -r requirements-dev.txt
+          New-Item -ItemType Directory -Force dist\validation, dist\perf | Out-Null
+          "Aplicativo: Python $(python -c 'import sys; print(sys.version.split()[0])')" | Out-File dist\validation\env.txt -Encoding utf8
           python -m pip freeze | Out-File dist\validation\env.txt -Append -Encoding utf8
+          "" | Out-File dist\validation\env.txt -Append -Encoding utf8
+          "Ferramentas (não empacotadas): Python $(& $tools -c 'import sys; print(sys.version.split()[0])')" | Out-File dist\validation\env.txt -Append -Encoding utf8
+          & $tools -m pip freeze | Out-File dist\validation\env.txt -Append -Encoding utf8
+          python -c "import sqlite3; print('SQLite', sqlite3.sqlite_version)"
 
-      - name: Compilar fontes (compileall)
-        run: python -m compileall -q app tools packaging
+      - name: Compilar fontes (compileall, Python 3.8)
+        run: python -m compileall -q app packaging
 
-      - name: Testes automatizados
+      - name: Testes automatizados (Python 3.8 + PySide2)
         env:
           QT_QPA_PLATFORM: offscreen
+          VYONIX_QT: pyside2
         run: |
           python -m pytest tests -v -ra --junitxml=dist\validation\pytest.xml 2>&1 | Tee-Object dist\validation\pytest.txt
           if ($LASTEXITCODE -ne 0) { exit 1 }
@@ -61,13 +81,14 @@ jobs:
         run: |
           python tools/make_version_info.py | Tee-Object -Variable out
           $out | Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
-          python tools/make_icon.py
+          & $env:TOOLS_PY tools/make_icon.py
 
       - name: PyInstaller (dist\Vyonix\Vyonix.exe)
         run: |
           python -m PyInstaller --noconfirm --clean Vyonix.spec 2>&1 | Tee-Object dist\validation\pyinstaller.txt
           if (-not (Test-Path dist\Vyonix\Vyonix.exe)) { exit 1 }
           Get-ChildItem dist\Vyonix | Select-Object Name, Length
+          if (Test-Path build\slim_removed.txt) { Copy-Item build\slim_removed.txt dist\perf\slim_removed.txt }
 
       - name: Inno Setup
         run: |
@@ -86,10 +107,16 @@ jobs:
           .\tools\ci_validate.ps1 -Installer $inst -Version "${{ steps.ver.outputs.APP_VERSION }}" -OutDir dist\validation
           if ($LASTEXITCODE -ne 0) { exit 1 }
 
+      - name: Medir tamanho, memória e abertura do executável final
+        run: |
+          $inst = (Get-ChildItem dist\installer\*.exe | Select-Object -First 1).FullName
+          .\tools\ci_profile.ps1 -Label enxuta -DistDir dist\Vyonix -Installer $inst -Out dist\perf\enxuta.json
+          & $env:TOOLS_PY tools/perf_annotations.py dist\perf
+
       - name: Pacote de entrega (PDFs, relatório, SHA-256, zip)
         run: |
           $inst = (Get-ChildItem dist\installer\*.exe | Select-Object -First 1).FullName
-          python tools/make_release.py --version "${{ steps.ver.outputs.APP_VERSION }}" --commit "${{ github.sha }}" `
+          & $env:TOOLS_PY tools/make_release.py --perf dist\perf\enxuta.json --version "${{ steps.ver.outputs.APP_VERSION }}" --commit "${{ github.sha }}" `
             --installer $inst --junit dist\validation\pytest.xml --validation dist\validation --env dist\validation\env.txt
           git archive --format=zip --prefix="VYONIX_DICOM_Print_source_${{ steps.ver.outputs.APP_VERSION }}/" -o "dist\VYONIX_DICOM_Print_source_${{ steps.ver.outputs.APP_VERSION }}.zip" HEAD
 
@@ -102,6 +129,7 @@ jobs:
           $s = Get-Content dist\release-summary.json -Raw | ConvertFrom-Json
           $notes = @"
           VYONIX DICOM Print $v — versão de desenvolvimento para homologação (Fase 1 — Fundação).
+          Requisito mínimo: Windows 7 SP1 64 bits (com KB2533623). Python 3.8 + Qt 5.15.
           NÃO validada para uso clínico. Sem declaração de conformidade DICOM.
 
           Instalador: $($s.installer)
@@ -122,7 +150,7 @@ jobs:
             if (Test-Path $file) {
               $t = (Get-Content $file -Tail $n) -join "`n"
               $t = $t.Replace('%', '%25').Replace("`r", '').Replace("`n", '%0A')
-              if ($t.Length -gt 6000) { $t = $t.Substring($t.Length - 6000) }
+              if ($t.Length -gt 3500) { $t = $t.Substring($t.Length - 3500) }
               Write-Host "::error title=$title::$t"
             }
           }
@@ -143,4 +171,5 @@ jobs:
             dist/validation
             dist/*.zip
             dist/release-summary.json
+            dist/perf
           if-no-files-found: ignore

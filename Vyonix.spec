@@ -14,21 +14,32 @@ from pathlib import Path
 
 ROOT = Path(SPECPATH).resolve()
 
-# VYONIX_SLIM=1 remove componentes do Qt que o VYONIX não usa (ver docs/ANALISE_DESEMPENHO.md).
+# Ligação Qt usada no build: PySide2 (Qt 5.15, Python 3.8) na distribuição oficial, que precisa
+# rodar no Windows 7 SP1 64 bits; PySide6 apenas quando o build é feito com Python mais novo.
+try:
+    import PySide2  # noqa: F401
+    QT_BINDING, OTHER_BINDING = "PySide2", "PySide6"
+except ImportError:
+    QT_BINDING, OTHER_BINDING = "PySide6", "PySide2"
+
+# Distribuição enxuta (padrão; VYONIX_SLIM=0 desliga): remove componentes do Qt que o VYONIX não usa.
 # A interface é Qt Widgets com renderização por software (raster): não usa OpenGL, Direct3D,
-# QML/Quick, rede, PDF nem formatos de imagem além de SVG e ICO.
-SLIM = os.environ.get("VYONIX_SLIM") == "1"
+# ANGLE, QML/Quick, rede, PDF nem formatos de imagem além de SVG e ICO. Medição em
+# docs/ANALISE_DESEMPENHO (relatório): -49% de disco e -26% de memória, sem perda de função.
+SLIM = os.environ.get("VYONIX_SLIM", "1") != "0"
 SLIM_DROP = [re.compile(p, re.I) for p in (
     r"(^|/)opengl32sw\.dll$",                       # OpenGL por software (~20 MB)
     r"(^|/)d3dcompiler_47\.dll$",                   # compilador de shaders Direct3D
-    r"(^|/)Qt6(Quick|Qml|Pdf|Network|OpenGL|VirtualKeyboard|SvgWidgets|Multimedia|Designer)\w*\.dll$",
+    r"(^|/)lib(EGL|GLESv2)\.dll$",                  # ANGLE (OpenGL ES sobre Direct3D, Qt 5)
+    r"(^|/)Qt[56](Quick|Qml|Pdf|Network|OpenGL|VirtualKeyboard|SvgWidgets|Multimedia|Designer|WebSockets|DBus)\w*\.dll$",
     r"/plugins/imageformats/(?!qsvg|qico)[^/]+$",
     r"/plugins/platforms/(?!qwindows|qoffscreen)[^/]+$",
-    r"/plugins/(tls|networkinformation|generic|platforminputcontexts|qmltooling|multimedia)/",
+    r"/plugins/(tls|networkinformation|generic|platforminputcontexts|qmltooling|multimedia|bearer|platformthemes)/",
     r"/translations/(?!qtbase_pt_BR|qt_pt_BR)[^/]+\.qm$",
 )]
-SLIM_EXCLUDES = ["PySide6.QtNetwork", "PySide6.QtQml", "PySide6.QtQuick", "PySide6.QtOpenGL",
-                 "PySide6.QtOpenGLWidgets", "PySide6.QtPdf", "PySide6.QtSvgWidgets"]
+SLIM_EXCLUDES = [f"{QT_BINDING}.{m}" for m in (
+    "QtNetwork", "QtQml", "QtQuick", "QtOpenGL", "QtOpenGLWidgets", "QtPdf", "QtSvgWidgets",
+    "QtWebSockets", "QtDBus")]
 BUILD = ROOT / "build"
 icon = BUILD / "vyonix.ico"
 version_file = BUILD / "version_info.txt"
@@ -38,10 +49,11 @@ a = Analysis(
     pathex=[str(ROOT)],
     binaries=[],
     datas=[(str(ROOT / "assets"), "assets")],
-    hiddenimports=["PySide6.QtSvg"],          # renderização do logotipo/ícone SVG
+    hiddenimports=[f"{QT_BINDING}.QtSvg"],    # renderização do logotipo/ícone SVG
     hookspath=[],
     runtime_hooks=[],
-    excludes=["tkinter", "pytest", "tests", "license_admin", "unittest.mock"]
+    excludes=["tkinter", "pytest", "tests", "license_admin", "unittest.mock",
+              OTHER_BINDING, "shiboken6" if QT_BINDING == "PySide2" else "shiboken2"]
              + (SLIM_EXCLUDES if SLIM else []),
     noarchive=False,
 )
@@ -70,7 +82,7 @@ if SLIM:
     with open(BUILD / "slim_removed.txt", "w", encoding="utf-8") as fh:
         for dest, size in sorted(removed, key=lambda r: -r[1]):
             fh.write(f"{size}\t{dest}\n")
-    print(f"VYONIX_SLIM: {len(removed)} arquivos removidos, "
+    print(f"VYONIX_SLIM ({QT_BINDING}): {len(removed)} arquivos removidos, "
           f"{sum(s for _, s in removed) / 1048576:.1f} MB")
 
 pyz = PYZ(a.pure)

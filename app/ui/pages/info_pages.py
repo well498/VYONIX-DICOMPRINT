@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QPixmap
-from PySide6.QtWidgets import QApplication, QHBoxLayout, QLabel, QPushButton, QWidget
+from app.ui.qt import QT_API, QT_VERSION, Qt
+from app.ui.qt import QPixmap
+from app.ui.qt import QApplication, QHBoxLayout, QLabel, QPushButton, QWidget
 
 from app import __phase__, __version__, brand
 from app.services.settings_service import SettingsService
@@ -73,7 +73,7 @@ class AboutPage(Page):
         self.body.addWidget(frame)
 
         frame, lay = card("Componentes de terceiros")
-        for text in ("Qt for Python (PySide6) — LGPLv3", "SQLite — domínio público",
+        for text in (f"Qt {QT_VERSION} / {QT_API} (Qt for Python) — LGPLv3", "SQLite — domínio público",
                      "Python — PSF License"):
             lay.addWidget(QLabel("•  " + text))
         self.body.addWidget(frame)

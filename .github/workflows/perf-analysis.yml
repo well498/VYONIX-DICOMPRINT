@@ -62,6 +62,8 @@ jobs:
           "ISCC=$iscc" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: Build padrão
+        env:
+          VYONIX_SLIM: "0"
         run: |
           python -m PyInstaller --noconfirm --clean --distpath dist --workpath build\pyi-std Vyonix.spec
           & $env:ISCC /Q "/DAppVersion=${{ steps.ver.outputs.APP_VERSION }}" "/DFileVersion=${{ steps.ver.outputs.FILE_VERSION }}" installer\Vyonix.iss

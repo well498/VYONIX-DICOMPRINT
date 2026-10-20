@@ -2,9 +2,9 @@
 
 *Precisão em cada imagem.*
 
-Plataforma de gerenciamento de impressão de imagens médicas DICOM para Windows 10/11 (64 bits).
+Plataforma de gerenciamento de impressão de imagens médicas DICOM para Windows 64 bits, do Windows 7 SP1 ao Windows 11.
 
-> **Versão de desenvolvimento 1.0.0.dev1 — Fase 1 (Fundação).**
+> **Versão de desenvolvimento 1.0.0.dev2 — Fase 1 (Fundação).**
 > Este software **não está validado para uso clínico** e **não possui declaração de conformidade DICOM**.
 > Recepção DICOM, impressão e licenciamento ainda não estão implementados (ver "Situação").
 
@@ -31,19 +31,24 @@ A arquitetura completa (diagramas, modelo de dados, dependências, riscos e plan
 
 ## Requisitos
 
-* Windows 10 ou 11, 64 bits
-* Python 3.12 (64 bits) — <https://www.python.org/downloads/windows/>
+* Para usar: Windows 7 SP1 (com KB2533623), 8.1, 10 ou 11 — sempre 64 bits.
+* Para desenvolver: Python **3.8.10 64 bits** (última versão com instalador para Windows e
+  compatível com Windows 7) — <https://www.python.org/downloads/release/python-3810/>.
+  O executável oficial é gerado com Python 3.8 + PySide2 (Qt 5.15). Com Python ≥ 3.11 o projeto
+  roda com PySide6, só para desenvolvimento (ver `app/ui/qt.py`).
 
 ## Instalação (desenvolvimento)
 
 No PowerShell, dentro da pasta do projeto:
 
 ```powershell
-py -3.12 -m venv .venv
+py -3.8 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
 pip install -r requirements-dev.txt
 ```
+
+Para gerar o ícone e os PDFs da release, use um Python 3.12 separado com `requirements-tools.txt`.
 
 ## Execução
 

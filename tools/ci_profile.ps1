@@ -43,11 +43,11 @@ $files = Get-ChildItem $DistDir -Recurse -File
 function Category($f) {
     $r = $f.FullName.Substring($DistDir.Length + 1).Replace('\', '/')
     switch -Regex ($r) {
-        'opengl32sw' { 'Qt: OpenGL por software'; break }
-        'PySide6/plugins/' { 'Qt: plugins'; break }
-        'PySide6/translations/' { 'Qt: traduções'; break }
-        'PySide6/Qt6[^/]*\.dll$' { 'Qt: bibliotecas'; break }
-        'PySide6/|shiboken6/' { 'PySide6/shiboken (ligações Python)'; break }
+        'opengl32sw|libEGL|libGLESv2|d3dcompiler' { 'Qt: OpenGL/Direct3D'; break }
+        'PySide[26]/plugins/' { 'Qt: plugins'; break }
+        'PySide[26]/translations/' { 'Qt: traduções'; break }
+        'PySide[26]/Qt[56][^/]*\.dll$' { 'Qt: bibliotecas'; break }
+        'PySide[26]/|shiboken[26]/' { 'PySide/shiboken (ligações Python)'; break }
         'python3\d*\.dll|base_library|\.pyd$|python3\.dll' { 'Python: runtime e extensões'; break }
         '(?i)vcruntime|msvcp|ucrtbase|api-ms-win|concrt' { 'Runtime C++ (MSVC/UCRT)'; break }
         '(?i)libcrypto|libssl|libffi|sqlite3|_sqlite' { 'Python: OpenSSL/SQLite/FFI'; break }

@@ -1,0 +1,5 @@
+# Ferramentas de build que NÃO vão para o executável (ícone, PDFs, relatórios).
+# Rodam em Python 3.12 separado no pipeline.
+PySide6>=6.7,<7
+pillow
+reportlab

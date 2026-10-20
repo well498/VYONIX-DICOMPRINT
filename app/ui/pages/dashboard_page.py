@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from PySide6.QtCore import QTimer
-from PySide6.QtWidgets import QGridLayout, QHBoxLayout, QLabel, QWidget
+from app.ui.qt import QTimer
+from app.ui.qt import QGridLayout, QHBoxLayout, QLabel, QWidget
 
 from app.core.contracts import ServiceState
 from app.services.dashboard_service import DashboardService, DashboardSnapshot

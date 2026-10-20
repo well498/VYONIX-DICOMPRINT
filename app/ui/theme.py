@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QApplication
+from app.ui.qt import Qt
+from app.ui.qt import QApplication
 
 from app.brand import COLORS
 

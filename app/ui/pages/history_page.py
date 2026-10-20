@@ -5,8 +5,8 @@ from __future__ import annotations
 from datetime import datetime, time
 from pathlib import Path
 
-from PySide6.QtCore import QDate, Qt
-from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QDateEdit, QFileDialog,
+from app.ui.qt import QDate, Qt
+from app.ui.qt import (QAbstractItemView, QComboBox, QDateEdit, QFileDialog,
                                QHBoxLayout, QHeaderView, QLabel, QLineEdit, QPushButton,
                                QTableWidget, QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget)
 

@@ -1,4 +1,4 @@
-﻿; Inno Setup 6 — instalador do VYONIX DICOM Print (Windows 10/11 x64).
+﻿; Inno Setup 6 — instalador do VYONIX DICOM Print (Windows 7 SP1 a Windows 11, x64).
 ;
 ; Pré-requisitos (gerados pelo build):
 ;   ..\dist\Vyonix\Vyonix.exe        (PyInstaller onedir)
@@ -48,7 +48,8 @@ DisableProgramGroupPage=yes
 DisableDirPage=auto
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
-MinVersion=10.0.17763
+; Requisito mínimo do produto: Windows 7 SP1 64 bits (Python 3.8 + Qt 5.15 no executável).
+MinVersion=6.1sp1
 ; Program Files e ProgramData exigem privilégios administrativos.
 PrivilegesRequired=admin
 OutputDir=..\dist\installer
@@ -96,6 +97,38 @@ Filename: "{app}\{#AppExe}"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags
 [Code]
 var
   RemoveData: Boolean;
+
+// O Python 3.8 usa AddDllDirectory, que no Windows 7 só existe com a atualização KB2533623.
+function AddDllDirectory(NewDirectory: String): Integer;
+  external 'AddDllDirectory@kernel32.dll stdcall delayload';
+
+function HasKB2533623(): Boolean;
+begin
+  if GetWindowsVersion() >= $06020000 then
+  begin
+    Result := True;   // Windows 8 ou mais novo: a função faz parte do sistema
+    exit;
+  end;
+  try
+    AddDllDirectory('');
+    Result := True;
+  except
+    Result := False;
+  end;
+end;
+
+function InitializeSetup(): Boolean;
+begin
+  Result := True;
+  if not HasKB2533623() then
+  begin
+    SuppressibleMsgBox(
+      'Este Windows 7 não possui a atualização de segurança KB2533623, necessária ao VYONIX.' + #13#10 + #13#10 +
+      'Instale a atualização pelo Windows Update (ou pelo Catálogo do Microsoft Update) e execute este instalador novamente.',
+      mbCriticalError, MB_OK, IDOK);
+    Result := False;
+  end;
+end;
 
 function InitializeUninstall(): Boolean;
 begin
