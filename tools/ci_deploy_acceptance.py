@@ -50,8 +50,9 @@ def _ann(s: str) -> str:
 def record(crit: str, name: str, result: str, detail: str = "") -> None:
     RESULTS.append({"criterio": crit, "teste": name, "resultado": result, "detalhe": detail[:3000]})
     print(f"[{result}] {crit} · {name}: {detail[:300]}", flush=True)
-    level = {"Aprovado": "notice", "Reprovado": "error"}.get(result, "warning")
-    print(f"::{level} title={crit} {result}::{_ann(name + ' — ' + detail[:2500])}", flush=True)
+    if result != "Aprovado":                     # o GitHub limita 10 anotações de cada nível por passo
+        level = "error" if result == "Reprovado" else "warning"
+        print(f"::{level} title={crit} {result}::{_ann(name + ' — ' + detail[:2500])}", flush=True)
 
 
 def check(crit: str, name: str):
@@ -609,6 +610,18 @@ $ap = $r | Get-NetFirewallApplicationFilter
     counts = {k: sum(1 for r in RESULTS if r["resultado"] == k) for k in ("Aprovado", "Reprovado", "Não executado")}
     print(f"::notice title=Aceitação DEPLOY::aprovados={counts['Aprovado']} reprovados={counts['Reprovado']} "
           f"nao_executados={counts['Não executado']}")
+    chunk, chunks = "", []
+    for r in RESULTS:
+        if r["resultado"] == "Aprovado":
+            line = f"[{r['criterio']}] {r['teste']}: {r['detalhe'][:260]}\n"
+            if len(chunk) + len(line) > 3800:
+                chunks.append(chunk)
+                chunk = ""
+            chunk += line
+    if chunk:
+        chunks.append(chunk)
+    for i, c in enumerate(chunks[:8], 1):
+        print(f"::notice title=Aprovados ({i}/{len(chunks)})::{_ann(c)}", flush=True)
     if os.environ.get("GITHUB_STEP_SUMMARY"):
         with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as f:
             f.write("## Aceitação da Fase 2 (VYONIX DEPLOY)\n\n" + "\n".join(md) + "\n")
