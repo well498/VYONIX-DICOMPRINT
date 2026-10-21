@@ -42,11 +42,17 @@ class PrinterRecord:
     status: str
     available: bool
     last_seen_at: str | None
+    service_visible: bool | None = None    # None = serviço ainda não verificou
 
 
 class PrinterService:
     def __init__(self, db: Database, events: EventRepository, backends: list[PrinterBackend],
-                 settings_get: Callable[[str], Any], backend_errors: dict[str, str] | None = None) -> None:
+                 settings_get: Callable[[str], Any], backend_errors: dict[str, str] | None = None,
+                 role: str = "ui") -> None:
+        # No serviço (conta Sistema Local) a impressora padrão do Windows é a da conta do serviço (em geral
+        # nenhuma) e impressoras instaladas só no perfil de um usuário não aparecem. Por isso o serviço não
+        # sobrescreve a visão do usuário: só registra quais impressoras ele próprio enxerga.
+        self.role = role
         self.db = db
         self.events = events
         self.backends = backends
@@ -71,13 +77,28 @@ class PrinterService:
                 mapping[info.name] = backend
         now = utc_now_iso()
         conn = self.db.connection()
+        service = self.role == "service"
         with self._lock, self.db.transaction():
             self._by_name = mapping
+            existing = {r["name"]: r for r in conn.execute("SELECT * FROM printers WHERE active = 1")}
             seen = set()
             for info in infos:
+                old = existing.get(info.name)
+                old_caps = json.loads(old["capabilities_json"] or "{}") if old else {}
+                if service and old is not None and info.backend == "windows":
+                    old_caps["service_visible"] = True
+                    conn.execute("UPDATE printers SET capabilities_json = ?, updated_at = ? WHERE id = ?",
+                                 (json.dumps(old_caps, ensure_ascii=False), now, old["id"]))
+                    seen.add(info.name)
+                    continue
                 caps = {"backend": info.backend, "port": info.port, "paper_sizes": list(info.paper_sizes),
                         "resolutions": list(info.resolutions_dpi), "color": info.supports_color,
                         "available": info.available}
+                if service:
+                    caps["service_visible"] = True
+                elif "service_visible" in old_caps:
+                    caps["service_visible"] = old_caps["service_visible"]
+                is_default = int(info.is_default) if not service else (int(old["is_default"]) if old else 0)
                 conn.execute(
                     """INSERT INTO printers(name, driver_name, is_default, capabilities_json, active, last_status,
                                             last_seen_at, created_at, updated_at)
@@ -86,11 +107,19 @@ class PrinterService:
                            is_default = excluded.is_default, capabilities_json = excluded.capabilities_json,
                            active = 1, last_status = excluded.last_status, last_seen_at = excluded.last_seen_at,
                            updated_at = excluded.updated_at""",
-                    (info.name, info.driver, int(info.is_default), json.dumps(caps, ensure_ascii=False),
+                    (info.name, info.driver, is_default, json.dumps(caps, ensure_ascii=False),
                      info.status_text, now, now, now))
                 seen.add(info.name)
-            for row in conn.execute("SELECT id, name FROM printers WHERE active = 1").fetchall():
-                if row["name"] not in seen:
+            for name, row in existing.items():
+                if name in seen:
+                    continue
+                if service:
+                    caps = json.loads(row["capabilities_json"] or "{}")
+                    if caps.get("backend", "windows") == "windows":
+                        caps["service_visible"] = False
+                        conn.execute("UPDATE printers SET capabilities_json = ?, updated_at = ? WHERE id = ?",
+                                     (json.dumps(caps, ensure_ascii=False), now, row["id"]))
+                else:
                     conn.execute("UPDATE printers SET last_status = ?, is_default = 0, updated_at = ? WHERE id = ?",
                                  (NOT_FOUND, now, row["id"]))
         return self.list()
@@ -108,7 +137,7 @@ class PrinterService:
                 port=caps.get("port", ""), is_default=bool(r["is_default"]), is_vyonix_default=r["name"] == vy_default,
                 paper_sizes=caps.get("paper_sizes", []), resolutions=caps.get("resolutions", []),
                 color=caps.get("color"), status=r["last_status"] or "", available=bool(available),
-                last_seen_at=r["last_seen_at"]))
+                last_seen_at=r["last_seen_at"], service_visible=caps.get("service_visible")))
         return result
 
     def get_record(self, name: str) -> PrinterRecord | None:

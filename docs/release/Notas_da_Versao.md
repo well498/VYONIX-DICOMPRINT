@@ -4,7 +4,7 @@
 
 ## Natureza desta versão
 
-Versão de **desenvolvimento para homologação**, correspondente às **Fases 1 a 7** (Fundação, Comunicação DICOM, Imagens e calibração, Impressão e fila, DICOM Print SCP, Regras automáticas, Serviço Windows) do plano de 8 fases. Não é a versão comercial 1.0.0: o número `{VERSION}` indica uma pré-versão de 1.0.0.
+Versão de **desenvolvimento para homologação**, correspondente às **Fases 1 a 8** (todas as fases do plano: Fundação, Comunicação DICOM, Imagens e calibração, Impressão e fila, DICOM Print SCP, Regras automáticas, Serviço Windows e Licenciamento) do plano de 8 fases. Não é a versão comercial 1.0.0: o número `{VERSION}` indica uma pré-versão de 1.0.0.
 
 **Não validada para uso clínico. Sem declaração de conformidade DICOM.**
 
@@ -23,7 +23,7 @@ Windows 10 64 bits (versão 1809 ou posterior) ou Windows 11. O executável usa 
 - Logs JSON rotativos, com mascaramento de dados de pacientes.
 - Configurações validadas, auditadas, exportáveis e importáveis.
 - Histórico de eventos com filtros e exportação CSV; histórico de alterações administrativas.
-- Interface com os 12 itens de menu; Dashboard, Configurações, Histórico, Licença (ID da instalação) e Sobre; temas claro e escuro.
+- Interface com os 12 itens de menu, todos implementados; temas claro e escuro.
 - Máquina de estados dos trabalhos de impressão (base da fila da Fase 4).
 - Modos de verificação automatizada: `--check` e `--smoke-test`.
 - **Servidor DICOM (Storage SCP):** C-ECHO e C-STORE para 24 classes de imagem (CT, MR, CR, DX, US, MG, XA, RF, NM, PT, captura secundária), sintaxes não comprimidas, associações simultâneas com limite configurável (padrão 10).
@@ -39,6 +39,8 @@ Windows 10 64 bits (versão 1809 ou posterior) ou Windows 11. O executável usa 
 - **Impressoras (Fase 4):** detecção das impressoras do Windows (driver, porta, papéis, resoluções, cor), impressora padrão do VYONIX, página de teste; impressora virtual **VYONIX PDF** que grava PDFs em tamanho real.
 - **Fila persistente (Fase 4):** impressão automática por série recebida, estados rastreados, chave de idempotência contra impressão duplicada, tentativas automáticas, recuperação após queda, reter, liberar, cancelar, tentar de novo, reprocessar e reimprimir; origem de cada configuração aplicada.
 - **Perfis de impressão (Fase 4):** associação a impressora, modalidade ou equipamento.
+- **Licenciamento offline (Fase 8):** código de solicitação (instalação + hash do computador), arquivo de licença assinado com Ed25519 e verificado com chave pública embutida (verificação reimplementada em Python puro e conferida com os vetores da RFC 8032), vínculo à instalação e ao computador, validade, detecção de relógio atrasado e de adulteração do registro, edições com recursos e limite de equipamentos, modo de avaliação com marca nas impressões (versões comerciais). Ferramenta de emissão `license_admin` separada, fora do pacote do cliente; a chave privada nunca é distribuída.
+- **Declaração de Conformidade DICOM** (homologação) dos serviços implementados.
 - **Serviço Windows (Fase 7):** `VyonixService.exe` (sem Qt) executa recepção, impressão DICOM e fila com a janela fechada e após reiniciar o computador; início automático atrasado e reinício em falhas; a interface se conecta ao serviço por *named pipe* local autenticado e comanda os servidores; configurações alteradas na interface são aplicadas pelo serviço sem reiniciá-lo; ícone na bandeja com o estado dos serviços; verificação `--service-check`.
 - **Regras automáticas (Fase 6):** condições por AE Title, equipamento, modalidade, unidade, setor, origem, descrição do estudo, parte do corpo, número de imagens, filme pedido, horário (inclusive faixas que cruzam a meia-noite) e dia da semana, sem diferenciar maiúsculas nem acentos; ações para impressora, papel, orientação, layout, cópias, resolução, margens, textos, perfil, retenção, prioridade e "parar"; prioridade ajustável; simulação que mostra regra a regra por que se aplica ou não e o resultado final com a origem de cada valor; histórico, importação e exportação. Precedência: padrão < perfil < regra < pedido DICOM Print < escolha manual.
 - **DICOM Print SCP (Fase 5):** Basic Grayscale e Basic Color Print Management Meta SOP Classes, Presentation LUT, Printer (N-GET com o estado real da impressora e da fila); Film Session, Film Box (STANDARD\C,R de 1 × 1 a 8 × 8) e Image Box (8 e 12/16 bits, MONOCHROME1/2, RGB, polaridade REVERSE); N-ACTION no Film Box e no Film Session. A impressão só é confirmada ao equipamento depois que as imagens estão gravadas e o trabalho está na fila. Layout, orientação, cópias e prioridade pedidos pelo equipamento são respeitados e aparecem como "Pedido DICOM Print" nos detalhes do trabalho.
@@ -47,8 +49,6 @@ Windows 10 64 bits (versão 1809 ou posterior) ou Windows 11. O executável usa 
 
 | Recurso | Fase prevista |
 |---|---|
-| Declaração de conformidade DICOM | 8 |
-| Licenciamento offline assinado, ferramenta de emissão | 8 |
 
 ## Limitações conhecidas
 
@@ -63,4 +63,5 @@ Windows 10 64 bits (versão 1809 ou posterior) ou Windows 11. O executável usa 
 - Imagens multiframe com mais de 16 quadros: na impressão automática, sai só o primeiro quadro.
 - Testes de recepção feitos com equipamento simulado (pynetdicom). Interoperabilidade com equipamentos reais deve ser verificada na homologação.
 - Os testes automatizados foram executados em Windows Server 2022 no GitHub Actions. O teste em Windows 10 e 11 limpos, sem Python, deve ser feito na homologação (ver Relatório de Validação).
+- Esta pré-versão usa a chave de licenças de **homologação** (`hml-2026`) e não limita recursos. Antes da versão comercial, gere a chave de produção com `license_admin keygen`, inclua a chave pública no aplicativo e recompile; versões sem o sufixo `.dev` aplicam a política de licença.
 - A disponibilidade jurídica do nome VYONIX ainda deve ser verificada antes da distribuição comercial.

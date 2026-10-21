@@ -74,7 +74,7 @@ class MainWindow(QMainWindow):
             ProfilesPage(ctx),
             HistoryPage(ctx.events, ctx.changes, exports),
             self.settings_page,
-            LicensePage(ctx.settings),
+            LicensePage(ctx),
             AboutPage(ctx.paths),
         ]
         assert len(pages) == len(MENU)

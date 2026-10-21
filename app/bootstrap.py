@@ -42,6 +42,7 @@ from app.printing.backends.pdf import PdfFileBackend
 from app.printing.profiles import ProfileService
 from app.printing.service import PrinterService
 from app.rules.engine import RuleService
+from app.licensing.license import LicenseService
 from app.services.dashboard_service import DashboardService
 from app.services.imaging_service import ImagingService
 from app.services.retention import RetentionService
@@ -78,6 +79,7 @@ class AppContext:
     worker: PrintWorker
     print_scp: PrintSCP
     rules: RuleService
+    license: LicenseService
     schema_version: int
     applied_migrations: list[int] = field(default_factory=list)
     _closed: bool = False
@@ -144,7 +146,8 @@ def bootstrap(*, data_dir: str | os.PathLike[str] | None = None, role: str = "ui
             return scu.echo(device.ip_address, device.port, device.ae_title,
                             calling_ae=get("dicom.storage.ae_title"))
 
-        devices = DeviceService(db, events, echo=device_echo)
+        license_service = LicenseService(db, events, get)
+        devices = DeviceService(db, events, echo=device_echo, device_limit=license_service.device_limit)
         store = InstanceStore(db, paths.storage_dir, paths.temp_dir)
         storage_scp = StorageSCP(db=db, settings_get=get, devices=devices.repo, store=store,
                                  events=events)
@@ -158,26 +161,27 @@ def bootstrap(*, data_dir: str | os.PathLike[str] | None = None, role: str = "ui
             backends.insert(0, win_backend.WindowsPrinterBackend(paths.output_dir / "arquivo"))
         else:
             backend_errors["windows"] = win_why
-        printers = PrinterService(db, events, backends, get, backend_errors)
+        printers = PrinterService(db, events, backends, get, backend_errors, role=role)
         def profile_exists(pid: int) -> bool:
             try:
                 return profiles.get(pid).active
             except Exception:  # noqa: BLE001
                 return False
 
-        rules = RuleService(db, events, profile_exists)
+        rules = RuleService(db, events, profile_exists, allowed=lambda: license_service.allows("rules"))
         jobs = JobService(db, events, get, profiles, printers.printer_id, rules=rules)
         collector = AutoPrintCollector(db, jobs, get)
         storage_scp.sink = collector
         worker = PrintWorker(db=db, events=events, jobs=jobs, printers=printers, imaging=imaging,
-                             collector=collector, settings_get=get)
+                             collector=collector, settings_get=get, license=license_service)
         def device_modality(device_id: int) -> str | None:
             d = devices.repo.get(device_id)
             return d.modality if d else None
 
         intake = PrintIntake(store=store, jobs=jobs, settings_get=get, device_modality=device_modality)
         print_scp = PrintSCP(db=db, settings_get=get, devices=devices.repo, events=events, intake=intake,
-                             printer_status=lambda: _printer_status(printers, worker))
+                             printer_status=lambda: _printer_status(printers, worker),
+                             licensed=lambda: license_service.allows("print_scp"))
         runtime = CoreRuntime(storage_scp=storage_scp, retention=retention, settings_get=get,
                               worker=worker, printers=printers, print_scp=print_scp, role=role)
         access = AdminAccess(db, events, lock_minutes=lambda: int(get("security.lock_minutes")))
@@ -186,11 +190,11 @@ def bootstrap(*, data_dir: str | os.PathLike[str] | None = None, role: str = "ui
             changes=ChangeHistoryRepository(db), stats=stats,
             dashboard=DashboardService(stats, settings, events,
                                        service_status_provider=runtime.service_statuses,
-                                       access=access),
+                                       access=access, license=license_service),
             devices=devices, store=store, storage_scp=storage_scp, retention=retention,
             access=access, runtime=runtime,
             imaging=imaging, profiles=profiles, printers=printers, jobs=jobs, worker=worker,
-            print_scp=print_scp, rules=rules,
+            print_scp=print_scp, rules=rules, license=license_service,
             schema_version=schema, applied_migrations=applied,
         )
         settings.subscribe(runtime.on_settings_changed)

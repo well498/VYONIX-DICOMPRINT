@@ -48,7 +48,8 @@ class DashboardSnapshot:
 class DashboardService:
     def __init__(self, stats: StatsRepository, settings: SettingsService,
                  events: EventRepository,
-                 service_status_provider=None, access=None) -> None:
+                 service_status_provider=None, access=None, license=None) -> None:
+        self.license = license
         self.stats = stats
         self.settings = settings
         self.events = events
@@ -66,9 +67,17 @@ class DashboardService:
                                                      else "Não configurada")
 
         alerts: list[Alert] = [Alert("warning", brand.CLINICAL_DISCLAIMER)]
-        if not self.stats.active_license():
-            alerts.append(Alert("info", "Licença não ativada. O licenciamento offline será "
-                                        "disponibilizado na Fase 8."))
+        if self.license is not None:
+            lst = self.license.status()
+            if lst.state.value != "valid":
+                level = "warning" if self.license.enforced else "info"
+                alerts.append(Alert(level, f"Licença: {lst.message} {self.license.policy_text()}"))
+            elif lst.expires_at is not None:
+                days = (lst.expires_at - utc_now()).days
+                if days <= 30:
+                    alerts.append(Alert("warning", f"A licença vence em {max(days, 0)} dia(s). Solicite a renovação."))
+        elif not self.stats.active_license():
+            alerts.append(Alert("info", "Licença não ativada."))
         if self.stats.devices_total() == 0:
             alerts.append(Alert("info", "Nenhum equipamento cadastrado. Cadastre em Equipamentos DICOM."))
         if self.access is not None and not self.access.has_password():
@@ -115,5 +124,5 @@ def _not_implemented_status(_settings) -> list[ServiceStatus]:
     return [
         ServiceStatus("DICOM Storage SCP", ServiceState.STOPPED, "sem provedor de estado"),
         ServiceStatus("DICOM Print SCP", ServiceState.STOPPED, "sem provedor de estado"),
-        ServiceStatus("Serviço Windows", ServiceState.NOT_IMPLEMENTED, "Previsto na Fase 7"),
+        ServiceStatus("Serviço Windows", ServiceState.STOPPED, "sem provedor de estado"),
     ]

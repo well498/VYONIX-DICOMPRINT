@@ -90,7 +90,9 @@ class PrintersPage(Page):
             papers = ", ".join(p.paper_sizes[:4]) + (f" (+{len(p.paper_sizes) - 4})" if len(p.paper_sizes) > 4 else "")
             rows.append((p.name, "Arquivo PDF" if p.backend == "pdf" else "Windows", p.driver, p.port, default or "—",
                          papers or "—", ", ".join(map(str, p.resolutions)) or "—",
-                         {True: "Sim", False: "Não"}.get(p.color, "—"), p.status or "—", local_time(p.last_seen_at)))
+                         {True: "Sim", False: "Não"}.get(p.color, "—"),
+                         (p.status or "—") + (" · o serviço Windows NÃO vê esta impressora" if p.service_visible is False
+                                              else ""), local_time(p.last_seen_at)))
         fill_table(self.table, rows, [p.name for p in printers])
         errors = self.ctx.printers.backend_errors
         if errors.get("windows"):

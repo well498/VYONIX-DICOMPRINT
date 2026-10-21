@@ -129,7 +129,7 @@ jobs:
           $notes = @"
           VYONIX DICOM Print $v — versão de desenvolvimento para homologação ($($s.phase)).
           Requisito mínimo: Windows 10 64 bits (1809) ou Windows 11.
-          NÃO validada para uso clínico. Sem declaração de conformidade DICOM.
+          NÃO validada para uso clínico. Declaração de conformidade DICOM de homologação incluída.
 
           Instalador: $($s.installer)
           SHA-256: $($s.installer_sha256)

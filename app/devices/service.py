@@ -33,7 +33,9 @@ EXPORT_FORMAT = "vyonix-devices"
 
 class DeviceService:
     def __init__(self, db: Database, events: EventRepository,
-                 echo: Callable[[Device], dict[str, Any]] | None = None) -> None:
+                 echo: Callable[[Device], dict[str, Any]] | None = None,
+                 device_limit: Callable[[], int | None] | None = None) -> None:
+        self.device_limit = device_limit
         self.db = db
         self.repo = DeviceRepository(db)
         self.history = ChangeHistoryRepository(db)
@@ -105,8 +107,21 @@ class DeviceService:
         return clean
 
     # ------------------------------------------------------------------- escrita
+    def _check_limit(self) -> None:
+        limit = self.device_limit() if self.device_limit else None
+        if limit is None:
+            return
+        n = self.db.connection().execute(
+            "SELECT COUNT(*) FROM devices WHERE active = 1 AND authorized = 1").fetchone()[0]
+        if n >= limit:
+            from app.core.errors import ValidationError
+            raise ValidationError(f"A licença permite {limit} equipamento(s) autorizado(s). Bloqueie outro "
+                                  "equipamento ou amplie a licença.")
+
     def create(self, data: Mapping[str, Any], *, actor: str, authorized: bool = False) -> Device:
         clean = self.validate(data)
+        if authorized:
+            self._check_limit()
         with self.db.transaction():
             device_id = self.repo.insert(Device(id=None, authorized=authorized, **clean))
             self.history.record(entity_type="device", entity_id=str(device_id), field="created",
@@ -137,6 +152,8 @@ class DeviceService:
 
     def set_authorized(self, device_id: int, authorized: bool, *, actor: str) -> Device:
         d = self.get(device_id)
+        if authorized and not d.authorized:
+            self._check_limit()
         if d.authorized != authorized:
             with self.db.transaction():
                 self.repo.update_fields(device_id, {"authorized": authorized})

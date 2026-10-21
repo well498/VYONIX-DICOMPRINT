@@ -28,7 +28,7 @@ A barra inferior mostra a pasta de dados em uso e o aviso de que a versão não 
 | Perfis de impressão | Disponível |
 | Histórico | Disponível |
 | Configurações | Disponível |
-| Licença | Disponível (somente identificação da instalação) |
+| Licença | Disponível |
 | Sobre o VYONIX | Disponível |
 
 As páginas não implementadas mostram o escopo planejado e não executam nenhuma operação.
@@ -168,7 +168,21 @@ Os horários são mostrados no fuso horário do computador e armazenados em UTC.
 
 ## 9. Licença
 
-Mostra o **ID da instalação**, que será usado para solicitar a licença quando o licenciamento offline for entregue (Fase 8). Nesta versão nenhum recurso é bloqueado por licença.
+O licenciamento é **offline**: o VYONIX nunca se comunica com a internet.
+
+1. Clique em **Gerar código de solicitação** e envie o código (botões **Copiar** ou **Salvar em arquivo…**) ao fornecedor. O código contém o ID da instalação, um identificador do computador (hash, sem números de série), a versão e o nome da unidade — nenhum dado de paciente.
+2. O fornecedor devolve um arquivo `.vylic`, assinado digitalmente (Ed25519).
+3. Clique em **Instalar licença…** (exige a senha de administrador) e escolha o arquivo.
+
+A página mostra a edição, o licenciado, a validade, os recursos e o limite de equipamentos. A licença vale só para esta instalação e este computador: reinstalar o Windows ou copiar o VYONIX para outro computador exige nova licença. Um arquivo alterado, de outra instalação ou com o relógio do Windows atrasado é recusado e registrado no Histórico. O Dashboard avisa 30 dias antes do vencimento.
+
+| Edição | Recursos | Equipamentos autorizados |
+|---|---|---|
+| Essencial | Recepção DICOM, impressão e fila | 2 |
+| Profissional | + Impressão DICOM (Print SCP) e regras automáticas | 10 |
+| Corporativo | Todos | sem limite |
+
+Sem licença válida, a versão comercial funciona em **modo de avaliação**: tudo funciona, mas as páginas impressas recebem no rodapé a marca "NÃO LICENCIADO — USO PARA AVALIAÇÃO". **Nesta versão de homologação a licença é verificada e exibida, mas nada é limitado.**
 
 ## 10. Sobre o VYONIX
 

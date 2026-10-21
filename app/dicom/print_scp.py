@@ -47,7 +47,9 @@ class _Assoc:
 class PrintSCP:
     def __init__(self, *, db: Database, settings_get: Callable[[str], Any], devices: DeviceRepository,
                  events: EventRepository, intake: PrintIntake,
-                 printer_status: Callable[[], tuple[str, str]]) -> None:
+                 printer_status: Callable[[], tuple[str, str]],
+                 licensed: Callable[[], bool] | None = None) -> None:
+        self.licensed = licensed or (lambda: True)
         self.db = db
         self.get = settings_get
         self.devices = devices
@@ -69,6 +71,9 @@ class PrintSCP:
                 return
             if not self.get("dicom.print.enabled"):
                 self._state, self._detail = ServiceState.STOPPED, "desativado em Configurações"
+                return
+            if not self.licensed():
+                self._state, self._detail = ServiceState.STOPPED, "não incluído na licença desta instalação"
                 return
             from pynetdicom import AE, evt
             ae_title = self.get("dicom.print.ae_title")

@@ -22,8 +22,8 @@ _STATE = {
 class ServerPage(Page):
     def __init__(self, ctx, parent: QWidget | None = None) -> None:
         super().__init__("Servidor DICOM",
-                         "Recepção de imagens (Storage SCP) e impressão DICOM (Print SCP). Até a Fase 7, os "
-                         "servidores funcionam enquanto o VYONIX estiver aberto.", parent)
+                         "Recepção de imagens (Storage SCP) e impressão DICOM (Print SCP). Com o serviço Windows "
+                         "instalado, os servidores rodam no serviço e esta tela os comanda.", parent)
         self.ctx = ctx
         self.status = banner("")
         self.status.hide()

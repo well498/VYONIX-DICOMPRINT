@@ -320,7 +320,9 @@ def validate_rule(rule: Rule, profile_exists: Callable[[int], bool] | None = Non
 
 class RuleService:
     def __init__(self, db: Database, events: EventRepository,
-                 profile_exists: Callable[[int], bool] | None = None) -> None:
+                 profile_exists: Callable[[int], bool] | None = None,
+                 allowed: Callable[[], bool] | None = None) -> None:
+        self.allowed = allowed or (lambda: True)
         self.db = db
         self.events = events
         self.history = ChangeHistoryRepository(db)
@@ -337,6 +339,9 @@ class RuleService:
         return Rule.from_row(r)
 
     def evaluate(self, facts: dict[str, Any]) -> Evaluation:
+        if not self.allowed():
+            return Evaluation(explanation=["Regras automáticas não incluídas na licença desta instalação: valem "
+                                           "perfis e padrões do sistema."])
         return evaluate(self.list(include_inactive=False), facts)
 
     def save(self, rule: Rule, *, actor: str) -> Rule:

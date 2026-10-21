@@ -353,6 +353,18 @@ def _smoke(app: QApplication, window, ctx, result: dict, translations) -> None:
         return (f"{len(names)} impressora(s); página de teste via GDI/spooler em '{target.name}' gerou "
                 f"{out.stat().st_size // 1024} KB (estado: {job.state.label})")
 
+    def licensing() -> str:
+        from app.licensing import ed25519
+        from app.licensing.license import parse_request
+        pk = bytes.fromhex("d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a")
+        sig = bytes.fromhex("e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555fb8821590a33bac"
+                            "c61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b")
+        if not ed25519.verify(pk, b"", sig) or ed25519.verify(pk, b"x", sig):
+            raise RuntimeError("verificação Ed25519 incorreta (vetor RFC 8032)")
+        req = parse_request(ctx.license.request_code())
+        st = ctx.license.status(refresh=True)
+        return f"Ed25519 OK; código de solicitação válido (computador {req['machine_id'][:8]}…); estado {st.state.value}"
+
     def logs() -> str:
         if not ctx.log_file.exists() or ctx.log_file.stat().st_size == 0:
             raise RuntimeError("arquivo de log vazio")
@@ -382,7 +394,7 @@ def _smoke(app: QApplication, window, ctx, result: dict, translations) -> None:
                      ("dashboard", dashboard), ("configurações", settings_roundtrip),
                      ("temas", themes), ("histórico", history), ("servidor DICOM", dicom_server),
                      ("codecs de imagem", image_codecs), ("calibração", calibration_preview),
-                     ("impressão DICOM (Print SCP)", print_scp), ("impressão em PDF (fila)", print_pdf), ("impressoras do Windows", windows_printers),
+                     ("impressão DICOM (Print SCP)", print_scp), ("impressão em PDF (fila)", print_pdf), ("impressoras do Windows", windows_printers), ("licenciamento", licensing),
                      ("logs", logs)):
         check(name, fn)
 

@@ -119,3 +119,39 @@ class ServiceHostTest(TempDirTestCase):
         self.assertEqual(st.state.value, "stopped")
         self.assertIn("nesta janela", st.detail)
         self.host = type("Noop", (), {"stop": lambda self: None})()
+
+
+class PrinterVisibilityTest(TempDirTestCase):
+    """O serviço (Sistema Local) não sobrescreve a impressora padrão vista pelo usuário."""
+
+    def backend(self, names, default=None):
+        from app.core.contracts import PrinterInfo
+
+        class B:
+            name = "windows"
+
+            def list_printers(self_inner):
+                return [PrinterInfo(name=n, driver="drv", is_default=n == default, paper_sizes=("A4",),
+                                    resolutions_dpi=(300,), supports_color=False, status_text="pronta") for n in names]
+        return B()
+
+    def test_service_keeps_user_default_and_flags_invisible_printers(self):
+        from app.bootstrap import bootstrap
+        from app.printing.service import PrinterService
+        ctx = bootstrap(data_dir=self.tmp / "d")
+        try:
+            ui = PrinterService(ctx.db, ctx.events, [self.backend(["Laser Sala", "Rede Usuario"], "Laser Sala")],
+                                ctx.settings.get)
+            ui.refresh()
+            svc = PrinterService(ctx.db, ctx.events, [self.backend(["Laser Sala"])], ctx.settings.get, role="service")
+            svc.refresh()
+            recs = {p.name: p for p in svc.list()}
+            self.assertTrue(recs["Laser Sala"].is_default)            # visão do usuário preservada
+            self.assertTrue(recs["Laser Sala"].service_visible)
+            self.assertFalse(recs["Rede Usuario"].service_visible)
+            self.assertTrue(recs["Rede Usuario"].available)
+            self.assertEqual(svc.resolve(None), "Laser Sala")
+            ui.refresh()                                               # a interface não apaga a marca do serviço
+            self.assertFalse({p.name: p for p in ui.list()}["Rede Usuario"].service_visible)
+        finally:
+            ctx.close()

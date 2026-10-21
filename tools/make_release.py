@@ -36,6 +36,7 @@ DOCS = [
     ("Manual_Usuario", "Manual do Usuário"),
     ("Guia_Configuracao_DICOM", "Guia de Configuração DICOM"),
     ("Notas_da_Versao", "Notas da Versão"),
+    ("Declaracao_Conformidade_DICOM", "Declaração de Conformidade DICOM"),
 ]
 
 
@@ -162,7 +163,7 @@ def validation_report(version: str, commit: str, build_date: str, installer: Pat
         "| Aparência visual da interface | O smoke test verifica funcionamento, não a aparência. |",
         "| Recepção e impressão DICOM com equipamentos reais | Verificadas apenas com equipamento simulado (pynetdicom). |",
         "| Impressão em papel em impressoras físicas | Não verificada: o CI usa a impressora Microsoft Print to PDF. |",
-        "| Licenciamento | Funcionalidade não implementada nesta versão (Fase 8). |",
+        "| Licenciamento com chave de produção | Testado com chave de teste; a chave de produção deve ser gerada pelo fornecedor. |",
         "| Assinatura digital de código | Não aplicada nesta compilação. |",
     ]
     return "\n".join(lines) + "\n"
@@ -173,7 +174,7 @@ Precisão em cada imagem.
 ======================================================================
 
 VERSÃO DE DESENVOLVIMENTO PARA HOMOLOGAÇÃO ({phase}).
-NÃO VALIDADA PARA USO CLÍNICO. SEM DECLARAÇÃO DE CONFORMIDADE DICOM.
+NÃO VALIDADA PARA USO CLÍNICO. Declaração de conformidade DICOM de homologação incluída.
 
 Conteúdo
   Instalador\\{installer}
@@ -181,6 +182,7 @@ Conteúdo
   Documentacao\\Manual_Usuario.pdf
   Documentacao\\Guia_Configuracao_DICOM.pdf
   Documentacao\\Notas_da_Versao.pdf
+  Documentacao\\Declaracao_Conformidade_DICOM.pdf
   Testes\\Relatorio_de_Validacao.pdf
   Integridade\\SHA256SUMS.txt
 

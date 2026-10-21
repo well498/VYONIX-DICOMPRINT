@@ -172,7 +172,8 @@ DEFINITIONS: tuple[SettingDef, ...] = (
 
     SettingDef("retention.images_days", "Reter imagens recebidas (dias)", "retention", "int", 30,
                validator=v.int_range(1, 3650, "Retenção de imagens"), minimum=1, maximum=3650,
-               help="Define a política de retenção (LGPD). A remoção automática entra na Fase 2."),
+               help="Política de retenção (LGPD): imagens e PDFs gerados mais antigos são removidos "
+                    "automaticamente, exceto os ligados a trabalhos não concluídos."),
     SettingDef("retention.events_days", "Reter eventos (dias)", "retention", "int", 365,
                validator=v.int_range(30, 3650, "Retenção de eventos"), minimum=30, maximum=3650),
 

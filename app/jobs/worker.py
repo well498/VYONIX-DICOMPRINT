@@ -131,7 +131,9 @@ def _instance_number(path: str) -> int:
 
 class PrintWorker:
     def __init__(self, *, db: Database, events: EventRepository, jobs: JobService, printers: PrinterService,
-                 imaging, collector: AutoPrintCollector, settings_get: Callable[[str], Any]) -> None:
+                 imaging, collector: AutoPrintCollector, settings_get: Callable[[str], Any],
+                 license=None) -> None:
+        self.license = license
         self.db = db
         self.events = events
         self.jobs = jobs
@@ -358,6 +360,9 @@ class PrintWorker:
         if job.device_name or job.source_ae:
             parts.append(job.device_name or job.source_ae)
         footer = f"Trabalho #{job.id}"
+        if self.license is not None and self.license.evaluation_mode():
+            from app.licensing.license import EVALUATION_MARK
+            footer = f"{EVALUATION_MARK} · {footer}"
         if resolved.values.get("patient_info") and items:
             patient = _patient_text(items[0]["file_path"])
             if patient:

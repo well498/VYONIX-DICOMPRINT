@@ -1,6 +1,6 @@
 """Núcleo em execução: serviços DICOM e tarefas periódicas.
 
-Na Fase 7 este mesmo objeto roda dentro do serviço Windows; até lá, dentro do processo da
+Roda dentro do serviço Windows (``role="service"``) ou, sem o serviço, dentro do processo da
 interface. Não importa Qt.
 """
 

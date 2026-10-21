@@ -2,7 +2,7 @@
 
 A calibração do perfil é ajustada na página Calibração (com pré-visualização); aqui ela é
 apenas exibida. Precedência na resolução: padrão do sistema < impressora < modalidade <
-equipamento < escolha manual (até o motor de regras da Fase 6).
+equipamento < regra automática < pedido DICOM Print < escolha manual.
 """
 
 from __future__ import annotations
