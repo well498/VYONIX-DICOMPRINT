@@ -40,7 +40,7 @@ jobs:
           pip install -r requirements-platform-dev.txt
           python -m playwright install --with-deps chromium
       - name: Versão do PostgreSQL
-        run: psql "$VYONIX_TEST_ADMIN_URL" -tAc "SHOW server_version"
+        run: echo "::notice title=PostgreSQL::$(psql "$VYONIX_TEST_ADMIN_URL" -tAc 'SHOW server_version')"
       - name: Interface web (TypeScript estrito + empacotamento)
         working-directory: web
         run: |
@@ -56,7 +56,7 @@ jobs:
           s = r if r.tag == "testsuite" else r.find("testsuite")
           tests, skipped = int(s.get("tests")), int(s.get("skipped"))
           fails = int(s.get("failures")) + int(s.get("errors"))
-          print(f"testes={tests} pulados={skipped} falhas={fails}")
+          print(f"::notice title=Plataforma::testes={tests} pulados={skipped} falhas={fails}")
           assert tests > 0 and skipped == 0 and fails == 0, "testes pulados ou com falha"
           PY
       - name: CLI (init, migrate, status) em banco novo

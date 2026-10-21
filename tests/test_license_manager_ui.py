@@ -56,7 +56,9 @@ class LicenseManagerUiTest(TempDirTestCase):
         from license_manager.ui.dialogs import ModulesBox, ModulesDialog
         mb = ModulesBox(requested=["core", "ris"], demo_days=15)
         vals = mb.values()
-        self.assertEqual((vals["core"]["kind"], vals["ris"]["kind"], vals["ris"]["days"]), ("contract", "demo", 15))
+        # pedido de demonstração: os módulos pedidos vêm como demonstração com o prazo pedido
+        self.assertEqual((vals["core"]["kind"], vals["ris"]["kind"], vals["ris"]["days"]), ("demo", "demo", 15))
+        self.assertEqual(ModulesBox(requested=["core", "ris"]).values()["ris"]["kind"], "contract")
         self.assertNotIn("print", vals)
         self.assertIsNone(ModulesBox().values())                 # desmarcado = licença v2
         ModulesDialog(lm, admin, lic, w)
