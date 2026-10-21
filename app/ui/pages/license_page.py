@@ -174,76 +174,6 @@ class ActivationDialog(QDialog):
         later.clicked.connect(self.reject)
         lay.addWidget(later)
 
-    def _render_subscription(self, st, online, installed, shist) -> None:
-        from app.licensing.subscription import CONNECTIVITY_LABELS
-        if installed is None or installed.type == "demo":
-            self.sub.setText("Sem licença comercial instalada.")
-        else:
-            pol = F.license_policy({"policy": installed.extra.get("policy")}
-                                   if installed.extra.get("policy") is not None else {})
-            lines = [f"Validação: <b>{F.VALIDATION_MODES[pol['validation']]}</b>"
-                     + (f" — {pol['server_url']}" if pol.get("server_url") else "")]
-            if st.commercial:
-                lines.append(f"Situação da assinatura: <b>{st.commercial_label}</b>")
-            if self.ctx.access.is_unlocked():               # detalhes comerciais: só o administrador
-                if st.admin_notice:
-                    lines.append(st.admin_notice)
-                lines.append(f"Aviso {pol['warn_days']} dia(s) antes do vencimento · carência de {pol['grace_days']} "
-                             "dia(s)" + (f" · tolerância sem contato com o servidor: {pol['online_tolerance_days']} "
-                                         "dia(s)" if pol["validation"] == "online" else ""))
-            elif st.commercial and st.commercial not in ("active", "reactivated"):
-                lines.append("Detalhes da assinatura: desbloqueie com a senha de administrador.")
-            if pol["validation"] == "online":
-                lines.append(f"Conectividade: <b>{CONNECTIVITY_LABELS.get(st.connectivity or 'pending', '—')}</b>"
-                             + (f" · último contato {local_time(online['last_ok'])}" if online.get("last_ok") else "")
-                             + (f" · última tentativa {local_time(online['last_attempt'])}"
-                                if online.get("last_attempt") else ""))
-            self.sub.setText("<br>".join(lines))
-        kinds = {"license": "Licença", "commercial": "Assinatura", "connectivity": "Conectividade"}
-        fill_table(self.shist, [(local_time(h["at"]), kinds.get(h["kind"], h["kind"]), h["from_state"] or "—",
-                                 h["to_state"], h["source"], h["actor"]) for h in shist])
-
-    def _check_online(self) -> None:
-        def run():
-            return self.ctx.license.check_online(actor=current_actor())
-
-        def done(r) -> None:
-            from app.licensing.subscription import CONNECTIVITY_LABELS
-            QMessageBox.information(self, "License Server", f"{CONNECTIVITY_LABELS.get(r.result, r.result)}.\n"
-                                    f"{r.message}")
-            self.refresh()
-
-        def fail(exc) -> None:
-            QMessageBox.warning(self, "License Server", str(exc))
-        run_async(run, done, fail)
-
-    def _import_auth(self) -> None:
-        def apply(text: str, actor: str) -> str:
-            st = self.ctx.license.import_authorization(text, actor=actor)
-            return f"Autorização aplicada. {st.state.label}" + (f" — assinatura {st.commercial_label}."
-                                                                 if st.commercial_label else ".")
-        self._import_doc("Importar autorização / renovação",
-                         "Autorização VYONIX (*.vyauth);;Todos os arquivos (*)", apply)
-
-    def _export_exams(self) -> None:
-        if not ensure_admin(self, self.ctx.access, "exportar exames"):
-            return
-        folder = QFileDialog.getExistingDirectory(self, "Pasta de destino da exportação")
-        if not folder:
-            return
-
-        def run():
-            return self.ctx.exporter.export(Path(folder), actor=current_actor())
-
-        def done(res) -> None:
-            QMessageBox.information(self, "Exportação", f"{res.studies} exame(s), {res.files} arquivo(s) exportados "
-                                    f"para\n{res.folder}" + (f"\n{len(res.missing)} arquivo(s) já removidos pela "
-                                                            "retenção." if res.missing else ""))
-
-        def fail(exc) -> None:
-            QMessageBox.warning(self, "Exportação", str(exc))
-        run_async(run, done, fail)
-
     def _demo(self) -> None:
         if start_demo(self, self.ctx):
             self.accept()
@@ -383,6 +313,76 @@ class LicensePage(Page):
                                for h in history])
         fill_table(self.time, [(local_time(t["at"]), t["kind"], f"{t['delta_s'] / 3600:+.2f} h" if t["delta_s"] else "",
                                 t["detail"] or "") for t in tlog])
+
+    def _render_subscription(self, st, online, installed, shist) -> None:
+        from app.licensing.subscription import CONNECTIVITY_LABELS
+        if installed is None or installed.type == "demo":
+            self.sub.setText("Sem licença comercial instalada.")
+        else:
+            pol = F.license_policy({"policy": installed.extra.get("policy")}
+                                   if installed.extra.get("policy") is not None else {})
+            lines = [f"Validação: <b>{F.VALIDATION_MODES[pol['validation']]}</b>"
+                     + (f" — {pol['server_url']}" if pol.get("server_url") else "")]
+            if st.commercial:
+                lines.append(f"Situação da assinatura: <b>{st.commercial_label}</b>")
+            if self.ctx.access.is_unlocked():               # detalhes comerciais: só o administrador
+                if st.admin_notice:
+                    lines.append(st.admin_notice)
+                lines.append(f"Aviso {pol['warn_days']} dia(s) antes do vencimento · carência de {pol['grace_days']} "
+                             "dia(s)" + (f" · tolerância sem contato com o servidor: {pol['online_tolerance_days']} "
+                                         "dia(s)" if pol["validation"] == "online" else ""))
+            elif st.commercial and st.commercial not in ("active", "reactivated"):
+                lines.append("Detalhes da assinatura: desbloqueie com a senha de administrador.")
+            if pol["validation"] == "online":
+                lines.append(f"Conectividade: <b>{CONNECTIVITY_LABELS.get(st.connectivity or 'pending', '—')}</b>"
+                             + (f" · último contato {local_time(online['last_ok'])}" if online.get("last_ok") else "")
+                             + (f" · última tentativa {local_time(online['last_attempt'])}"
+                                if online.get("last_attempt") else ""))
+            self.sub.setText("<br>".join(lines))
+        kinds = {"license": "Licença", "commercial": "Assinatura", "connectivity": "Conectividade"}
+        fill_table(self.shist, [(local_time(h["at"]), kinds.get(h["kind"], h["kind"]), h["from_state"] or "—",
+                                 h["to_state"], h["source"], h["actor"]) for h in shist])
+
+    def _check_online(self) -> None:
+        def run():
+            return self.ctx.license.check_online(actor=current_actor())
+
+        def done(r) -> None:
+            from app.licensing.subscription import CONNECTIVITY_LABELS
+            QMessageBox.information(self, "License Server", f"{CONNECTIVITY_LABELS.get(r.result, r.result)}.\n"
+                                    f"{r.message}")
+            self.refresh()
+
+        def fail(exc) -> None:
+            QMessageBox.warning(self, "License Server", str(exc))
+        run_async(run, done, fail)
+
+    def _import_auth(self) -> None:
+        def apply(text: str, actor: str) -> str:
+            st = self.ctx.license.import_authorization(text, actor=actor)
+            return f"Autorização aplicada. {st.state.label}" + (f" — assinatura {st.commercial_label}."
+                                                                 if st.commercial_label else ".")
+        self._import_doc("Importar autorização / renovação",
+                         "Autorização VYONIX (*.vyauth);;Todos os arquivos (*)", apply)
+
+    def _export_exams(self) -> None:
+        if not ensure_admin(self, self.ctx.access, "exportar exames"):
+            return
+        folder = QFileDialog.getExistingDirectory(self, "Pasta de destino da exportação")
+        if not folder:
+            return
+
+        def run():
+            return self.ctx.exporter.export(Path(folder), actor=current_actor())
+
+        def done(res) -> None:
+            QMessageBox.information(self, "Exportação", f"{res.studies} exame(s), {res.files} arquivo(s) exportados "
+                                    f"para\n{res.folder}" + (f"\n{len(res.missing)} arquivo(s) já removidos pela "
+                                                            "retenção." if res.missing else ""))
+
+        def fail(exc) -> None:
+            QMessageBox.warning(self, "Exportação", str(exc))
+        run_async(run, done, fail)
 
     def _demo(self) -> None:
         if start_demo(self, self.ctx):
