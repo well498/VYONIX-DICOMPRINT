@@ -46,7 +46,9 @@ class ReportTest(unittest.TestCase):
         self.addCleanup(self.db.close)
 
     def _run(self, steps):
-        ctx = Context(cfg=DeployConfig(), paths=self.paths, db=self.db, inventory={"os": {"caption": "Teste"}})
+        ctx = Context(cfg=DeployConfig(), paths=self.paths, db=self.db, inventory={"os": {"caption": "Teste"},
+                      "nics": [{"alias": "Ethernet", "ipv4": [{"ip": "10.0.0.5", "prefix": 24}], "gateway": [None],
+                                "dns": [None, "10.0.0.2"], "dhcp": "Enabled"}]})
         eng = Engine(ctx, lambda c, k: steps)
         rid = eng.new_run("install")
         eng.save_plan(rid, eng.plan("install"))

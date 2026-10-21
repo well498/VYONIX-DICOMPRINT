@@ -86,7 +86,7 @@ def collect(paths: Paths) -> dict[str, Any]:
             data[k] = as_list(data.get(k))
         for n in data["nics"]:
             for k in ("ipv4", "gateway", "dns"):
-                n[k] = as_list(n.get(k))
+                n[k] = [x for x in as_list(n.get(k)) if x not in (None, "")]
         for r in data["firewall_rules"]:
             r["remote"] = as_list(r.get("remote"))
     else:

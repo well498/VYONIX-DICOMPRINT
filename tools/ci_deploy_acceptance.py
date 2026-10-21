@@ -286,32 +286,6 @@ def main() -> int:
         assert query_service("VyonixCore") is None
         return p.stdout.strip().splitlines()[-2][:200]
 
-    @check("2.1", "Impeditivo detectado: espaço em disco insuficiente (cenário montado com arquivo de preenchimento)")
-    def _():
-        free = shutil.disk_usage("C:\\").free
-        filler = Path("C:\\vyx-ci-filler.bin")
-        size = free - 6 * 1024 ** 3
-        if size <= 0:
-            raise NotRun("disco já com menos de 6 GB livres")
-        sh(["fsutil", "file", "createnew", filler, str(size)], timeout=600)
-        try:
-            p = sh([dist / "vyonix-deploy.exe", "install", "--config", cfg_file, "--plan-only"], ok=(2,))
-        finally:
-            for _ in range(60):
-                try:
-                    filler.unlink(missing_ok=True)
-                    break
-                except OSError:
-                    time.sleep(2)
-            end = time.monotonic() + 120
-            while shutil.disk_usage("C:\\").free < free - 2 * 1024 ** 3 and time.monotonic() < end:
-                time.sleep(2)
-        after = shutil.disk_usage("C:\\").free
-        assert not filler.exists() and after >= free - 2 * 1024 ** 3, f"espaço não liberado: {after / 1024 ** 3:.1f} GB"
-        assert "Espaço livre" in p.stdout, p.stdout[-400:]
-        return (f"impeditivo de espaço livre apontado com {6} GB livres; arquivo removido "
-                f"({after / 1024 ** 3:.1f} GB livres de novo)")
-
     # ---------------------------------------------------------------- 2.5 instalação
     @check("2.5", "Instalação silenciosa pelo VYONIX_Setup_x64.exe com plano aprovado")
     def _():
@@ -607,6 +581,36 @@ $ap = $r | Get-NetFirewallApplicationFilter
             assert query_service("VyonixDicomPrint")["state"] == "Running"
             extra = "; DICOM Print em execução"
         return "serviços e regra removidos; cluster PostgreSQL, configuração e relatórios preservados" + extra
+
+    # ---------------------------------------------------------------- 2.1 (ao final, para não afetar os demais)
+    @check("2.1", "Impeditivo detectado: espaço em disco insuficiente (cenário montado com arquivo de preenchimento)")
+    def _():
+        free = shutil.disk_usage("C:\\").free
+        folder = Path("C:\\vyx-ci-filler")
+        folder.mkdir(exist_ok=True)
+        powershell("Add-MpPreference -ExclusionPath $A.p", {"p": str(folder)}, as_json=False, check=False)
+        filler = folder / "filler.bin"
+        size = free - 6 * 1024 ** 3
+        if size <= 0:
+            raise NotRun("disco já com menos de 6 GB livres")
+        sh(["fsutil", "file", "createnew", filler, str(size)], timeout=600)
+        try:
+            p = sh([dist / "vyonix-deploy.exe", "install", "--config", cfg_file, "--plan-only"], ok=(2,))
+        finally:
+            for _ in range(300):
+                try:
+                    filler.unlink(missing_ok=True)
+                    break
+                except OSError:
+                    time.sleep(2)
+            end = time.monotonic() + 300
+            while shutil.disk_usage("C:\\").free < free - 2 * 1024 ** 3 and time.monotonic() < end:
+                time.sleep(2)
+        after = shutil.disk_usage("C:\\").free
+        assert not filler.exists() and after >= free - 2 * 1024 ** 3, f"espaço não liberado: {after / 1024 ** 3:.1f} GB"
+        assert "Espaço livre" in p.stdout, p.stdout[-400:]
+        return (f"impeditivo de espaço livre apontado com {6} GB livres; arquivo removido "
+                f"({after / 1024 ** 3:.1f} GB livres de novo)")
 
     # ---------------------------------------------------------------- resultado
     for p in sorted(PATHS.reports.glob("*")) if PATHS.reports.exists() else []:

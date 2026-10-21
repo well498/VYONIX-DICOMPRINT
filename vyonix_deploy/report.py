@@ -209,6 +209,10 @@ def _fonts() -> tuple[str, str]:
     return "Helvetica", "Helvetica-Bold"
 
 
+def _join(v: Any) -> str:
+    return ", ".join(str(x) for x in (v or []) if x not in (None, "")) or "—"
+
+
 def _plain(v: Any) -> str:
     if isinstance(v, bool):
         return "sim" if v else "não"
@@ -298,7 +302,7 @@ def _render_pdf(path: Path, m: dict, inv: dict) -> None:
                   ["Computador", f"{comp.get('name')} · domínio {comp.get('domain') or '—'}"],
                   ["CPU / memória", f"{(i.get('cpu') or {}).get('name')} · {(i.get('cpu') or {}).get('logical')} "
                                     f"núcleos lógicos · {int(comp.get('memory') or 0) / 1024 ** 3:.1f} GB"],
-                  ["Discos", "; ".join(f"{d.get('drive')} {int(d.get('free') or 0) / 1024 ** 3:.0f} GB livres de "
+                  ["Discos", "; ".join(f"{d.get('drive')} {int(d.get('free') or 0) / 1024 ** 3:.1f} GB livres de "
                                        f"{int(d.get('size') or 0) / 1024 ** 3:.0f} GB" for d in i.get("disks") or [])],
                   ["Portas em escuta", ", ".join(map(str, i.get("listening_ports") or [])) or "—"],
                   ["Reinicialização pendente", "sim" if i.get("reboot_pending") else "não"]], [45, 135])]
@@ -310,8 +314,8 @@ def _render_pdf(path: Path, m: dict, inv: dict) -> None:
     story += [P("3. Rede", "h2"),
               table(["Interface", "Estado", "IPv4", "Gateway", "DNS", "DHCP"],
                     [[n.get("alias"), n.get("status"), ", ".join(f"{a.get('ip')}/{a.get('prefix')}"
-                                                                 for a in n.get("ipv4") or []),
-                      ", ".join(n.get("gateway") or []), ", ".join(n.get("dns") or []), n.get("dhcp")]
+                                                                 for a in n.get("ipv4") or [] if a),
+                      _join(n.get("gateway")), _join(n.get("dns")), n.get("dhcp")]
                      for n in i.get("nics") or []] or [["—"] * 6], [32, 18, 38, 30, 42, 20]),
               P("Escolha de rede: " + ("manter o IP atual (nenhuma alteração)" if m["config"]["network"]["mode"] == "keep"
                                        else f"IP fixo {m['config']['network'].get('ip')}/{m['config']['network'].get('prefix')}"),
