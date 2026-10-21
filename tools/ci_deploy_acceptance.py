@@ -342,7 +342,7 @@ $ap = $r | Get-NetFirewallApplicationFilter
 
     @check("2.3", "Pastas com ACL mínima (sem herança; só sistema, administradores e contas de serviço)")
     def _():
-        r = powershell(r"""$a = Get-Acl -LiteralPath $A.p
+        r = powershell(r"""$a = [System.IO.Directory]::GetAccessControl($A.p)
 [pscustomobject]@{ prot=[bool]$a.AreAccessRulesProtected; ids=@($a.Access | ForEach-Object { [string]$_.IdentityReference }) }""",
                        {"p": str(PATHS.data_dir)})
         ids = [x.lower() for x in as_list(r["ids"])]

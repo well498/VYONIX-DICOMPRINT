@@ -76,7 +76,10 @@ def powershell(script: str, args: dict | None = None, *, timeout: float = 180, a
     env = dict(os.environ)
     # Com o PowerShell 7 no PATH (pwsh), o PSModulePath herdado aponta para módulos incompatíveis com o
     # Windows PowerShell 5.1 (ex.: Get-Acl falha ao carregar). O powershell.exe recalcula o padrão.
-    env.pop("PSModulePath", None)
+    sysroot = os.environ.get("SystemRoot", r"C:\Windows")
+    pf = os.environ.get("ProgramW6432") or os.environ.get("ProgramFiles", r"C:\Program Files")
+    env["PSModulePath"] = os.pathsep.join([os.path.join(sysroot, "System32", "WindowsPowerShell", "v1.0", "Modules"),
+                                           os.path.join(pf, "WindowsPowerShell", "Modules")])
     env["VYX_PS_ARGS"] = json.dumps(args or {})
     exe = os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), "System32", "WindowsPowerShell", "v1.0",
                        "powershell.exe")

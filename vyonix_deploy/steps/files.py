@@ -93,7 +93,7 @@ class AclStep(Step):
         if not IS_WINDOWS or not self.path.exists():
             return {"path": str(self.path), "exists": self.path.exists()}
         r = powershell(r"""
-$acl = Get-Acl -LiteralPath $A.path
+$acl = [System.IO.Directory]::GetAccessControl($A.path)
 [pscustomobject]@{ protected=[bool]$acl.AreAccessRulesProtected; sddl=$acl.Sddl
   rules=@($acl.Access | Where-Object { -not $_.IsInherited } | ForEach-Object {
     $sid = try { $_.IdentityReference.Translate([Security.Principal.SecurityIdentifier]).Value } catch { [string]$_.IdentityReference }
@@ -140,13 +140,13 @@ foreach ($g in $A.grants) {
   $rule = New-Object System.Security.AccessControl.FileSystemAccessRule($sid, $g.rights, 'ContainerInherit,ObjectInherit', 'None', 'Allow')
   $acl.AddAccessRule($rule)
 }
-Set-Acl -LiteralPath $A.path -AclObject $acl
+[System.IO.Directory]::SetAccessControl($A.path, $acl)
 """, {"path": str(self.path), "grants": [{"sid": s, "rights": r} for s, r in self._sids()]}, as_json=False)
 
     def rollback(self, ctx: Context, before: dict) -> None:
         if IS_WINDOWS and before.get("sddl") and self.path.exists():
-            powershell(r"""$acl = Get-Acl -LiteralPath $A.path; $acl.SetSecurityDescriptorSddlForm($A.sddl);
-Set-Acl -LiteralPath $A.path -AclObject $acl""", {"path": str(self.path), "sddl": before["sddl"]}, as_json=False)
+            powershell(r"""$acl = [System.IO.Directory]::GetAccessControl($A.path); $acl.SetSecurityDescriptorSddlForm($A.sddl);
+[System.IO.Directory]::SetAccessControl($A.path, $acl)""", {"path": str(self.path), "sddl": before["sddl"]}, as_json=False)
 
     def how_to_check(self) -> str:
         return f"icacls \"{self.path}\""
@@ -185,7 +185,7 @@ class AclGrantStep(Step):
         if not IS_WINDOWS or not self.path.exists():
             return {"path": str(self.path), "present": False}
         sid = _sid_of(self.account)
-        r = powershell(r"""@((Get-Acl -LiteralPath $A.path).Access | Where-Object { -not $_.IsInherited -and $_.AccessControlType -eq 'Allow' } | ForEach-Object {
+        r = powershell(r"""@(([System.IO.Directory]::GetAccessControl($A.path)).Access | Where-Object { -not $_.IsInherited -and $_.AccessControlType -eq 'Allow' } | ForEach-Object {
   $s = try { $_.IdentityReference.Translate([Security.Principal.SecurityIdentifier]).Value } catch { '' }
   if ($s -eq $A.sid) { [string]$_.FileSystemRights } })""", {"path": str(self.path), "sid": sid})
         rights = as_list(r)
@@ -201,19 +201,19 @@ class AclGrantStep(Step):
 
     def apply(self, ctx: Context) -> None:
         powershell(r"""
-$acl = Get-Acl -LiteralPath $A.path
+$acl = [System.IO.Directory]::GetAccessControl($A.path)
 $sid = New-Object System.Security.Principal.SecurityIdentifier($A.sid)
 $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule($sid, $A.rights, 'ContainerInherit,ObjectInherit', 'None', 'Allow')))
-Set-Acl -LiteralPath $A.path -AclObject $acl""", {"path": str(self.path), "sid": _sid_of(self.account),
+[System.IO.Directory]::SetAccessControl($A.path, $acl)""", {"path": str(self.path), "sid": _sid_of(self.account),
                                                   "rights": RIGHTS[self.right]}, as_json=False)
 
     def rollback(self, ctx: Context, before: dict) -> None:
         if before.get("present"):
             return
         powershell(r"""
-$acl = Get-Acl -LiteralPath $A.path
+$acl = [System.IO.Directory]::GetAccessControl($A.path)
 $sid = New-Object System.Security.Principal.SecurityIdentifier($A.sid)
-$acl.PurgeAccessRules($sid); Set-Acl -LiteralPath $A.path -AclObject $acl""",
+$acl.PurgeAccessRules($sid); [System.IO.Directory]::SetAccessControl($A.path, $acl)""",
                    {"path": str(self.path), "sid": _sid_of(self.account)}, as_json=False)
 
 
