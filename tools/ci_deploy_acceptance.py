@@ -28,6 +28,12 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+for _s in (sys.stdout, sys.stderr):
+    try:
+        _s.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:  # noqa: BLE001
+        pass
+print("::notice title=Aceitação::script iniciado", flush=True)
 
 from vyonix_deploy.paths import default_paths  # noqa: E402
 from vyonix_deploy.steps.services import query_service  # noqa: E402

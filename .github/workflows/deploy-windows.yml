@@ -101,11 +101,19 @@ jobs:
 
       - name: Aceitação real no Windows
         shell: pwsh
+        env:
+          PYTHONIOENCODING: utf-8
+          PYTHONUTF8: "1"
         run: |
           $print = (Get-ChildItem dist\print\*.exe | Select-Object -First 1).FullName
           python tools/ci_deploy_acceptance.py --setup dist\installer-platform\VYONIX_Setup_x64.exe `
-            --dist dist\VyonixPlatform --print-setup "$print" --out dist\acceptance
-          if ($LASTEXITCODE -ne 0) { throw "critérios reprovados" }
+            --dist dist\VyonixPlatform --print-setup "$print" --out dist\acceptance 2>&1 | Tee-Object -FilePath dist\acceptance-console.txt
+          $code = $LASTEXITCODE
+          if ($code -ne 0) {
+            $tail = (Get-Content dist\acceptance-console.txt -Tail 40) -join "%0A"
+            Write-Host "::error title=Saída final da aceitação (código $code)::$tail"
+            throw "critérios reprovados"
+          }
 
       - name: Diagnóstico em caso de falha
         if: failure()
