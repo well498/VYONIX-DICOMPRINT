@@ -40,8 +40,14 @@ class EnforcementTest(TempDirTestCase):
         r = scu.echo("127.0.0.1", self.port, "VYONIX", calling_ae="CT_TESTE")
         self.assertFalse(r["ok"], r)
         self.assertIn("SUSPENSO", self.ctx.storage_scp.status().detail)
-        actions = [e.action for e in self.ctx.events.query(__import__(
-            "app.database.repositories.events_repo", fromlist=["EventFilter"]).EventFilter(limit=50))]
+        import time
+        from app.database.repositories.events_repo import EventFilter
+        end = time.monotonic() + 5
+        while time.monotonic() < end:          # o evento é gravado pela thread da associação, após a recusa
+            actions = [e.action for e in self.ctx.events.query(EventFilter(limit=50))]
+            if "assoc.unlicensed" in actions:
+                break
+            time.sleep(0.05)
         self.assertIn("assoc.unlicensed", actions)
         self.ctx.settings.update({"printing.copies": 2}, actor="t")
         lic.start_demo(actor="t")

@@ -60,12 +60,13 @@ A instalação silenciosa instala por padrão o serviço, o ícone na bandeja e 
 | Programa | `C:\Program Files\VYONIX\DICOM Print` |
 | Banco de dados, backups, imagens recebidas, PDFs gerados, cabeçalho/rodapé BMP (`print_templates`), logs do serviço | `C:\ProgramData\VYONIX\DICOM Print` |
 | Logs da interface e exportações de cada usuário | `%LOCALAPPDATA%\VYONIX\DICOM Print` |
+| Cofre do licenciamento (Installation ID, DEMO, horário confiável; registros selados, sem dados pessoais) | `C:\ProgramData\VYONIX\Licensing` e `HKLM\SOFTWARE\VYONIX\DICOM Print\State` — **não** removidos na desinstalação |
 
 Nenhum dado é gravado na pasta do programa. Antes de qualquer atualização do esquema do banco de dados, o VYONIX cria uma cópia de segurança em `C:\ProgramData\VYONIX\DICOM Print\backups`.
 
 ## 4. Atualização
 
-Execute o instalador da nova versão sobre a instalação existente. O programa é substituído; banco de dados, configurações, calibrações, artes de cabeçalho/rodapé e logs são preservados. Feche o VYONIX antes de atualizar — o instalador solicita o fechamento se ele estiver aberto, para o serviço antes de substituir os arquivos e o inicia de novo ao final. Durante a atualização (alguns segundos), os equipamentos não conseguem enviar; eles costumam tentar de novo automaticamente.
+Execute o instalador da nova versão sobre a instalação existente. O programa é substituído; banco de dados, configurações, calibrações, artes de cabeçalho/rodapé e logs são preservados. **A atualização preserva o VYONIX Installation ID, a ativação e a licença** — nenhuma nova licença é necessária. O instalador reconhece a atualização pela entrada de desinstalação do Windows, antes de copiar os arquivos. Feche o VYONIX antes de atualizar — o instalador solicita o fechamento se ele estiver aberto, para o serviço antes de substituir os arquivos e o inicia de novo ao final. Durante a atualização (alguns segundos), os equipamentos não conseguem enviar; eles costumam tentar de novo automaticamente.
 
 ### Backup e restauração
 
@@ -83,7 +84,15 @@ Feche a janela do VYONIX antes. O banco atual é guardado como `…-antes-da-res
 
 Use **Configurações → Aplicativos → Aplicativos instalados → VYONIX DICOM Print → Desinstalar**.
 
-O desinstalador para e remove o serviço Windows e pergunta se os dados também devem ser removidos. A resposta padrão é **Não**: os dados permanecem e são reaproveitados em uma reinstalação. Na desinstalação silenciosa, os dados são sempre preservados.
+O desinstalador para e remove o serviço Windows, **encerra a ativação local** e pergunta se os dados também devem ser removidos. A resposta padrão é **Não**: equipamentos, regras, calibrações e configurações permanecem e são reaproveitados em uma reinstalação. Na desinstalação silenciosa, os dados são sempre preservados.
+
+**Reinstalar exige nova licença:** a instalação seguinte recebe um novo VYONIX Installation ID e a licença anterior não é aceita — exporte nova solicitação (motivo "Desinstalação e reinstalação do VYONIX") e peça a reativação ao administrador. A demonstração de 5 dias não é concedida de novo: se estava em andamento, a contagem continua.
+
+## 5A. Ativação
+
+Na primeira abertura aparece a tela de ativação (demonstração de 5 dias, licença comercial, exportação da solicitação e Hardware ID). Até a ativação, a recepção DICOM e a impressão ficam suspensas. O instalador cria a chave do VYONIX no TPM 2.0, quando o computador tiver TPM habilitado. Veja *Licenciamento e Ativação*.
+
+O **VYONIX License Manager** (emissão de licenças) é um programa administrativo separado e **não faz parte deste instalador**.
 
 ## 6. Verificação após a instalação
 

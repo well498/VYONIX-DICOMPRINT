@@ -4,7 +4,8 @@
 
 Plataforma de gerenciamento de impressão de imagens médicas DICOM para Windows 10 e 11 (64 bits).
 
-> **Versão de homologação 1.0.0.dev9 — todas as 8 fases implementadas.**
+> **Versão 1.0.0 (revisão 2) para homologação — 8 fases, prompt atualizado e prompt definitivo (licenciamento,
+> TPM, DEMO, Time Integrity e VYONIX License Manager).**
 > Este software **não está validado para uso clínico**. A declaração de conformidade DICOM incluída é de homologação
 > e foi verificada com equipamento simulado (pynetdicom), não com equipamentos reais.
 
@@ -19,7 +20,13 @@ Plataforma de gerenciamento de impressão de imagens médicas DICOM para Windows
 | DICOM Print SCP (Basic Grayscale/Color Print Management) | ✅ Fase 5 | SCU simulado |
 | Regras automáticas com prioridade e simulação | ✅ Fase 6 | testes |
 | Serviço Windows, named pipe autenticado, bandeja | ✅ Fase 7 | serviço instalado, C-ECHO, impressão pelo serviço |
-| Licenciamento offline Ed25519 + `license_admin` | ✅ Fase 8 | vetores RFC 8032, fluxo completo |
+| Licenciamento v2: Hardware ID, Installation ID, TPM, Time Integrity, DEMO 120 h | ✅ | instalar/atualizar/desinstalar/reinstalar, DEMO, chave não oficial recusada |
+| VYONIX License Manager (portátil + instalador opcional), banco próprio | ✅ | autoteste dos dois modos com a solicitação real |
+
+Três artefatos: `VYONIX_DICOM_Print_Setup_v1.0.0_x64.exe` (clientes), `VYONIX_License_Manager.exe` e
+`VYONIX_License_Manager_Setup.exe` (somente administrador). O código compartilhado entre os dois aplicativos é só
+o protocolo [`vyonix_protocol/`](vyonix_protocol). Detalhes: `docs/release/Licenciamento_e_Ativacao.md` e
+`docs/release/Manual_License_Manager.md`.
 
 Não verificado: equipamentos DICOM reais, impressão em papel em impressoras físicas, Windows 10/11 limpos
 (o CI usa Windows Server 2022), assinatura digital do instalador.

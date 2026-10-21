@@ -65,6 +65,24 @@ A avaliação visual não comprova qualidade diagnóstica. Calibração densitom
 | M-42 | Reiniciar o computador com trabalhos na fila | Fila retomada sem impressão duplicada | | | | |
 | M-43 | Backup manual e restauração com `--restore-backup` | Configurações voltam ao estado do backup | | | | |
 
+## 6. Licenciamento em computadores reais
+
+| Nº | Procedimento | Esperado | Resultado | Data | Responsável | Observações |
+|---|---|---|---|---|---|---|
+| M-50 | Instalar em computador com TPM 2.0 habilitado; Licença → Visualizar Hardware ID | "Chave do TPM 2.0: considerado"; prova de posse disponível | | | | |
+| M-51 | Exportar solicitação, emitir no License Manager e ativar | License Manager mostra "assinada pelo TPM (prova verificada)"; licença válida | | | | |
+| M-52 | Copiar a pasta do programa e os dados para outro computador | Licença recusada (outro computador / TPM) | | | | |
+| M-53 | Substituir o disco do sistema (ou clonar para outro disco) | "disco do sistema substituído"; reativação pelo administrador funciona | | | | |
+| M-54 | Trocar a placa-mãe (assistência técnica) | "placa-mãe diferente"; reativação pelo administrador funciona | | | | |
+| M-55 | Desinstalar e reinstalar | Novo Installation ID; nova ativação exigida | | | | |
+| M-56 | Atualizar para uma versão nova (instalar por cima) | Licença, configurações e artes BMP preservadas | | | | |
+| M-57 | Com DEMO ativa: voltar a data do Windows 3 dias, abrir o VYONIX | Funções suspensas com o motivo; corrigir a data libera | | | | |
+| M-58 | Com DEMO ativa: adiantar a data 10 dias e voltar | Nenhum tempo extra; nada bloqueado após voltar | | | | |
+| M-59 | Mudar o fuso horário e o horário de verão | Nada bloqueado; contagem inalterada | | | | |
+| M-60 | Diagnóstico → revalidação no License Manager → importar | Funções liberadas; revalidação recusada se importada de novo | | | | |
+| M-61 | License Manager portátil em pen drive, em computador sem Python e sem o VYONIX | Abre, emite e exporta; dados ao lado do executável | | | | |
+| M-62 | Backup protegido do License Manager e restauração em outro computador | Dados restaurados; chave exige a frase-senha | | | | |
+
 ## Conclusão
 
 | Item | Preenchimento |

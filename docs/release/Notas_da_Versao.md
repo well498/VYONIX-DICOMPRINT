@@ -4,13 +4,29 @@
 
 ## Natureza desta versão
 
-Versão **{VERSION} para homologação**: as 8 fases do plano e o *prompt mestre atualizado* (equipamentos independentes, calibração visual avançada, teste 3 × 3, calibração progressiva e cabeçalho/rodapé BMP). A lista detalhada do que foi implementado e do que está pendente está em *Funcionalidades*.
+Versão **{VERSION} para homologação** (revisão 2): as 8 fases do plano, o *prompt mestre atualizado* (equipamentos independentes, calibração visual, teste 3 × 3, BMP) e o *prompt mestre definitivo* (licenciamento por computador e instalação, TPM, DEMO de 5 dias, VYONIX Time Integrity e o aplicativo administrativo **VYONIX License Manager**). A lista detalhada do que foi implementado e do que está pendente está em *Funcionalidades*.
+
+São **três artefatos independentes**: o instalador comercial `VYONIX_DICOM_Print_Setup_v1.0.0_x64.exe` (para os clientes) e, somente para o administrador, `VYONIX_License_Manager.exe` (portátil) e `VYONIX_License_Manager_Setup.exe` (instalação opcional). O License Manager não faz parte do instalador comercial.
 
 **Não validada para uso clínico.** A declaração de conformidade DICOM incluída é de homologação.
 
 ## Requisito mínimo
 
 Windows 10 64 bits (versão 1809 ou posterior) ou Windows 11. O executável usa Python 3.12 e Qt 6.
+
+## Novidades da revisão 2 (prompt mestre definitivo)
+
+- **VYONIX Hardware ID:** combinação normalizada do UUID SMBIOS, placa-mãe, identificador do Windows, disco do sistema e da chave do TPM 2.0 (placas de rede físicas como componente auxiliar). Nenhum número de série sai do computador: só resumos criptográficos.
+- **VYONIX Installation ID:** novo a cada instalação nova; preservado nas atualizações. O instalador distingue atualização de reinstalação pela entrada de desinstalação do Windows e pelo registro selado da instalação. A desinstalação encerra a ativação local; reinstalar exige nova licença.
+- **Licença v2** assinada com Ed25519 (biblioteca `cryptography`), vinculada a Product ID, Hardware ID, Installation ID, License ID, recursos, quantidade de equipamentos e de impressoras e validade (DEMO, mensal, trimestral, semestral, anual, permanente e personalizada).
+- **TPM 2.0:** chave não exportável criada pelo instalador no Microsoft Platform Crypto Provider; a licença que a inclui só é aceita se o TPM assinar um desafio novo (prova de posse). A solicitação de ativação também é assinada pelo TPM.
+- **Integridade de estado:** registros de ativação, DEMO e horário selados (HMAC com chave protegida pelo DPAPI da máquina) em três locais (banco, `ProgramData\VYONIX\Licensing`, registro do Windows). Alteração detectada → funções suspensas e revalidação administrativa.
+- **VYONIX Time Integrity:** linha do tempo confiável com relógio monotônico e identificação da inicialização do Windows; retrocesso além de 26 h suspende as funções até a correção ou a revalidação; adiantar e voltar o relógio não concede tempo; fuso horário, horário de verão e NTP não bloqueiam. Histórico temporal no banco.
+- **DEMO de 5 dias (120 horas corridas):** por computador, não pausa ao fechar ou reiniciar, não renova ao reinstalar ou limpar configurações; tempo restante e aviso nas últimas 24 h; DEMO assinada pelo License Manager para nova avaliação autorizada.
+- **Tela inicial** com *Iniciar demonstração de 5 dias*, *Ativar licença comercial*, *Exportar solicitação* e *Visualizar Hardware ID*; página Licença com diagnóstico exportável, revalidação, lista de revogação e vagas de impressoras.
+- **Política comercial:** sem licença válida ou DEMO ativa, recepção C-STORE, impressão, Print SCP e regras ficam **suspensos** (associações recusadas como transitórias; trabalhos aguardam na fila). Cadastros e configurações continuam editáveis e são preservados na ativação.
+- **VYONIX License Manager:** aplicativo administrativo independente (banco próprio): painel, clientes (com anonimização LGPD), produtos, importação de solicitações, emissão, renovação, **REATIVAR / EMITIR NOVA LICENÇA** com motivo e histórico do cliente, revogação e lista de revogação assinada, revalidação de horário/integridade, auditoria encadeada, backup cifrado (AES-256-GCM) e restauração, chaves de emissão cifradas com frase-senha e rotação, usuários com papéis (administrador, emissor, consulta).
+- **Papel personalizado** (largura × altura em mm, em Configurações → Impressão), além de A4, A3, Carta e Ofício.
 
 ## Novidades da versão 1.0.0
 
@@ -50,7 +66,7 @@ Windows 10 64 bits (versão 1809 ou posterior) ou Windows 11. O executável usa 
 - **Impressoras (Fase 4):** detecção das impressoras do Windows (driver, porta, papéis, resoluções, cor), impressora padrão do VYONIX, página de teste; impressora virtual **VYONIX PDF** que grava PDFs em tamanho real.
 - **Fila persistente (Fase 4):** impressão automática por série recebida, estados rastreados, chave de idempotência contra impressão duplicada, tentativas automáticas, recuperação após queda, reter, liberar, cancelar, tentar de novo, reprocessar e reimprimir; origem de cada configuração aplicada.
 - **Perfis de impressão (Fase 4):** associação a impressora, modalidade ou equipamento.
-- **Licenciamento offline (Fase 8):** código de solicitação (instalação + hash do computador), arquivo de licença assinado com Ed25519 e verificado com chave pública embutida (verificação reimplementada em Python puro e conferida com os vetores da RFC 8032), vínculo à instalação e ao computador, validade, detecção de relógio atrasado e de adulteração do registro, edições com recursos e limite de equipamentos, modo de avaliação com marca nas impressões (versões comerciais). Ferramenta de emissão `license_admin` separada, fora do pacote do cliente; a chave privada nunca é distribuída.
+- **Licenciamento offline (formato 2):** ver *Novidades da revisão 2* e o documento *Licenciamento e Ativação*. A ferramenta de linha de comando `license_admin` e o formato 1 (chave `hml-2026`) foram retirados: licenças antigas não são aceitas.
 - **Declaração de Conformidade DICOM** (homologação) dos serviços implementados.
 - **Serviço Windows (Fase 7):** `VyonixService.exe` (sem Qt) executa recepção, impressão DICOM e fila com a janela fechada e após reiniciar o computador; início automático atrasado e reinício em falhas; a interface se conecta ao serviço por *named pipe* local autenticado e comanda os servidores; configurações alteradas na interface são aplicadas pelo serviço sem reiniciá-lo; ícone na bandeja com o estado dos serviços; verificação `--service-check`.
 - **Regras automáticas (Fase 6):** condições por AE Title, equipamento, modalidade, unidade, setor, origem, descrição do estudo, parte do corpo, número de imagens, filme pedido, horário (inclusive faixas que cruzam a meia-noite) e dia da semana, sem diferenciar maiúsculas nem acentos; ações para impressora, papel, orientação, layout, cópias, resolução, margens, textos, perfil, retenção, prioridade e "parar"; prioridade ajustável; simulação que mostra regra a regra por que se aplica ou não e o resultado final com a origem de cada valor; histórico, importação e exportação. Precedência: padrão < perfil < regra < pedido DICOM Print < escolha manual.
@@ -58,8 +74,7 @@ Windows 10 64 bits (versão 1809 ou posterior) ou Windows 11. O executável usa 
 
 ## Não implementado nesta versão
 
-| Recurso | Fase prevista |
-|---|---|
+Nenhum recurso do plano ficou sem implementação. Itens que dependem de recursos externos (certificado de assinatura de código, equipamentos e impressoras reais, TPM físico no ambiente de testes, validação clínica) estão em *Funcionalidades* e no *Relatório de Validação*.
 
 ## Limitações conhecidas
 
@@ -74,7 +89,9 @@ Windows 10 64 bits (versão 1809 ou posterior) ou Windows 11. O executável usa 
 - Imagens multiframe com mais de 16 quadros: na impressão automática, sai só o primeiro quadro.
 - Testes de recepção feitos com equipamento simulado (pynetdicom). Interoperabilidade com equipamentos reais deve ser verificada na homologação.
 - Os testes automatizados foram executados em Windows Server 2022 no GitHub Actions. O teste em Windows 10 e 11 limpos, sem Python, deve ser feito na homologação (ver Relatório de Validação).
-- **Licença:** a versão 1.0.0 aplica a política de licenciamento. Sem licença válida, tudo funciona em modo de avaliação e as páginas saem com "NÃO LICENCIADO — USO PARA AVALIAÇÃO" no rodapé. Esta compilação aceita a chave de **homologação** (`hml-2026`); antes da distribuição comercial gere a chave de produção com `license_admin keygen`, inclua a chave pública e recompile.
+- **Licença:** sem licença válida ou DEMO ativa, as funções licenciadas ficam suspensas. Esta compilação aceita somente licenças assinadas pela chave `vyx-2026-01` (impressão digital 44DE:3181:0922:95DC:C478:0FDC); importe-a no License Manager. Para trocar de chave, siga a rotação descrita no *Manual do License Manager* (exige atualização oficial).
+- **Limites da proteção offline:** nenhuma proteção exclusivamente offline é absoluta. Sem TPM, a clonagem integral do disco/máquina virtual reproduz os identificadores; restaurar uma imagem completa do disco devolve o estado anterior da DEMO e do histórico temporal; um administrador local que apague simultaneamente todos os locais do cofre pode reiniciar a demonstração local (a DEMO assinada pelo License Manager evita isso). Relógio adiantado em mais de 26 h com o computador reiniciado nesse estado é indistinguível do tempo real e exige revalidação ao voltar a data. A revogação só tem efeito no computador depois de instalada a lista de revogação.
+- **TPM:** a camada TPM foi testada com TPM simulado (mesmo formato de chave do Windows) e, no Windows, depende de o computador ter TPM 2.0 habilitado; o runner do CI pode não ter TPM — ver o Relatório de Validação (LIC-02).
 - **Calibração:** as fórmulas de brilho, contraste e gama são parâmetros iniciais; a calibração é visual (não densitométrica) e não comprova qualidade diagnóstica.
 - **Restauração do banco:** feita pela linha de comando com o serviço parado (a interface mostra o procedimento).
 - Imagens coloridas são convertidas para tons de cinza na folha de teste 3 × 3.

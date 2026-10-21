@@ -16,7 +16,10 @@ O VYONIX é dividido em **dois processos** e **camadas independentes**:
 |---|---|---|
 | `VyonixService.exe` | Serviço Windows `VyonixDicomPrint`, sessão 0, conta Sistema Local (impressão GDI exige acesso às impressoras instaladas no computador) | DICOM Storage SCP, DICOM Print SCP, pipeline de imagens, motor de regras, fila e spooler. Funciona com a interface fechada. |
 | `Vyonix.exe` | Sessão interativa do usuário | Interface PySide6, bandeja do sistema, administração. Nunca roda dentro do serviço. |
-| `license_admin` | Máquina do fabricante, **nunca distribuída** | Emissão e assinatura (Ed25519) de licenças. Contém a chave privada. |
+| `VYONIX_License_Manager.exe` (`license_manager/`) | Computador do administrador, **nunca distribuído aos clientes**; portátil ou instalado | Aplicativo independente: clientes, produtos, emissão/renovação/reativação/revogação, auditoria, backup. Banco próprio; chaves Ed25519 cifradas com frase-senha. |
+
+O único código comum aos dois aplicativos é `vyonix_protocol/` (formatos e verificação). O VYONIX DICOM Print só
+verifica licenças (`app/licensing/`: Hardware ID, TPM, Installation ID, cofre selado, Time Integrity, DEMO).
 
 Sem o serviço instalado/em execução, o núcleo roda dentro do processo da interface (modo "monoprocesso") usando
 **exatamente os mesmos módulos** — a separação em serviço muda apenas *onde* os módulos são instanciados. Com o
@@ -217,15 +220,16 @@ vyonix/
 ├── tests/                       # unittest/pytest
 ├── docs/                        # arquitetura, conformidade DICOM, manuais
 ├── installer/                   # Inno Setup (Fase 8)
-├── license_admin/               # ferramenta de emissão — repositório/artefato separado (Fase 8)
+├── license_manager/             # VYONIX License Manager (aplicativo administrativo separado)
+├── vyonix_protocol/             # protocolo de licenciamento compartilhado (formatos, Ed25519, TPM)
 ├── requirements.txt
 ├── requirements-dev.txt
 ├── pyproject.toml
 └── README.md
 ```
 
-`license_admin/` fica neste repositório apenas como código-fonte; **o build do cliente nunca o empacota**
-e a chave privada nunca é versionada.
+`license_manager/` é compilado em um executável próprio (`LicenseManager.spec`); **o build do cliente nunca o
+empacota** (o `Vyonix.spec` interrompe a compilação se encontrar o módulo) e nenhuma chave privada é versionada.
 
 ---
 

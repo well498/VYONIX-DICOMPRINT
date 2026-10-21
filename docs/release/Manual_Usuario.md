@@ -231,21 +231,20 @@ Os horários são mostrados no fuso horário do computador e armazenados em UTC.
 
 ## 9. Licença
 
-O licenciamento é **offline**: o VYONIX nunca se comunica com a internet.
+O licenciamento é **offline**: o VYONIX nunca se comunica com a internet. Detalhes completos (políticas, DEMO, Time Integrity, limites) estão em *Licenciamento e Ativação*.
 
-1. Clique em **Gerar código de solicitação** e envie o código (botões **Copiar** ou **Salvar em arquivo…**) ao fornecedor. O código contém o ID da instalação, um identificador do computador (hash, sem números de série), a versão e o nome da unidade — nenhum dado de paciente.
-2. O fornecedor devolve um arquivo `.vylic`, assinado digitalmente (Ed25519).
-3. Clique em **Instalar licença…** (exige a senha de administrador) e escolha o arquivo.
+Na primeira abertura, sem licença, aparece a **tela de ativação** com quatro botões: **Iniciar demonstração de 5 dias**, **Ativar licença comercial**, **Exportar solicitação** e **Visualizar Hardware ID**. A mesma página fica no menu **Licença**, que mostra ainda:
 
-A página mostra a edição, o licenciado, a validade, os recursos e o limite de equipamentos. A licença vale só para esta instalação e este computador: reinstalar o Windows ou copiar o VYONIX para outro computador exige nova licença. Um arquivo alterado, de outra instalação ou com o relógio do Windows atrasado é recusado e registrado no Histórico. O Dashboard avisa 30 dias antes do vencimento.
+- a situação (licença válida, demonstração com o tempo restante, vencida, de outro computador, de outra instalação, revogada ou funções suspensas) e o motivo;
+- tipo, edição, cliente, License ID, emissão, vencimento, recursos e quantidades de equipamentos e impressoras autorizados;
+- VYONIX Hardware ID, VYONIX Installation ID, componentes considerados, situação do TPM e do Time Integrity;
+- **Exportar diagnóstico…**, **Importar revalidação…**, **Importar lista de revogação…** e **Remover licença**;
+- as impressoras que ocupam as vagas da licença (**Liberar vaga** com a senha de administrador);
+- o histórico das licenças desta instalação e o histórico de integridade temporal.
 
-| Edição | Recursos | Equipamentos autorizados |
-|---|---|---|
-| Essencial | Recepção DICOM, impressão e fila | 2 |
-| Profissional | + Impressão DICOM (Print SCP) e regras automáticas | 10 |
-| Corporativo | Todos | sem limite |
+Para ativar: **Exportar solicitação** (escolha o motivo) → envie o arquivo `.vyreq` ao administrador → importe o `.vylic` recebido em **Ativar licença comercial** (exige a senha de administrador, se definida).
 
-Sem licença válida, a versão comercial funciona em **modo de avaliação**: tudo funciona, mas as páginas impressas recebem no rodapé a marca "NÃO LICENCIADO — USO PARA AVALIAÇÃO". **Nesta versão de homologação a licença é verificada e exibida, mas nada é limitado.**
+Sem licença válida nem demonstração ativa, **recepção DICOM, impressão, Print SCP e regras ficam suspensos**; o restante do programa funciona e as configurações são preservadas. O Painel avisa antes do vencimento (15 dias; 24 horas na demonstração). Nas versões de desenvolvimento (`.dev`), a situação é exibida, mas nada é suspenso.
 
 ## 10. Sobre o VYONIX
 
