@@ -82,6 +82,9 @@ class WizardTest(unittest.TestCase):
             self.assertIn("items", plan)                             # Windows: plano gerado
         except urllib.error.HTTPError as exc:
             body = json.loads(exc.read())
+            if exc.code != 409:
+                ev = [dict(e) for e in d.db.x("SELECT level, message FROM events ORDER BY id DESC LIMIT 3")]
+                self.fail(f"HTTP {exc.code}: {body}; eventos: {ev}")
             self.assertEqual(exc.code, 409)                          # outros sistemas: impeditivo, nada alterado
             self.assertTrue(any(b["id"] == "os" for b in body["blockers"]))
 

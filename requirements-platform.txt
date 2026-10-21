@@ -8,4 +8,5 @@ alembic>=1.14,<2
 psycopg[binary]>=3.2,<4
 pydantic>=2.9,<3
 cryptography>=42
+reportlab>=4.2          # relatório PDF do VYONIX DEPLOY
 pywin32>=306; sys_platform == "win32"
