@@ -105,3 +105,43 @@ def _as_int(value: Any, label: str) -> int:
     if isinstance(value, str) and value.strip().lstrip("-").isdigit():
         return int(value.strip())
     raise ValidationError(f"{label} deve ser um número inteiro.")
+
+
+def validate_ip_restriction(value: Any) -> str:
+    """Restrição opcional de origem: IPs e/ou faixas CIDR separados por vírgula (ex.: 192.168.1.0/24)."""
+    if not isinstance(value, str) or not value.strip():
+        raise ValidationError("Restrição de IP vazia.")
+    items = []
+    for part in value.replace(";", ",").split(","):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            net = ipaddress.ip_network(part, strict=False)
+        except ValueError as exc:
+            raise ValidationError(f"IP ou faixa inválida: {part!r} (use 192.168.1.20 ou 192.168.1.0/24).") from exc
+        items.append(str(net.network_address) if net.num_addresses == 1 else str(net))
+    if not items:
+        raise ValidationError("Restrição de IP vazia.")
+    return ", ".join(items)
+
+
+def ip_allowed(address: str | None, restriction: str | None) -> bool:
+    if not restriction:
+        return True
+    try:
+        ip = ipaddress.ip_address((address or "").split("%")[0])
+    except ValueError:
+        return False
+    if ip.version == 6 and ip.ipv4_mapped:
+        ip = ip.ipv4_mapped
+    for part in restriction.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            if ip in ipaddress.ip_network(part, strict=False):
+                return True
+        except ValueError:
+            continue
+    return False

@@ -59,6 +59,8 @@ def sha256_file(path: Path) -> str:
 
 class InstanceStore:
     def __init__(self, db: Database, storage_dir: Path, temp_dir: Path) -> None:
+        # Ouvintes chamados após gravar uma instância nova: (instância, cabeçalho DICOM, origem).
+        self.listeners: list = []
         self.db = db
         self.storage_dir = storage_dir
         self.temp_dir = temp_dir
@@ -67,7 +69,7 @@ class InstanceStore:
         return self.storage_dir / study / series / f"{sop}.dcm"
 
     def store(self, encoded: bytes, peer: AssociationPeer, device_id: int | None, *,
-              max_bytes: int, retention_days: int | None = None) -> StoreOutcome:
+              max_bytes: int, retention_days: int | None = None, source: str = "storage") -> StoreOutcome:
         from pydicom import dcmread
         from pydicom.errors import InvalidDicomError
 
@@ -150,6 +152,11 @@ class InstanceStore:
                 sop_instance_uid=sop, sop_class_uid=sop_class, study_uid=study, series_uid=series,
                 modality=modality or "", transfer_syntax=ts, file_path=dest, file_sha256=digest,
                 peer=peer, device_id=device_id, received_at=received_at)
+            for listener in self.listeners:
+                try:
+                    listener(instance, ds, source)
+                except Exception:  # noqa: BLE001 - a instância já está gravada
+                    log.exception("Falha em ouvinte de instância recebida")
             return StoreOutcome(STATUS_SUCCESS, "Armazenada", instance=instance)
         except OSError as exc:
             log.exception("Falha de disco ao armazenar instância")

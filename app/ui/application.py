@@ -395,6 +395,41 @@ def _smoke(app: QApplication, window, ctx, result: dict, translations) -> None:
         return (f"Ed25519 (cryptography) OK; solicitação {req['hardware_id']} / {req['installation_id'][:13]}…; "
                 f"componentes: {comps}; estado {st.state.value}{note}")
 
+    def reception() -> str:
+        import ssl
+        import urllib.error
+        import urllib.request
+        started = False
+        rec = ctx.reception
+        port = rec.bound_port() or int(ctx.settings.get("reception.port"))
+        if not rec.running and ctx.paths.isolated:
+            import socket
+            with socket.socket() as sk:
+                sk.bind(("127.0.0.1", 0))
+                port = sk.getsockname()[1]
+            orig = rec.get
+            rec.get = lambda k: {"reception.port": port, "reception.bind_address": "127.0.0.1"}.get(k, orig(k))
+            rec.start()
+            rec.get = orig
+            started = True
+        try:
+            sslctx = ssl.create_default_context()
+            sslctx.check_hostname = False
+            sslctx.verify_mode = ssl.CERT_NONE                 # certificado próprio do computador
+            with urllib.request.urlopen(f"https://127.0.0.1:{port}/", context=sslctx, timeout=10) as r:
+                if b"VYONIX Reception" not in r.read():
+                    raise RuntimeError("página do painel não encontrada")
+            try:
+                urllib.request.urlopen(f"https://127.0.0.1:{port}/api/exams", context=sslctx, timeout=10)
+                raise RuntimeError("API acessível sem login")
+            except urllib.error.HTTPError as exc:
+                if exc.code != 401:
+                    raise RuntimeError(f"API sem login respondeu {exc.code}") from exc
+            return f"HTTPS na porta {port}; página OK; API exige login (401)"
+        finally:
+            if started:
+                rec.stop()
+
     def logs() -> str:
         if not ctx.log_file.exists() or ctx.log_file.stat().st_size == 0:
             raise RuntimeError("arquivo de log vazio")
@@ -425,7 +460,7 @@ def _smoke(app: QApplication, window, ctx, result: dict, translations) -> None:
                      ("temas", themes), ("histórico", history), ("servidor DICOM", dicom_server),
                      ("codecs de imagem", image_codecs), ("calibração", calibration_preview),
                      ("impressão DICOM (Print SCP)", print_scp), ("impressão em PDF (fila)", print_pdf), ("impressoras do Windows", windows_printers),
-                     ("calibração por equipamento", device_calibration),
+                     ("calibração por equipamento", device_calibration), ("VYONIX Reception", reception),
                      ("logs", logs)):
         check(name, fn)
 

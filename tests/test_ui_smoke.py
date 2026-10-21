@@ -36,8 +36,8 @@ class UiSmokeTest(TempDirTestCase):
         try:
             self.assertIn(theme.apply_theme(self.app, "dark"), ("dark",))
             w = MainWindow(ctx)
-            self.assertEqual(w.nav.count(), 12)
-            self.assertEqual(len(MENU), 12)
+            self.assertEqual(w.nav.count(), 13)
+            self.assertEqual(len(MENU), 13)
             for row in range(w.nav.count()):
                 w.nav.setCurrentRow(row)
                 wait_all(5000)
@@ -187,6 +187,38 @@ class UiSmokeTest(TempDirTestCase):
             self.assertIn("VYXH-", page.ids.text())
             dlg2 = ActivationDialog(ctx)
             self.assertFalse(dlg2.buttons["demo"].isEnabled())
+        finally:
+            ctx.close()
+
+    def test_dicom_rule_dialog_and_reception_page_real_qt(self):
+        """Adicionar Regra DICOM sem IP, impressão sob demanda, tela do técnico e página do Reception."""
+        from app.bootstrap import bootstrap
+        from app.ui.pages.devices_page import DestinationDialog, DeviceDialog
+        from app.ui.pages.reception_page import ReceptionPage
+        from app.ui.workers import wait_all
+        ctx = bootstrap(data_dir=self.tmp)
+        try:
+            dlg = DeviceDialog(None, ctx.devices, ctx=ctx)
+            dlg.editors["name"].setText("Tomografia 01")
+            dlg.editors["called_ae"].setText("VYONIX_CT01")
+            mode = dlg.print_editors["auto_print"]
+            mode.setCurrentIndex(mode.findData(False))
+            dlg.print_editors["brightness"].setValue(1.5)
+            dlg._save()
+            rule = dlg.result_device
+            self.assertIsNotNone(rule)
+            self.assertIsNone(rule.ip_address)
+            self.assertEqual(rule.called_ae, "VYONIX_CT01")
+            vals = ctx.device_settings.get(rule.id)
+            self.assertFalse(vals["auto_print"])
+            self.assertEqual(vals["brightness"], 1.5)
+            dd = DestinationDialog(None, ctx, rule)
+            self.assertEqual(dd.port, ctx.settings.get("dicom.storage.port"))
+            page = ReceptionPage(ctx)
+            page.refresh()
+            wait_all(5000)
+            self.app.processEvents()
+            self.assertIn("https://", page.url.text())
         finally:
             ctx.close()
 

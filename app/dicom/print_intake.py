@@ -73,7 +73,7 @@ class PrintIntake:
         for n, (pos, px) in enumerate(sorted(film.images, key=lambda x: x[0]), start=1):
             encoded = _sc_dataset(px, study_uid, series_uid, n, peer.calling_ae)
             outcome = self.store.store(encoded, peer, device_id, max_bytes=len(encoded) + 1,
-                                       retention_days=int(self.get("retention.images_days")))
+                                       retention_days=int(self.get("retention.images_days")), source="dicom_print")
             if outcome.instance is None:
                 raise RuntimeError(f"falha ao gravar a imagem do Image Box {pos + 1}: {outcome.message}")
             row = self.store.db.connection().execute("SELECT id FROM instances WHERE sop_instance_uid = ?",

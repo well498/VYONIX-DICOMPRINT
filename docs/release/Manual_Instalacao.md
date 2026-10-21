@@ -110,6 +110,10 @@ O código de saída `0` indica sucesso, e o arquivo indicado contém versão, pa
 | 2 | Falha de inicialização (por exemplo, banco de dados corrompido) |
 | 4 | A interface já está aberta nesta sessão |
 
+## 6A. VYONIX Reception
+
+O serviço do VYONIX publica o painel da recepção em **https://IP-do-computador:8443/** (rede local). Crie os usuários em *VYONIX Reception* no programa. O certificado HTTPS é gerado no primeiro uso em `C:\ProgramData\VYONIX\DICOM Print\reception\tls`; para eliminar o aviso do navegador, substitua `cert.pem` e `key.pem` pelo certificado da instituição e reinicie o serviço.
+
 ## 7. Firewall
 
 O VYONIX recebe imagens na porta configurada (padrão 11112). As portas padrão são 11112 (recepção) e 11113 (impressão DICOM). A opção de firewall do instalador cria regras de entrada para o `Vyonix.exe` e para o `VyonixService.exe` em redes privadas e de domínio e as remove na desinstalação. Detalhes no *Guia de Configuração DICOM*.

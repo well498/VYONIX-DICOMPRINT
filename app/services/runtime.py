@@ -18,14 +18,16 @@ RETENTION_INTERVAL_S = 6 * 3600
 RETENTION_FIRST_DELAY_S = 120
 PRINT_RESTART_KEYS = {"dicom.print.enabled", "dicom.print.ae_title", "dicom.print.port", "dicom.print.color",
                       "dicom.storage.bind_address", "dicom.storage.max_associations"}
+LISTENER_CHECK_S = 10
 SCP_RESTART_KEYS = {"dicom.storage.ae_title", "dicom.storage.bind_address", "dicom.storage.port",
                     "dicom.storage.max_associations"}
 
 
 class CoreRuntime:
     def __init__(self, *, storage_scp, retention, settings_get: Callable[[str], Any], worker=None,
-                 printers=None, print_scp=None, role: str = "ui", backups=None) -> None:
+                 printers=None, print_scp=None, role: str = "ui", backups=None, reception=None) -> None:
         self.role = role
+        self.reception = reception
         self.backups = backups
         self.storage_scp = storage_scp
         self.print_scp = print_scp
@@ -52,9 +54,16 @@ class CoreRuntime:
             self.storage_scp.start()
             if self.print_scp is not None:
                 self.print_scp.start()
+        if self.reception is not None:
+            try:
+                self.reception.start()
+            except Exception:  # noqa: BLE001
+                log.exception("VYONIX Reception não iniciou")
         self._stop.clear()
         self._thread = threading.Thread(target=self._periodic, name="vyonix-periodic", daemon=True)
         self._thread.start()
+        self._watch = threading.Thread(target=self._watch_listeners, name="vyonix-listeners", daemon=True)
+        self._watch.start()
 
     def stop(self) -> None:
         """Para tudo o que estiver rodando — inclusive serviços iniciados fora de ``start()``
@@ -66,6 +75,11 @@ class CoreRuntime:
         self.storage_scp.stop()
         if self.print_scp is not None:
             self.print_scp.stop()
+        if self.reception is not None:
+            try:
+                self.reception.stop()
+            except Exception:  # noqa: BLE001
+                log.exception("Falha ao parar o VYONIX Reception")
         if self.worker is not None:
             self.worker.stop()
         self.started = False
@@ -117,12 +131,38 @@ class CoreRuntime:
             detail += " · " + self.printers.status_summary()
         return ServiceStatus(name, ServiceState.RUNNING, detail)
 
+    def _watch_listeners(self) -> None:
+        """Regras DICOM com porta própria (criadas na interface ou importadas) abrem/fecham listeners
+        sem reiniciar o programa."""
+        from app.dicom.listeners import listener_ports
+        while not self._stop.wait(LISTENER_CHECK_S):
+            for scp, svc, key in ((self.storage_scp, "store", "dicom.storage.port"),
+                                  (self.print_scp, "print", "dicom.print.port")):
+                try:
+                    if scp is None or scp.status().state != ServiceState.RUNNING:
+                        continue
+                    want = listener_ports(scp.devices, svc, int(self.get(key)))
+                    if want != list(scp.ports):
+                        log.info("Portas DICOM alteradas pelas regras: %s -> %s", scp.ports, want)
+                        scp.restart()
+                except Exception:  # noqa: BLE001
+                    log.exception("Falha ao conferir as portas DICOM")
+            try:
+                self.storage_scp.db.close_thread_connection()
+            except Exception:  # noqa: BLE001
+                pass
+
     def _periodic(self) -> None:
         if self._stop.wait(RETENTION_FIRST_DELAY_S):
             return
         while True:
             try:
                 self.retention.purge()
+                if self.reception is not None:
+                    try:
+                        self.reception.exams.purge()
+                    except Exception:  # noqa: BLE001
+                        log.exception("Falha na retenção dos exames")
                 if self.backups is not None:
                     try:
                         self.backups.daily()

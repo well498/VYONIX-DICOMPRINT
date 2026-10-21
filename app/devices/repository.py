@@ -9,7 +9,8 @@ from app.database.connection import Database
 from app.utils.timeutil import utc_now_iso
 
 EDITABLE = ("name", "manufacturer", "model", "modality", "ae_title", "ip_address", "port", "site",
-            "department", "printer_id", "print_profile_id", "notes")
+            "department", "printer_id", "print_profile_id", "notes", "called_ae", "listen_port", "service")
+ANY_AE = "*"            # restrição de Calling AE Title não definida (qualquer origem)
 
 
 @dataclass
@@ -33,15 +34,27 @@ class Device:
     last_seen_at: str | None = None
     created_at: str | None = None
     updated_at: str | None = None
+    called_ae: str | None = None          # AE Title de destino (VYONIX) — seleciona a regra
+    listen_port: int | None = None        # porta do VYONIX; None = porta padrão do serviço
+    service: str = "store"                # store (C-STORE) | print (DICOM Print)
+
+    @property
+    def calling_restriction(self) -> str | None:
+        return None if (self.ae_title or ANY_AE) == ANY_AE else self.ae_title
+
+    def effective_port(self, default_port: int) -> int:
+        return int(self.listen_port or default_port)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
     @classmethod
     def from_row(cls, row: Any) -> "Device":
-        data = {f.name: row[f.name] for f in fields(cls)}
+        keys = row.keys()
+        data = {f.name: row[f.name] for f in fields(cls) if f.name in keys}
         data["authorized"] = bool(data["authorized"])
         data["active"] = bool(data["active"])
+        data["service"] = data.get("service") or "store"
         return cls(**data)
 
 
@@ -86,6 +99,12 @@ class DeviceRepository:
         return None, (f"conflito: o AE Title '{ae_title}' pertence a {len(cands)} equipamentos e nenhum está "
                       f"cadastrado com o IP {address}")
 
+    def routes(self, service: str) -> list[Device]:
+        """Regras DICOM ativas de um serviço (habilitadas ou não: a política informa o motivo)."""
+        rows = self.db.connection().execute(
+            "SELECT * FROM devices WHERE active = 1 AND service = ? ORDER BY id", (service,)).fetchall()
+        return [Device.from_row(r) for r in rows]
+
     def authorized_ae_titles(self) -> list[str]:
         return [r[0] for r in self.db.connection().execute(
             "SELECT ae_title FROM devices WHERE active = 1 AND authorized = 1")]
@@ -95,10 +114,11 @@ class DeviceRepository:
         cur = self.db.connection().execute(
             """INSERT INTO devices(name, manufacturer, model, modality, ae_title, ip_address, port,
                    site, department, printer_id, print_profile_id, authorized, active, notes,
-                   created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)""",
-            (d.name, d.manufacturer, d.model, d.modality, d.ae_title, d.ip_address, d.port, d.site,
-             d.department, d.printer_id, d.print_profile_id, int(d.authorized), d.notes, now, now))
+                   created_at, updated_at, called_ae, listen_port, service)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?)""",
+            (d.name, d.manufacturer, d.model, d.modality, d.ae_title or ANY_AE, d.ip_address, d.port, d.site,
+             d.department, d.printer_id, d.print_profile_id, int(d.authorized), d.notes, now, now,
+             d.called_ae, d.listen_port, d.service or "store"))
         return int(cur.lastrowid)
 
     def update_fields(self, device_id: int, values: dict[str, Any]) -> None:

@@ -16,7 +16,7 @@ from app.core.errors import SettingsValidationError, ValidationError
 from app.database.connection import Database
 from app.database.repositories.events_repo import Category, EventFilter, EventRecord, EventRepository
 from app.database.repositories.settings_repo import ChangeHistoryRepository
-from app.devices.repository import EDITABLE, Device, DeviceRepository
+from app.devices.repository import ANY_AE, EDITABLE, Device, DeviceRepository
 from app.security import validators as v
 from app.utils.logging_setup import get_logger
 
@@ -34,8 +34,10 @@ EXPORT_FORMAT = "vyonix-devices"
 class DeviceService:
     def __init__(self, db: Database, events: EventRepository,
                  echo: Callable[[Device], dict[str, Any]] | None = None,
-                 device_limit: Callable[[], int | None] | None = None) -> None:
+                 device_limit: Callable[[], int | None] | None = None,
+                 settings_get: Callable[[str], Any] | None = None) -> None:
         self.device_limit = device_limit
+        self.settings_get = settings_get
         self.db = db
         self.repo = DeviceRepository(db)
         self.history = ChangeHistoryRepository(db)
@@ -79,14 +81,28 @@ class DeviceService:
                 return text
             return _f
 
-        run("name", required_text("Nome", 120), optional=False)
-        run("ae_title", v.validate_ae_title, optional=False)
+        run("name", required_text("Nome da regra", 120), optional=False)
+        called = data.get("called_ae")
+        if called is None or (isinstance(called, str) and not called.strip()):
+            # Sem destino informado: AE padrão do serviço (compatível com cadastros da 1.0.0).
+            data = {**dict(data), "called_ae": self._default_ae(data.get("service") or "store")}
+        run("called_ae", v.validate_ae_title, optional=False)
+        calling = data.get("ae_title")
+        if calling in (None, "", "*") or (isinstance(calling, str) and not calling.strip()):
+            clean["ae_title"] = ANY_AE
+        else:
+            run("ae_title", v.validate_ae_title)
         for key, label, n in (("manufacturer", "Fabricante", 120), ("model", "Modelo", 120),
                               ("site", "Unidade", 120), ("department", "Setor", 120),
                               ("notes", "Observações", 2000)):
             run(key, v.free_text(n, label))
-        run("ip_address", v.validate_bind_address)
+        run("ip_address", v.validate_ip_restriction)
         run("port", v.validate_port)
+        run("listen_port", v.validate_port)
+        service = data.get("service") or "store"
+        if service not in ("store", "print"):
+            errors["service"] = "Serviço inválido (C-STORE ou DICOM Print)."
+        clean["service"] = service
         modality = data.get("modality")
         if modality in (None, ""):
             clean["modality"] = None
@@ -98,18 +114,43 @@ class DeviceService:
             value = data.get(key)
             clean[key] = int(value) if value not in (None, "") else None
 
-        if "ae_title" in clean and "ae_title" not in errors:
-            ip = clean.get("ip_address")
-            for other in self.repo.find_by_ae(clean["ae_title"]):
-                if other.id == device_id:
-                    continue
-                if not ip or not other.ip_address or other.ip_address == ip:
-                    errors["ae_title"] = (f"AE Title já usado por \"{other.name}\". Para dois equipamentos com o "
-                                          "mesmo AE Title, informe IPs diferentes nos dois cadastros.")
-                    break
+        if not errors:
+            self._check_route(clean, device_id, errors)
         if errors:
             raise SettingsValidationError(errors)
         return clean
+
+    def _default_ae(self, service: str) -> str:
+        get = self.settings_get
+        if get is None:
+            return "VYONIX" if service == "store" else "VYONIX_PRINT"
+        return str(get("dicom.storage.ae_title" if service == "store" else "dicom.print.ae_title"))
+
+    def default_port(self, service: str) -> int:
+        get = self.settings_get
+        if get is None:
+            return 11112 if service == "store" else 11113
+        return int(get("dicom.storage.port" if service == "store" else "dicom.print.port"))
+
+    def _check_route(self, clean: dict[str, Any], device_id: int | None, errors: dict[str, str]) -> None:
+        """Sem ambiguidade silenciosa (porta + Called AE + Calling AE) e sem conflito de portas entre serviços."""
+        from app.dicom import routing
+        svc = clean["service"]
+        cand = Device(id=device_id, name=clean["name"], ae_title=clean["ae_title"], called_ae=clean["called_ae"],
+                      listen_port=clean.get("listen_port"), service=svc, active=True,
+                      ip_address=clean.get("ip_address"))
+        dup = routing.conflicts(self.repo.routes(svc), cand, self.default_port(svc))
+        if dup:
+            errors["called_ae"] = (f"Já existe a regra “{dup[0].name}” com o mesmo AE Title de destino, porta e "
+                                   "Calling AE Title. Use outro AE Title de destino ou informe um Calling AE Title "
+                                   "(ou faixas de IP sem sobreposição) em Restrições de origem.")
+            errors["ae_title"] = errors["called_ae"]
+        other = "print" if svc == "store" else "store"
+        port = cand.effective_port(self.default_port(svc))
+        other_ports = {self.default_port(other)} | {r.listen_port for r in self.repo.routes(other) if r.listen_port}
+        if port in other_ports:
+            errors["listen_port"] = (f"A porta {port} é usada pelo serviço "
+                                     f"{'DICOM Print' if other == 'print' else 'C-STORE'}; escolha outra.")
 
     # ------------------------------------------------------------------- escrita
     def _check_limit(self) -> None:
@@ -124,9 +165,14 @@ class DeviceService:
                                   "equipamento ou amplie a licença.")
 
     def _match_import(self, item) -> Device | None:
-        cands = self.repo.find_by_ae(str(item.get("ae_title", "")))
-        ip = item.get("ip_address") or None
-        return next((d for d in cands if (d.ip_address or None) == ip), cands[0] if len(cands) == 1 else None)
+        svc = item.get("service") or "store"
+        called = str(item.get("called_ae") or "")
+        calling = item.get("ae_title") or ANY_AE
+        for d in self.repo.routes(svc):
+            if (d.called_ae or "") == called and (d.ae_title or ANY_AE) == calling and \
+                    (d.listen_port or None) == (item.get("listen_port") or None):
+                return d
+        return None
 
     def create(self, data: Mapping[str, Any], *, actor: str, authorized: bool = False) -> Device:
         clean = self.validate(data)
@@ -137,7 +183,7 @@ class DeviceService:
             self.history.record(entity_type="device", entity_id=str(device_id), field="created",
                                 old_value=None, new_value=clean, actor=actor)
             self.events.add(level="INFO", category=Category.DEVICE, action="device.create",
-                            message=f"Equipamento \"{clean['name']}\" cadastrado ({clean['ae_title']}).",
+                            message=f"Regra DICOM \"{clean['name']}\" criada (destino {clean['called_ae']}).",
                             device_id=device_id, actor=actor)
         self._notify()
         return self.get(device_id)
@@ -154,7 +200,7 @@ class DeviceService:
                     self.history.record(entity_type="device", entity_id=str(device_id), field=key,
                                         old_value=old, new_value=new, actor=actor)
                 self.events.add(level="INFO", category=Category.DEVICE, action="device.update",
-                                message=f"Equipamento \"{clean['name']}\" alterado.",
+                                message=f"Regra DICOM \"{clean['name']}\" alterada.",
                                 device_id=device_id, actor=actor,
                                 details={"fields": sorted(diff)})
             self._notify()
@@ -172,8 +218,8 @@ class DeviceService:
                                     actor=actor)
                 self.events.add(level="INFO" if authorized else "WARNING", category=Category.SECURITY,
                                 action="device.authorize" if authorized else "device.block",
-                                message=f"Equipamento \"{d.name}\" "
-                                        f"{'autorizado' if authorized else 'bloqueado'}.",
+                                message=f"Regra DICOM \"{d.name}\" "
+                                        f"{'habilitada' if authorized else 'desabilitada'}.",
                                 device_id=device_id, actor=actor)
             self._notify()
         return self.get(device_id)
@@ -191,8 +237,8 @@ class DeviceService:
             self.history.record(entity_type="device", entity_id=str(device_id), field=action,
                                 old_value=d.to_dict(), new_value=None, actor=actor)
             self.events.add(level="INFO", category=Category.DEVICE, action=f"device.{action}",
-                            message=f"Equipamento \"{d.name}\" "
-                                    f"{'desativado (possui histórico)' if action == 'deactivated' else 'excluído'}.",
+                            message=f"Regra DICOM \"{d.name}\" "
+                                    f"{'desativada (possui histórico)' if action == 'deactivated' else 'excluída'}.",
                             device_id=device_id if action == "deactivated" else None, actor=actor)
         self._notify()
         return action
@@ -238,6 +284,10 @@ class DeviceService:
         created = updated = 0
         errors: dict[str, str] = {}
         items = payload.get("devices") or []
+        default_ae = self.settings_get("dicom.storage.ae_title") if self.settings_get else "VYONIX"
+        for item in items:                      # exportações da 1.0.0: o destino era o AE local
+            if isinstance(item, dict) and not item.get("called_ae"):
+                item["called_ae"] = default_ae
         # Valida tudo antes de gravar qualquer coisa.
         for i, item in enumerate(items):
             try:

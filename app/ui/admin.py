@@ -23,7 +23,8 @@ def ensure_admin(parent: QWidget, access: AdminAccess, action: str) -> bool:
     while True:
         password, ok = QInputDialog.getText(
             parent, "Senha de administrador",
-            f"A ação \"{action}\" exige a senha de administrador:", QLineEdit.Password)
+            f"A ação \"{action}\" exige a senha de administrador\n(ou usuário:senha de um Administrador ou "
+            "Técnico):", QLineEdit.Password)
         if not ok:
             return False
         try:

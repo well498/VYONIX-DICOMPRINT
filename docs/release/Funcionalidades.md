@@ -62,11 +62,32 @@ Legenda: **Implementado** (código e testes automatizados) · **Parcial** (imple
 | 20 | 35 testes obrigatórios | Implementado | Matriz no *Relatório de Validação*; itens de hardware real no *Roteiro de Testes Manuais* |
 | 21 | Três artefatos independentes; License Manager fora do instalador comercial; chave privada não distribuída | Implementado | Verificado no pipeline (LM-03 e varredura de chaves) |
 
+## Prompt de desenvolvimento — arquitetura DICOM simplificada e VYONIX Reception
+
+| Seção | Requisito | Situação | Observação |
+|---|---|---|---|
+| 2.1 | Servidor DICOM: IP/interface, porta, estado, AE Titles aceitos, firewall, teste, registro de associações | Implementado | Tela Servidor DICOM |
+| 2.1 | Uma ou mais portas de escuta; porta sugerida 11112 | Implementado | Porta própria por regra |
+| 2.2 | Adicionar Regra DICOM com os 13 campos; IP do equipamento não obrigatório | Implementado | |
+| 2.3 | Seleção por porta + Called AE; Calling AE e IP como critérios opcionais; sem ambiguidade silenciosa; nunca pela modalidade | Implementado | `app/dicom/routing.py` |
+| 2.4 | Restrições de origem opcionais (Calling AE, IP/faixa, combinação), rejeição registrada, aviso de que não são autenticação | Implementado | DICOM TLS não suportado (documentado) |
+| 2.5 | Configurar destino no equipamento (IP correto com várias interfaces, copiar, C-ECHO, porta, último equipamento, erros) | Implementado | |
+| 3 | C-STORE e DICOM Print separados; listeners separados sem conflito | Implementado | Porta compartilhada entre os dois serviços: não suportada |
+| 4–5 | Regras independentes, duplicar/importar/exportar/habilitar; modo automático ou sob demanda por regra; conclusão não depende só do fim da associação | Implementado | |
+| 6–8 | Calibração por regra, 3 × 3, BMP universais | Implementado | Preservado |
+| 9–14 | VYONIX Reception: pesquisa, filtros, indicadores, situações de impressão, IMPRIMIR EXAME / AGORA, duplicidade, retirada, alertas, relatórios e economia estimada | Implementado | Navegador na rede local (HTTPS) |
+| 15 | Perfis, autenticação, comunicação protegida (HTTPS), auditoria, LGPD, sem exposição à internet por padrão | Implementado | Certificado próprio do computador |
+| 16–18 | License Manager, vinculação, DEMO | Implementado | Revisão 2 |
+| 19 | Persistência fora de Program Files, backup, recuperação, retenção | Implementado | Migração 6 |
+| 20 | 24 testes da nova arquitetura | Implementado | Matriz no *Relatório de Validação* |
+| 21 | Distribuição (Vyonix.exe, serviço, Reception, instalador, License Manager portátil e instalador) | Implementado | O Reception é parte do serviço (sem executável separado) |
+
 ## Pendências externas ao software
 
 | Item | Situação | Observação |
 |---|---|---|
 | Assinatura digital do instalador e dos executáveis | **Pendente** | Requer certificado de assinatura de código |
 | Validação para uso clínico / homologação regulatória | **Pendente** | Fora do escopo do software; não declarada |
-| Testes com TPM físico, troca real de disco/placa-mãe e equipamentos/impressoras reais | **Pendente** | Roteiro entregue (*Roteiro de Testes Manuais*, seção 6) |
+| Testes com TPM físico, troca real de disco/placa-mãe e equipamentos/impressoras reais | **Pendente** | Roteiro entregue (*Roteiro de Testes Manuais*, seções 6 e 7) |
+| Certificado HTTPS de autoridade reconhecida para o Reception | Opcional | Substituir `cert.pem`/`key.pem` pelo certificado da instituição |
 | Chave de emissão | Atenção | A chave `vyx-2026-01` foi gerada no ambiente de desenvolvimento e entregue cifrada ao administrador. Recomenda-se gerar uma chave nova no License Manager do fornecedor e fazer a rotação em uma atualização. |

@@ -58,6 +58,8 @@ class StorageSCP:
         self._detail = ""
         self._since = None
         self._bound: tuple[str, int] | None = None
+        self.ports: list[int] = []
+        self.port_errors: dict[int, str] = {}
         self.accepted_ts: list[str] = []
 
     # ------------------------------------------------------------------ ciclo de vida
@@ -89,9 +91,17 @@ class StorageSCP:
                     (evt.EVT_C_ECHO, self._on_echo),
                     (evt.EVT_C_STORE, self._on_store),
                 ]
-                self._server = ae.start_server((address, port), block=False, evt_handlers=handlers)
+                from app.dicom.listeners import listener_ports, start_all
+                self.ports = listener_ports(self.devices, "store", port)
+                servers, errors = start_all(ae, address, self.ports, handlers, port)
+                if port in errors:
+                    from app.dicom.listeners import shutdown_all
+                    shutdown_all(servers)
+                    raise errors[port]
+                self._server = servers
                 self._ae = ae
                 self._bound = (address, port)
+                self.port_errors = {p: _bind_error(e, address, p) for p, e in errors.items()}
             except OSError as exc:
                 self._state = ServiceState.ERROR
                 self._detail = _bind_error(exc, address, port)
@@ -101,7 +111,8 @@ class StorageSCP:
                 log.error("Storage SCP não iniciou", extra={"detail": self._detail})
                 return
             self._state, self._since = ServiceState.RUNNING, utc_now()
-            self._detail = f"{ae_title} em {address}:{port}"
+            self._detail = f"{address} porta(s) {', '.join(map(str, sorted(self._server)))}" + (
+                "; falha: " + "; ".join(self.port_errors.values()) if self.port_errors else "")
             self.events.add(level="INFO", category=Category.DICOM, action="scp.start",
                             message=f"Storage SCP iniciado ({self._detail}).", actor="system",
                             details={"transfer_syntaxes": len(self.accepted_ts),
@@ -117,7 +128,8 @@ class StorageSCP:
                 return
             self._state = ServiceState.STOPPING
         try:
-            server.shutdown()
+            from app.dicom.listeners import shutdown_all
+            shutdown_all(server)
             if ae is not None:
                 ae.shutdown()
         finally:
@@ -157,7 +169,8 @@ class StorageSCP:
                 calling_ae=calling, called_ae=called, address=address,
                 local_ae=self.get("dicom.storage.ae_title"),
                 accept_unknown=bool(self.get("dicom.storage.accept_unknown")),
-                local_addresses=frozenset({self._bound[0]} if self._bound else ()))
+                local_addresses=frozenset({self._bound[0]} if self._bound else ()),
+                port=assoc.acceptor.port, default_port=int(self.get("dicom.storage.port")), service="store")
             if decision.accepted and not self.licensed():
                 assoc.acse.send_reject(0x02, 0x01, 0x01)        # transitória: o equipamento reenvia depois
                 self.events.add(level="WARNING", category=Category.LICENSE, action="assoc.unlicensed",

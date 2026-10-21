@@ -4,7 +4,7 @@
 
 ## Natureza desta versão
 
-Versão **{VERSION} para homologação** (revisão 2): as 8 fases do plano, o *prompt mestre atualizado* (equipamentos independentes, calibração visual, teste 3 × 3, BMP) e o *prompt mestre definitivo* (licenciamento por computador e instalação, TPM, DEMO de 5 dias, VYONIX Time Integrity e o aplicativo administrativo **VYONIX License Manager**). A lista detalhada do que foi implementado e do que está pendente está em *Funcionalidades*.
+Versão **{VERSION} para homologação** (revisão 3): as 8 fases do plano, o *prompt mestre atualizado* (equipamentos independentes, calibração visual, teste 3 × 3, BMP) o *prompt mestre definitivo* (licenciamento por computador e instalação, TPM, DEMO de 5 dias, VYONIX Time Integrity e o aplicativo administrativo **VYONIX License Manager**) e o *prompt de desenvolvimento* (Regras DICOM por AE Title de destino e porta, sem IP obrigatório, e o painel **VYONIX Reception**). A lista detalhada do que foi implementado e do que está pendente está em *Funcionalidades*.
 
 São **três artefatos independentes**: o instalador comercial `VYONIX_DICOM_Print_Setup_v1.0.0_x64.exe` (para os clientes) e, somente para o administrador, `VYONIX_License_Manager.exe` (portátil) e `VYONIX_License_Manager_Setup.exe` (instalação opcional). O License Manager não faz parte do instalador comercial.
 
@@ -13,6 +13,14 @@ São **três artefatos independentes**: o instalador comercial `VYONIX_DICOM_Pri
 ## Requisito mínimo
 
 Windows 10 64 bits (versão 1809 ou posterior) ou Windows 11. O executável usa Python 3.12 e Qt 6.
+
+## Novidades da revisão 3 (arquitetura DICOM simplificada e VYONIX Reception)
+
+- **Regras DICOM sem IP do equipamento:** "Equipamentos DICOM" passou a **Regras DICOM**. Cada regra é um destino: **AE Title de destino** (Called AE) + **porta** do VYONIX + serviço (C-STORE ou DICOM Print), com impressora, papel, orientação, layout, cópias, brilho/contraste/gama, cabeçalho/rodapé e **modo automático ou sob demanda**. Calling AE Title e IP/faixa de IP são **restrições opcionais**. Seleção pela porta + Called AE; ambiguidade impedida no cadastro e recusada na conexão; AE desconhecido recusado e registrado. Cadastros da versão anterior são convertidos sem perda.
+- **Várias portas de escuta:** a porta padrão sugerida é 11112; regras podem ter porta própria, aberta e fechada automaticamente.
+- **Configurar destino no equipamento:** tela com o IP correto do computador (várias placas de rede), AE Title e porta, copiar, C-ECHO, verificar porta, último equipamento conectado e erros de associação.
+- **VYONIX Reception:** painel HTTPS na rede local, com login e perfis (Administrador, Técnico, Supervisor da recepção, Recepcionista): pesquisa por paciente, ID, atendimento, Accession Number, modalidade, regra, período e situações; IMPRIMIR EXAME, IMPRIMIR AGORA, composição das páginas; prevenção de duplicidade (aviso, motivo, supervisor, proteção contra cliques repetidos); controle de retirada independente; alertas; relatórios com folhas enviadas × confirmadas e economia estimada pela impressão sob demanda.
+- Usuários Administrador e Técnico podem liberar as configurações técnicas no programa com `usuario:senha`.
 
 ## Novidades da revisão 2 (prompt mestre definitivo)
 
@@ -92,6 +100,8 @@ Nenhum recurso do plano ficou sem implementação. Itens que dependem de recurso
 - **Licença:** sem licença válida ou DEMO ativa, as funções licenciadas ficam suspensas. Esta compilação aceita somente licenças assinadas pela chave `vyx-2026-01` (impressão digital 44DE:3181:0922:95DC:C478:0FDC); importe-a no License Manager. Para trocar de chave, siga a rotação descrita no *Manual do License Manager* (exige atualização oficial).
 - **Limites da proteção offline:** nenhuma proteção exclusivamente offline é absoluta. Sem TPM, a clonagem integral do disco/máquina virtual reproduz os identificadores; restaurar uma imagem completa do disco devolve o estado anterior da DEMO e do histórico temporal; um administrador local que apague simultaneamente todos os locais do cofre pode reiniciar a demonstração local (a DEMO assinada pelo License Manager evita isso). Relógio adiantado em mais de 26 h com o computador reiniciado nesse estado é indistinguível do tempo real e exige revalidação ao voltar a data. A revogação só tem efeito no computador depois de instalada a lista de revogação.
 - **TPM:** a camada TPM foi testada com TPM simulado (mesmo formato de chave do Windows) e, no Windows, depende de o computador ter TPM 2.0 habilitado; o runner do CI pode não ter TPM — ver o Relatório de Validação (LIC-02).
+- **Reception:** o certificado HTTPS é gerado pelo próprio computador (aviso do navegador na primeira vez); a chave do certificado fica na pasta de dados. DICOM TLS não é oferecido. A confirmação "Impressão confirmada" depende de o driver informar a impressão.
+- **Mesma porta para C-STORE e DICOM Print** não é suportada: cada serviço usa as suas portas.
 - **Calibração:** as fórmulas de brilho, contraste e gama são parâmetros iniciais; a calibração é visual (não densitométrica) e não comprova qualidade diagnóstica.
 - **Restauração do banco:** feita pela linha de comando com o serviço parado (a interface mostra o procedimento).
 - Imagens coloridas são convertidas para tons de cinza na folha de teste 3 × 3.

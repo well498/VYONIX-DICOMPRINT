@@ -22,6 +22,7 @@ from app.ui.pages.server_page import ServerPage
 from app.ui.pages.history_page import HistoryPage
 from app.ui.pages.info_pages import AboutPage
 from app.ui.pages.license_page import LicensePage
+from app.ui.pages.reception_page import ReceptionPage
 from app.ui.pages.settings_page import SettingsPage
 from app.ui.workers import wait_all
 from app.utils.logging_setup import get_logger
@@ -30,8 +31,8 @@ from app.utils.resources import asset_path
 log = get_logger("ui.main_window")
 
 MENU = (
-    "Dashboard", "Equipamentos DICOM", "Servidor DICOM", "Impressoras", "Trabalhos de impressão",
-    "Regras automáticas", "Calibração", "Perfis de impressão", "Histórico", "Configurações",
+    "Dashboard", "Regras DICOM", "Servidor DICOM", "Impressoras", "Trabalhos de impressão",
+    "Regras avançadas", "Calibração", "Perfis de impressão", "VYONIX Reception", "Histórico", "Configurações",
     "Licença", f"Sobre o {brand.BRAND}",
 )
 
@@ -73,6 +74,7 @@ class MainWindow(QMainWindow):
             RulesPage(ctx),
             CalibrationPage(ctx),
             ProfilesPage(ctx),
+            ReceptionPage(ctx),
             HistoryPage(ctx.events, ctx.changes, exports),
             self.settings_page,
             LicensePage(ctx),

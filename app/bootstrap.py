@@ -47,6 +47,10 @@ from app.devices.settings import DeviceSettingsService
 from app.services.backup import BackupService
 from app.rules.engine import RuleService
 from app.licensing.factory import build_license_service
+from app.reception.exams import ExamService
+from app.reception.server import ReceptionServer
+from app.security.users import UserService
+from app.utils.resources import asset_path
 from app.licensing.license import LicenseService
 from app.services.dashboard_service import DashboardService
 from app.services.imaging_service import ImagingService
@@ -89,6 +93,9 @@ class AppContext:
     templates: TemplateStore
     calibration: CalibrationService
     backups: BackupService
+    users: Any
+    exams: Any
+    reception: Any
     schema_version: int
     applied_migrations: list[int] = field(default_factory=list)
     _closed: bool = False
@@ -160,7 +167,8 @@ def bootstrap(*, data_dir: str | os.PathLike[str] | None = None, role: str = "ui
             settings_set=lambda k, v: settings.repo.upsert(k, v, "system"))
         if role != "installer":
             license_service.installation_id()      # sincroniza o ID exibido com o cofre da instalação
-        devices = DeviceService(db, events, echo=device_echo, device_limit=license_service.device_limit)
+        devices = DeviceService(db, events, echo=device_echo, device_limit=license_service.device_limit,
+                                settings_get=get)
         store = InstanceStore(db, paths.storage_dir, paths.temp_dir)
         storage_scp = StorageSCP(db=db, settings_get=get, devices=devices.repo, store=store,
                                  events=events, licensed=lambda: license_service.allows("storage"))
@@ -191,6 +199,11 @@ def bootstrap(*, data_dir: str | os.PathLike[str] | None = None, role: str = "ui
         backups = BackupService(db, events, paths.backups_dir)
         collector = AutoPrintCollector(db, jobs, get)
         storage_scp.sink = collector
+        users = UserService(db, events)
+        exams = ExamService(db, events, jobs, get, printers=printers)
+        exams.storage_root = str(paths.machine_root)
+        store.listeners.append(exams.on_stored)
+        jobs.after_create.append(exams.link_job)
         worker = PrintWorker(db=db, events=events, jobs=jobs, printers=printers, imaging=imaging,
                              collector=collector, settings_get=get, license=license_service,
                              templates=templates)
@@ -202,10 +215,18 @@ def bootstrap(*, data_dir: str | os.PathLike[str] | None = None, role: str = "ui
         print_scp = PrintSCP(db=db, settings_get=get, devices=devices.repo, events=events, intake=intake,
                              printer_status=lambda: _printer_status(printers, worker),
                              licensed=lambda: license_service.allows("print_scp"))
+        reception = ReceptionServer(db=db, events=events, settings_get=get, users=users, exams=exams, worker=worker,
+                                    printers=printers, devices_repo=devices.repo,
+                                    static_dir=asset_path("reception"), tls_dir=paths.machine_root / "reception" / "tls")
         runtime = CoreRuntime(storage_scp=storage_scp, retention=retention, settings_get=get,
                               worker=worker, printers=printers, print_scp=print_scp, role=role,
-                              backups=backups)
+                              backups=backups, reception=reception)
         access = AdminAccess(db, events, lock_minutes=lambda: int(get("security.lock_minutes")))
+
+        def technical_user(username: str, password: str) -> bool:
+            u = users.authenticate(username, password)
+            return u.can("technical")
+        access.user_verifier = technical_user
         ctx = AppContext(
             role=role, paths=paths, log_file=log_file, db=db, events=events, settings=settings,
             changes=ChangeHistoryRepository(db), stats=stats,
@@ -217,6 +238,7 @@ def bootstrap(*, data_dir: str | os.PathLike[str] | None = None, role: str = "ui
             imaging=imaging, profiles=profiles, printers=printers, jobs=jobs, worker=worker,
             print_scp=print_scp, rules=rules, license=license_service,
             device_settings=device_settings, templates=templates, calibration=calibration, backups=backups,
+            users=users, exams=exams, reception=reception,
             schema_version=schema, applied_migrations=applied,
         )
         settings.subscribe(runtime.on_settings_changed)

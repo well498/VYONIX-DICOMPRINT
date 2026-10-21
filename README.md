@@ -4,8 +4,8 @@
 
 Plataforma de gerenciamento de impressão de imagens médicas DICOM para Windows 10 e 11 (64 bits).
 
-> **Versão 1.0.0 (revisão 2) para homologação — 8 fases, prompt atualizado e prompt definitivo (licenciamento,
-> TPM, DEMO, Time Integrity e VYONIX License Manager).**
+> **Versão 1.0.0 (revisão 3) para homologação — 8 fases, prompt atualizado, prompt definitivo (licenciamento,
+> TPM, DEMO, Time Integrity, License Manager) e arquitetura DICOM simplificada com o painel VYONIX Reception.**
 > Este software **não está validado para uso clínico**. A declaração de conformidade DICOM incluída é de homologação
 > e foi verificada com equipamento simulado (pynetdicom), não com equipamentos reais.
 
@@ -22,6 +22,8 @@ Plataforma de gerenciamento de impressão de imagens médicas DICOM para Windows
 | Serviço Windows, named pipe autenticado, bandeja | ✅ Fase 7 | serviço instalado, C-ECHO, impressão pelo serviço |
 | Licenciamento v2: Hardware ID, Installation ID, TPM, Time Integrity, DEMO 120 h | ✅ | instalar/atualizar/desinstalar/reinstalar, DEMO, chave não oficial recusada |
 | VYONIX License Manager (portátil + instalador opcional), banco próprio | ✅ | autoteste dos dois modos com a solicitação real |
+| Regras DICOM por porta + Called AE (sem IP obrigatório), várias portas | ✅ | C-STORE/C-ECHO reais em testes; serviço instalado |
+| VYONIX Reception (HTTPS, perfis, impressão sob demanda, duplicidade, retirada, relatórios) | ✅ | API testada; painel servido pelo serviço instalado |
 
 Três artefatos: `VYONIX_DICOM_Print_Setup_v1.0.0_x64.exe` (clientes), `VYONIX_License_Manager.exe` e
 `VYONIX_License_Manager_Setup.exe` (somente administrador). O código compartilhado entre os dois aplicativos é só

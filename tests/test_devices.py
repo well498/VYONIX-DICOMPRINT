@@ -90,7 +90,7 @@ class AssociationPolicyTest(DatabaseTestCase):
 
     def test_rules(self):
         self.assertEqual(self.ev(called="OUTRO").diagnostic, DIAG_CALLED_AE)
-        self.assertEqual(self.ev().diagnostic, DIAG_CALLING_AE)          # não cadastrado
+        self.assertEqual(self.ev().diagnostic, DIAG_CALLED_AE)           # nenhuma regra para o destino
         self.assertTrue(self.ev(unknown=True).accepted)                  # opção de implantação
         d = self.svc.create(CT, actor="t")
         self.assertFalse(self.ev().accepted)                             # cadastrado, não autorizado

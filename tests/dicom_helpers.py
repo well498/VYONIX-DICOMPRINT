@@ -15,7 +15,7 @@ def free_port() -> int:
 def make_ct(path: Path, *, sop_uid: str | None = None, study_uid: str = "1.2.826.0.1.3680043.8.498.1",
             series_uid: str = "1.2.826.0.1.3680043.8.498.1.1", rows: int = 8, cols: int = 8,
             value: int = 1000, modality: str = "CT", sop_class: str = "1.2.840.10008.5.1.4.1.1.2",
-            patient_name: str = "TESTE^SINTETICO") -> Path:
+            patient_name: str = "TESTE^SINTETICO", **extra) -> Path:
     from pydicom.dataset import FileDataset, FileMetaDataset
     from pydicom.uid import ExplicitVRLittleEndian, generate_uid
 
@@ -44,6 +44,8 @@ def make_ct(path: Path, *, sop_uid: str | None = None, study_uid: str = "1.2.826
     ds.WindowCenter = 40
     ds.WindowWidth = 400
     ds.PixelData = int(value).to_bytes(2, "little") * (rows * cols)
+    for k, val in extra.items():
+        setattr(ds, k, val)
     path.parent.mkdir(parents=True, exist_ok=True)
     ds.save_as(str(path), enforce_file_format=True)
     return path

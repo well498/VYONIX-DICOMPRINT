@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from app.database.migrations import (m0001_initial, m0002_print_queue, m0003_license_state, m0004_device_settings,
-                                     m0005_licensing_v2)
+                                     m0005_licensing_v2, m0006_dicom_rules_reception)
 from app.database.migrator import Migration
 
 MIGRATIONS: tuple[Migration, ...] = (
@@ -12,4 +12,6 @@ MIGRATIONS: tuple[Migration, ...] = (
     Migration(m0003_license_state.VERSION, m0003_license_state.NAME, m0003_license_state.SQL),
     Migration(m0004_device_settings.VERSION, m0004_device_settings.NAME, m0004_device_settings.SQL),
     Migration(m0005_licensing_v2.VERSION, m0005_licensing_v2.NAME, m0005_licensing_v2.SQL),
+    Migration(m0006_dicom_rules_reception.VERSION, m0006_dicom_rules_reception.NAME,
+              m0006_dicom_rules_reception.SQL),
 )

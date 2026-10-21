@@ -91,6 +91,14 @@ class AdminAccess:
             if self._clock() < self._blocked_until:
                 raise AccessDenied("Muitas tentativas erradas. Aguarde um minuto e tente novamente.")
         ok = self.verify(password)
+        verifier = getattr(self, "user_verifier", None)
+        if not ok and verifier is not None and ":" in (password or ""):
+            # Usuário com perfil Administrador ou Técnico: "usuario:senha".
+            username, _, pw = password.partition(":")
+            try:
+                ok = bool(verifier(username, pw))
+            except Exception:  # noqa: BLE001
+                ok = False
         with self._lock:
             if ok:
                 self._failures = 0

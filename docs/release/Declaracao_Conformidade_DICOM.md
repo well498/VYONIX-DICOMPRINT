@@ -19,7 +19,7 @@ O VYONIX não implementa Query/Retrieve, Storage Commitment, Modality Worklist, 
 
 ## 2. Entidades de aplicação e rede
 
-| AE | AE Title padrão | Porta padrão | Associações simultâneas |
+| AE | AE Title padrão (cada Regra DICOM define o seu AE Title de destino) | Porta padrão (regras podem ter porta própria) | Associações simultâneas |
 |---|---|---|---|
 | Recepção (Storage SCP) | `VYONIX` | 11112 | 10 (configurável, 1–64) |
 | Impressão (Print SCP) | `VYONIX_PRINT` | 11113 | mesmo limite |
@@ -31,9 +31,15 @@ O VYONIX não implementa Query/Retrieve, Storage Commitment, Modality Worklist, 
 
 ### Política de associação
 
-1. O **Called AE Title** deve ser o AE Title local correspondente (recusa com motivo *called AE title not recognised*, 0x07).
-2. O **Calling AE Title** deve pertencer a um equipamento cadastrado, ativo e autorizado (recusa com motivo *calling AE title not recognised*, 0x03), exceto se a opção *aceitar equipamentos não cadastrados* estiver ligada.
-3. Se o cadastro tiver endereço IP, a associação deve vir desse IP.
+Cada serviço escuta na porta padrão e nas portas próprias das **Regras DICOM**. A regra é escolhida pela **porta de entrada + Called AE Title**:
+
+1. Sem regra para a porta + Called AE Title: recusa *called AE title not recognised* (0x07), salvo se a opção *aceitar o destino padrão sem regra* estiver ligada e o destino for o AE padrão na porta padrão.
+2. Calling AE Title fora da restrição opcional da regra: recusa *calling AE title not recognised* (0x03). Uma regra com Calling AE definido prevalece sobre a regra "qualquer origem" do mesmo destino.
+3. Endereço IP fora da restrição opcional (IP ou faixa CIDR) da regra: recusa 0x03.
+4. Regra desabilitada ou ambiguidade entre regras: recusa com o motivo registrado (nunca resolvida em silêncio).
+5. Sem licença válida ou demonstração ativa: recusa transitória (*rejected-transient*), o equipamento pode tentar depois.
+
+O IP do equipamento não é necessário para a configuração básica. AE Title e IP não constituem autenticação.
 4. Recusas são permanentes (*rejected-permanent*, fonte *service-user*) e registradas no Histórico.
 
 ## 3. Storage SCP

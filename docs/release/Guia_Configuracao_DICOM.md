@@ -2,126 +2,111 @@
 
 **VYONIX DICOM Print {VERSION}**
 
-> Este guia cobre a recepção de imagens (Storage SCP), disponível nesta versão. A impressão DICOM (Print SCP) ainda não está implementada. O software não está validado para uso clínico.
+> O software não está validado para uso clínico. A interoperabilidade com cada equipamento deve ser verificada na homologação (ver *Roteiro de Testes Manuais*).
 
-## 1. Visão geral
+## 1. Como funciona
 
-O VYONIX recebe imagens dos equipamentos por **C-STORE** e responde a **C-ECHO** (teste de conexão). Uma conexão só é aceita quando:
+O VYONIX é o **servidor DICOM receptor**. Cada equipamento é configurado para enviar ao **IP do computador VYONIX**, usando o **AE Title de destino** e a **porta** de uma **Regra DICOM**. A regra define o que acontece com o que chega: impressora, papel, orientação, layout, cópias, calibração (brilho, contraste, gama), cabeçalho e rodapé, e o modo de impressão (automática ou sob demanda).
 
-1. o equipamento chama o **AE Title do VYONIX** (configurado em Configurações);
-2. o **AE Title do equipamento** está cadastrado, ativo e **autorizado** em Equipamentos DICOM;
-3. se o equipamento tiver **IP cadastrado**, a conexão vem desse IP.
+**O IP do equipamento não é necessário.** A regra é escolhida por:
 
-Conexões fora dessas regras são recusadas com o código DICOM apropriado e registradas no Histórico (categoria Segurança).
+1. **porta de entrada** (listener) + **AE Title de destino** (*Called AE Title*) — critério principal;
+2. **Calling AE Title** do equipamento — critério adicional **opcional**, para diferenciar regras com o mesmo destino;
+3. **IP ou faixa de IP de origem** — **restrição opcional**.
 
-## 2. Configurar o VYONIX
+A regra nunca é escolhida pela modalidade do exame. Duas regras com a mesma combinação não podem ser cadastradas; se uma ambiguidade surgir (ex.: cópia de banco), a conexão é recusada com o motivo — nunca resolvida em silêncio. Se o IP de um equipamento mudar, nada precisa ser editado (a não ser que a regra restrinja o IP).
 
-Menu **Configurações → DICOM — Recepção (Storage SCP)**:
+> **Segurança:** AE Title e endereço IP **não são autenticação criptográfica**. Proteja a rede (VLAN dos equipamentos, Firewall do Windows). DICOM TLS não é oferecido nesta versão.
+
+## 2. Servidor DICOM (configuração global)
+
+*Configurações → DICOM — Recepção / Impressão* e *Servidor DICOM*:
 
 | Parâmetro | Padrão | Observação |
 |---|---|---|
-| AE Title local | `VYONIX` | Até 16 caracteres ASCII, sem barra invertida |
-| Endereço IP de escuta | `0.0.0.0` | Todas as interfaces IPv4; use um IP específico para restringir |
-| Porta TCP | `11112` | Portas abaixo de 1024 (ex.: 104) exigem privilégios e regra de firewall |
-| Associações simultâneas (máx.) | `10` | Excedentes recebem "limite local excedido" |
-| Iniciar a recepção automaticamente | Ligado | Inicia o servidor quando o VYONIX abre |
-| Tamanho máximo por imagem | `1024 MB` | Imagens maiores são recusadas (status 0xA700) |
-| Aceitar equipamentos não cadastrados | Desligado | Use só durante a implantação |
+| Endereço IP de escuta | `0.0.0.0` | Todas as interfaces IPv4; use um IP para escutar em uma só rede |
+| Porta TCP de recepção (C-STORE) | `11112` | Evita a porta 104, que exige privilégios e costuma ter conflitos |
+| Porta TCP de impressão (DICOM Print) | `11113` | Deve ser diferente da porta de recepção |
+| AE Title padrão de recepção / impressão | `VYONIX` / `VYONIX_PRINT` | Usado quando uma regra não informa outro destino |
+| Associações simultâneas | `10` | Por serviço |
+| Aceitar destino padrão sem regra | Desligado | Ligado: envios ao AE padrão, na porta padrão, sem regra correspondente são aceitos com as configurações globais |
 
-Ao salvar uma mudança de AE Title, endereço, porta ou limite, o servidor é reiniciado automaticamente.
+**Mais de uma porta:** uma regra pode ter **porta própria**; o VYONIX abre essa porta automaticamente (em até 10 segundos) e a fecha quando a regra é removida ou desabilitada. A mesma porta não pode servir aos dois serviços (C-STORE e DICOM Print).
 
-> **Importante nesta versão:** o servidor DICOM funciona enquanto o VYONIX estiver aberto. A operação em segundo plano, como serviço do Windows, está prevista para a Fase 7.
+A tela **Servidor DICOM** mostra o estado de cada serviço (em execução, parado, erro), as portas abertas, os **AE Titles de destino aceitos** (todas as regras), as associações ativas e os eventos recentes (aceites, recusas e motivos). O botão **Testar** faz um C-ECHO local.
 
-## 3. Firewall do Windows
+## 3. Adicionar Regra DICOM
 
-O instalador oferece a opção **"Permitir que equipamentos DICOM se conectem ao VYONIX"**, marcada por padrão. Ela cria uma regra de entrada para o `Vyonix.exe` nas redes **privadas e de domínio**. Redes públicas continuam bloqueadas. A regra é removida na desinstalação.
-
-Se a opção foi desmarcada, crie a regra manualmente (Prompt de Comando como administrador):
-
-```
-netsh advfirewall firewall add rule name="VYONIX DICOM Print" dir=in action=allow program="C:\Program Files\VYONIX\DICOM Print\Vyonix.exe" enable=yes profile=private,domain
-```
-
-## 4. Cadastrar um equipamento
-
-Menu **Equipamentos DICOM → Adicionar**:
+Menu **Regras DICOM → Adicionar Regra DICOM**:
 
 | Campo | Exemplo | Uso |
 |---|---|---|
-| Nome * | Tomógrafo — Sala 2 | Identificação no VYONIX |
-| AE Title * | `CT_SALA2` | Deve ser exatamente o AE Title configurado no equipamento |
-| Modalidade | CT | Usada nos filtros, nas regras e no perfil padrão da modalidade |
-| Endereço IP | `192.168.10.25` | Se preenchido, só conexões deste IP são aceitas |
-| Porta | `104` | Porta do equipamento, usada só no teste C-ECHO feito pelo VYONIX |
-| Unidade, setor, fabricante, modelo, observações | — | Informativos |
+| Nome da regra * | Tomografia 01 | Identificação |
+| AE Title de destino * | `VYONIX_CT01` | O que o equipamento informa como AE Title do destino |
+| Serviço DICOM | Recepção de imagens (C-STORE) | Ou Impressão DICOM (Print SCP) |
+| Porta do VYONIX | padrão (11112) | Ou uma porta própria da regra |
+| Impressora Windows, papel, orientação, layout, cópias | HP LaserJet, A4, automática, 2 × 2, 1 | Impressão desta regra |
+| Brilho, contraste, gama | 0,0 (neutro) | −5 a +5, passo 0,5 (ajuste fino na Calibração de imagem) |
+| Cabeçalho e rodapé BMP | ligados | `header.bmp` / `footer.bmp` universais |
+| Modo de impressão | Automática ou Sob demanda | Sob demanda: aguarda a recepção (VYONIX Reception) |
 
-**AE Title repetido:** vários equipamentos saem de fábrica com o mesmo AE Title. O VYONIX aceita AE Titles iguais **somente** se os cadastros tiverem IPs diferentes; a origem é identificada por AE Title + IP. Se uma conexão chegar com um AE Title compartilhado de um IP não cadastrado, ela é recusada com o motivo "conflito" no Histórico.
+**Restrições de origem — opcional (avançado):** Calling AE Title (vazio = qualquer equipamento) e IP ou faixa (`192.168.1.20`, `192.168.1.0/24` ou vários separados por vírgula; vazio = qualquer IP da rede). Combinações: qualquer origem; só Calling AE; só IP/faixa; Calling AE + IP. Associações fora das restrições são recusadas e registradas.
 
-Marque **Autorizado a enviar imagens** para liberar o equipamento. Um equipamento pode ser bloqueado a qualquer momento (**Autorizar / bloquear**) sem perder o cadastro.
+**Mesmo AE Title de destino em mais de uma regra:** permitido somente com critério explícito — Calling AE Titles diferentes (a regra com Calling AE definido tem precedência sobre a regra "qualquer origem") ou faixas de IP que não se sobrepõem.
 
-Use **Testar conexão (C-ECHO)** para verificar se o VYONIX alcança o equipamento. O teste usa o AE Title local do VYONIX como chamador.
+Outras ações da lista: **Editar**, **Duplicar** (cópia independente, criada desabilitada, com novo AE Title de destino), **Habilitar / desabilitar**, **Importar / Exportar** (exportações da versão anterior são convertidas: destino = AE padrão), **Configurações de impressão…** (todos os parâmetros, inclusive margens), **Calibração de imagem…** (teste 3 × 3), **Regras avançadas da regra…** (condições por descrição, horário etc.) e **Histórico**.
 
-## 5. Configurar o equipamento
+## 4. Configurar destino no equipamento
 
-No equipamento (ou no seu sistema de envio), cadastre um destino DICOM com:
+Após salvar uma regra, a tela **Configurar destino no equipamento** mostra o que o técnico deve digitar na modalidade:
 
-- **AE Title:** o AE Title local do VYONIX (padrão `VYONIX`);
-- **Endereço IP:** o IP do computador do VYONIX;
-- **Porta:** a porta configurada (padrão `11112`).
+- Nome da regra: **Tomografia 01**
+- AE Title de destino: **VYONIX_CT01**
+- IP do servidor VYONIX: **192.168.1.100** — com várias placas de rede, é escolhido o IP da mesma rede do equipamento (pela faixa da regra ou pelo último IP visto); os demais são listados
+- Porta: **11112**
 
-Depois, use o "Verify/Echo" do equipamento: no VYONIX, a coluna "Último contato" é atualizada e o evento aparece em **Servidor DICOM → Eventos DICOM recentes**.
+Botões: **Copiar configuração**, **Testar conexão (C-ECHO)** (verifica porta + destino a partir deste computador), **Verificar porta ativa**, **Último equipamento conectado** e **Erros de associação** desta regra. Depois, faça o **Verify/Echo** no próprio equipamento.
 
-## 6. O que o VYONIX aceita
+## 5. Firewall do Windows
 
-**Classes de imagem (24):** CR; DX (apresentação e processamento); MG (apresentação, processamento e tomossíntese); CT e Enhanced CT; MR e Enhanced MR; US e US multiframe; captura secundária (simples e multiframe); XA e Enhanced XA; RF e Enhanced RF; NM; PET e Enhanced PET.
+O instalador cria regras de entrada para `VyonixService.exe` e `Vyonix.exe` nas redes **privadas e de domínio** (portas DICOM e o VYONIX Reception, 8443). Redes públicas continuam bloqueadas. Por ser uma regra por programa, as portas próprias das regras ficam liberadas automaticamente.
 
-**Sintaxes de transferência:** Implicit VR Little Endian, Explicit VR Little Endian, Deflated Explicit VR Little Endian e Explicit VR Big Endian. Comprimidas: RLE Lossless, JPEG Baseline (8 bits), JPEG 2000 (com e sem perdas) e JPEG-LS (com e sem perdas). JPEG Lossless e JPEG Extended (12 bits) ainda não são aceitos. Quando o equipamento oferece sem compressão e comprimido, o VYONIX escolhe sem compressão.
+## 6. C-STORE × DICOM Print
 
-## 6A. Impressão DICOM (Print SCP)
+**Recepção C-STORE:** o equipamento envia objetos DICOM; o VYONIX grava cada imagem, agrupa por série e, quando a série fica sem novas imagens por *Configurações → Fila → agrupamento* (padrão alguns segundos), cria o trabalho. **O fim de uma associação, isoladamente, não conclui o exame.** O C-STORE não transporta parâmetros de impressão: valem os da regra.
 
-Para equipamentos que enviam para uma impressora DICOM (impressora de filme):
+**DICOM Print SCP:** o equipamento envia um filme (Film Session, Film Box, Image Box, N-ACTION). O VYONIX aceita Basic Grayscale e Basic Color Print Management, Presentation LUT e Printer (N-GET). Formatos `STANDARD\C,R` de 1×1 a 8×8. Só confirma a impressão ao equipamento depois de gravar as imagens e criar o trabalho. O pedido do filme (layout, orientação, cópias) é combinado com a regra conforme a política (*regra prevalece*, *pedido prevalece* ou *ignorar o pedido*). Compatibilidade: equipamentos configurados na versão anterior, que imprimem no AE padrão `VYONIX_PRINT`, continuam identificados pelo Calling AE da regra de recepção correspondente.
 
-1. Em *Configurações → DICOM — Impressão*, confira **Habilitar DICOM Print SCP** (ligado por padrão), o **AE Title de impressão** (padrão `VYONIX_PRINT`) e a **porta** (padrão `11113`).
-2. Cadastre e autorize o equipamento em *Equipamentos DICOM* (o mesmo cadastro vale para recepção e impressão).
-3. No equipamento, crie uma impressora DICOM com o IP do computador do VYONIX, a porta e o AE Title de impressão.
-4. Defina a impressora de papel em *Impressoras* e, se quiser, um perfil para o equipamento ou a modalidade.
-
-**Prioridade do pedido:** em *Configurações → DICOM — Impressão* (padrão) e em cada equipamento: *equipamento prevalece* (padrão — as configurações do equipamento e as regras dele vencem o pedido), *pedido prevalece* ou *ignorar o pedido*.
-
-O que é aproveitado do pedido do equipamento: formato `STANDARD\C,R` (vira o layout linhas × colunas, com células vazias mantidas em branco), orientação, número de cópias, prioridade, polaridade e Presentation LUT. O papel e a impressora vêm do perfil ou do padrão do VYONIX: um filme 14 × 17 pol. é impresso no papel configurado, e isso fica anotado no histórico do trabalho. As densidades de borda e de fundo do filme (geralmente pretas) não são aplicadas ao papel, salvo se *Aplicar densidades do filme ao papel* estiver ligado.
-
-O VYONIX só confirma o comando de impressão (N-ACTION) ao equipamento depois que as imagens foram gravadas e o trabalho entrou na fila persistente. Se o equipamento encerrar a conexão sem mandar imprimir, nada é impresso e o Histórico registra o aviso.
-
-| Status devolvido | Quando |
+| Status devolvido (Print) | Quando |
 |---|---|
 | 0x0000 | Operação aceita |
-| 0x0106 | Formato não suportado (ROW, COL, SLIDE, CUSTOM), orientação inválida ou imagem com Pixel Data inválido |
+| 0x0106 | Formato não suportado (ROW, COL, SLIDE, CUSTOM), orientação inválida ou Pixel Data inválido |
 | 0x0112 | Film Session, Film Box ou Image Box inexistente |
 | 0x0118 | Classe não suportada (ex.: Annotation Box) |
 | 0x0123 | Ação diferente de "imprimir" |
-| 0xB602 / 0xB603 | Pedido de impressão sem nenhuma imagem (nada é impresso) |
+| 0xB602 / 0xB603 | Pedido sem nenhuma imagem (nada é impresso) |
 
-## 7. Armazenamento
+## 7. O que o VYONIX aceita (C-STORE)
 
-- Cada imagem é gravada primeiro em uma pasta temporária e só então movida para `C:\ProgramData\VYONIX\DICOM Print\storage\<estudo>\<série>\<instância>.dcm`. O arquivo original nunca é alterado.
-- A confirmação ao equipamento (status 0x0000) só é enviada depois que a imagem está gravada no disco e registrada no banco.
-- **Duplicatas:** uma imagem reenviada com o mesmo conteúdo é confirmada e descartada. Uma imagem com o mesmo identificador e conteúdo diferente mantém a original e gera um alerta.
-- **Retenção:** imagens são removidas após o prazo de *Configurações → Retenção de dados* (padrão 30 dias), exceto as ligadas a trabalhos ainda não concluídos. PDFs gerados seguem o mesmo prazo.
-- **Impressão automática:** cada série recebida vira um trabalho de impressão (desligável em *Configurações → Fila de impressão*). O C-STORE não transporta configurações de impressão: papel, layout e impressora vêm dos perfis e dos padrões do VYONIX.
+**Classes de imagem (24):** CR; DX; MG (inclui tomossíntese); CT e Enhanced CT; MR e Enhanced MR; US e US multiframe; captura secundária; XA e Enhanced XA; RF e Enhanced RF; NM; PET e Enhanced PET.
 
-## 8. Diagnóstico
+**Sintaxes de transferência:** Implicit/Explicit VR Little Endian, Deflated, Explicit VR Big Endian; RLE Lossless, JPEG Baseline, JPEG 2000 e JPEG-LS (com e sem perdas). JPEG Lossless e JPEG Extended (12 bits) não são aceitos.
 
-| Situação | Onde ver | Causa provável |
-|---|---|---|
-| "Associação recusada: AE não cadastrado" | Histórico / Servidor DICOM | AE Title do equipamento diferente do cadastrado |
-| "Called AE diferente do AE local" | Histórico | Destino configurado no equipamento com outro AE Title |
-| "IP de origem diferente do cadastrado" | Histórico | Equipamento mudou de IP ou o cadastro está errado |
-| "Equipamento bloqueado" | Histórico | Cadastro com autorização desligada |
-| Servidor em "Erro: a porta já está em uso" | Servidor DICOM | Outro programa DICOM usa a porta; troque a porta |
-| Equipamento não conecta e nada aparece no Histórico | — | Firewall, rede ou IP/porta errados no equipamento |
+## 8. Armazenamento e retenção
 
-O botão **Testar (C-ECHO local)** em *Servidor DICOM* verifica o próprio servidor a partir deste computador.
+- Gravação atômica em `C:\ProgramData\VYONIX\DICOM Print\storage\<estudo>\<série>\<instância>.dcm`; o arquivo original nunca é alterado; a confirmação ao equipamento só depois de gravar.
+- Duplicata idêntica: confirmada e descartada; mesmo UID com conteúdo diferente: original mantido e alerta.
+- Os dados de identificação do exame (nome, ID do paciente, Accession Number, atendimento) ficam disponíveis no VYONIX Reception e são apagados com as imagens no prazo de retenção (padrão 30 dias).
 
-## 9. Declaração de conformidade
+## 9. Diagnóstico
 
-A declaração de conformidade DICOM será publicada ao fim do desenvolvimento, restrita aos serviços efetivamente implementados e validados.
+| Situação (Histórico / Servidor DICOM) | Causa provável |
+|---|---|
+| "AE Title de destino '…' não configurado na porta …" | O equipamento usa um AE Title de destino ou porta sem regra |
+| "Calling AE '…' não autorizado para o destino …" | A regra restringe o Calling AE Title |
+| "IP de origem … fora da restrição da regra" | O equipamento está fora da faixa permitida |
+| "Regras ambíguas …" | Duas regras iguais: diferencie pelo Calling AE Title |
+| "Regra … desabilitada" | Habilite a regra |
+| "Recepção … recusada: funções suspensas pela licença" | Ative a licença ou a demonstração |
+| Serviço em "Erro: a porta já está em uso" | Outro programa DICOM usa a porta; troque a porta |
+| Nada aparece no Histórico | Firewall, rede, IP ou porta errados no equipamento |

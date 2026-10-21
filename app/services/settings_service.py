@@ -78,6 +78,7 @@ GROUPS: tuple[tuple[str, str], ...] = (
     ("dicom_storage", "DICOM — Recepção (Storage SCP)"),
     ("dicom_print", "DICOM — Impressão (Print SCP)"),
     ("jobs", "Fila de impressão"),
+    ("reception", "VYONIX Reception (recepção)"),
     ("printing", "Impressão — padrões"),
     ("print_identity", "Identidade da Impressão (cabeçalho e rodapé BMP)"),
     ("retention", "Retenção de dados"),
@@ -94,9 +95,9 @@ DEFINITIONS: tuple[SettingDef, ...] = (
                validator=v.free_text(120, "Nome da unidade"),
                help="Exibido no cabeçalho do Dashboard e, futuramente, nas impressões."),
 
-    SettingDef("dicom.storage.ae_title", "AE Title local", "dicom_storage", "str", "VYONIX",
+    SettingDef("dicom.storage.ae_title", "AE Title padrão de recepção", "dicom_storage", "str", "VYONIX",
                validator=v.validate_ae_title, restart_required=True,
-               help="Até 16 caracteres ASCII. Deve ser informado nos equipamentos."),
+               help="Destino padrão (regras sem AE Title próprio). Cada Regra DICOM tem seu AE Title de destino."),
     SettingDef("dicom.storage.bind_address", "Endereço IP de escuta", "dicom_storage", "str",
                "0.0.0.0", validator=v.validate_bind_address, restart_required=True,
                help="0.0.0.0 escuta em todas as interfaces IPv4."),
@@ -111,10 +112,10 @@ DEFINITIONS: tuple[SettingDef, ...] = (
                "int", 1024, validator=v.int_range(1, 4096, "Tamanho máximo por imagem"),
                minimum=1, maximum=4096,
                help="Imagens maiores são recusadas com status 0xA700 (sem recursos)."),
-    SettingDef("dicom.storage.accept_unknown", "Aceitar equipamentos não cadastrados",
+    SettingDef("dicom.storage.accept_unknown", "Aceitar o destino padrão sem Regra DICOM",
                "dicom_storage", "bool", False,
-               help="Desativado por padrão: somente equipamentos cadastrados e autorizados "
-                    "podem enviar imagens."),
+               help="Desativado por padrão: só são aceitos destinos (AE Title + porta) de Regras DICOM habilitadas. "
+                    "Ligado: envios ao AE Title padrão, na porta padrão, sem regra usam as configurações globais."),
 
     SettingDef("dicom.print.enabled", "Habilitar DICOM Print SCP", "dicom_print", "bool", True,
                help="Recebe filmes de equipamentos que imprimem via DICOM (Basic Print Management). "
@@ -135,6 +136,29 @@ DEFINITIONS: tuple[SettingDef, ...] = (
                "VYONIX_PRINT", validator=v.validate_ae_title, restart_required=True),
     SettingDef("dicom.print.port", "Porta TCP de impressão", "dicom_print", "int", 11113,
                validator=v.validate_port, minimum=1, maximum=65535, restart_required=True),
+
+    SettingDef("reception.enabled", "Habilitar o VYONIX Reception (navegador)", "reception", "bool", True,
+               restart_required=True,
+               help="Painel da recepção acessível pelo navegador na rede local (HTTPS, com login)."),
+    SettingDef("reception.port", "Porta HTTPS do VYONIX Reception", "reception", "int", 8443,
+               validator=v.validate_port, minimum=1, maximum=65535, restart_required=True),
+    SettingDef("reception.bind_address", "Endereço de escuta do VYONIX Reception", "reception", "str", "0.0.0.0",
+               validator=v.validate_bind_address, restart_required=True,
+               help="0.0.0.0 = todas as interfaces; 127.0.0.1 = somente este computador."),
+    SettingDef("reception.allow_public", "Permitir acesso de IPs públicos (não recomendado)", "reception", "bool",
+               False, help="Desligado: somente endereços de rede local/privada (e este computador) podem abrir o "
+                           "painel. Não exponha o VYONIX Reception à internet."),
+    SettingDef("reception.reprint_reason", "Exigir motivo na reimpressão", "reception", "bool", True),
+    SettingDef("reception.session_minutes", "Sessão da recepção (minutos sem uso)", "reception", "int", 60,
+               validator=v.int_range(5, 720, "Sessão"), minimum=5, maximum=720),
+    SettingDef("reception.stuck_minutes", "Alerta de trabalho parado na fila (minutos)", "reception", "int", 10,
+               validator=v.int_range(1, 1440, "Minutos"), minimum=1, maximum=1440),
+    SettingDef("reception.incomplete_minutes", "Alerta de exame incompleto (minutos)", "reception", "int", 15,
+               validator=v.int_range(1, 1440, "Minutos"), minimum=1, maximum=1440),
+    SettingDef("reception.pickup_alert_hours", "Alerta de exame pronto não retirado (horas)", "reception", "int",
+               24, validator=v.int_range(1, 720, "Horas"), minimum=1, maximum=720),
+    SettingDef("reception.min_free_gb", "Alerta de espaço livre em disco (GB)", "reception", "int", 2,
+               validator=v.int_range(1, 1000, "GB"), minimum=1, maximum=1000),
 
     SettingDef("jobs.max_attempts", "Tentativas automáticas", "jobs", "int", 3,
                validator=v.int_range(1, 10, "Tentativas automáticas"), minimum=1, maximum=10),

@@ -42,7 +42,10 @@ Atualizado automaticamente a cada 5 segundos, com dados lidos do banco local:
 - **Configuração DICOM:** AE Title, endereço e porta configurados.
 - **Equipamentos, Impressora selecionada, Alertas operacionais e Falhas recentes.**
 
-## 4. Equipamentos DICOM
+## 4. Regras DICOM (antigo "Equipamentos DICOM")
+
+Cada **Regra DICOM** é um destino: o equipamento envia para o IP deste computador, com o **AE Title de destino** e a **porta** da regra; o IP do equipamento não é necessário (Calling AE Title e IP/faixa são restrições opcionais, em *Restrições de origem*). Após salvar, a tela **Configurar destino no equipamento** mostra os dados a digitar na modalidade. Detalhes no *Guia de Configuração DICOM*. O texto abaixo descreve os demais recursos de cada regra (configurações de impressão, calibração, regras avançadas).
+
 
 Lista os equipamentos que podem enviar imagens, com AE Title, IP, autorização, último contato e situação.
 
@@ -165,6 +168,10 @@ As regras ativas são avaliadas da **prioridade menor para a maior** (use **Subi
 **Simular…** mostra, para um trabalho hipotético (equipamento, modalidade, horário etc.), por que cada regra se aplica ou não e o resultado final com a origem de cada valor. Nada é impresso. Os detalhes de cada trabalho real também mostram a avaliação das regras na hora da criação.
 
 **Reprocessar com config. atuais** (em Trabalhos) reavalia as regras e perfis atuais, mantendo o que veio do pedido DICOM Print.
+
+## 5E2. VYONIX Reception
+
+Mostra o endereço do painel da recepção (https://…:8443/), a situação do servidor e os **usuários e perfis** (Administrador, Técnico, Supervisor da recepção, Recepcionista). O uso do painel está no *Manual do VYONIX Reception*.
 
 ## 5F. Ícone na bandeja
 

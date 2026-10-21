@@ -63,6 +63,18 @@ class ServerPage(Page):
         grid.setColumnStretch(0, 1)
         grid.setColumnStretch(1, 1)
 
+        frame, lay = card("Destinos aceitos (Regras DICOM) e portas de escuta")
+        self.routes = make_table(["Serviço", "Porta", "AE Title de destino", "Regra", "Restrições de origem",
+                                  "Habilitada"], min_height=140)
+        lay.addWidget(self.routes)
+        hint = QLabel("O equipamento envia para o IP deste computador, a porta e o AE Title de destino. Novas portas "
+                      "das regras são abertas automaticamente (Firewall do Windows: regra do VYONIX para redes "
+                      "privadas e de domínio). Use Servidor → Testar para o autoteste C-ECHO.")
+        hint.setWordWrap(True)
+        hint.setObjectName("muted")
+        lay.addWidget(hint)
+        self.body.addWidget(frame)
+
         frame, lay = card("Associações ativas")
         self.assoc = make_table(["AE", "Endereço", "Equipamento", "Recebidas", "Duplicadas", "Falhas", "Duração (s)"],
                                 min_height=120)
@@ -91,12 +103,21 @@ class ServerPage(Page):
         def load():
             st = self.ctx.storage_scp.status()
             events = self.ctx.events.query(EventFilter(categories=(Category.DICOM, Category.SECURITY), limit=30))
+            routes = self.ctx.devices.repo.routes("store") + self.ctx.devices.repo.routes("print")
             return (st, self.ctx.storage_scp.active_associations(), events, self.ctx.storage_scp.accepted_ts,
-                    self.ctx.print_scp.status())
+                    self.ctx.print_scp.status(), routes)
         run_async(load, self._render)
 
     def _render(self, data) -> None:
-        st, assocs, events, ts, pst = data
+        st, assocs, events, ts, pst, routes = data
+        rows = []
+        for r in routes:
+            port = r.effective_port(self.ctx.devices.default_port(r.service))
+            restr = " · ".join(x for x in (f"Calling {r.calling_restriction}" if r.calling_restriction else "",
+                                            f"IP {r.ip_address}" if r.ip_address else "") if x) or "qualquer origem"
+            rows.append(("C-STORE" if r.service == "store" else "DICOM Print", port, r.called_ae, r.name, restr,
+                         "Sim" if r.authorized else "Não"))
+        fill_table(self.routes, rows)
         ptext, pstyle = _STATE[pst.state]
         status_text(self.p_state, ptext, pstyle)
         self.p_detail.setText(pst.detail or "—")

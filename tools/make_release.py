@@ -35,6 +35,7 @@ DOCS = [
     ("Manual_Instalacao", "Manual de Instalação"),
     ("Manual_Usuario", "Manual do Usuário"),
     ("Guia_Configuracao_DICOM", "Guia de Configuração DICOM"),
+    ("Manual_VYONIX_Reception", "Manual do VYONIX Reception"),
     ("Notas_da_Versao", "Notas da Versão"),
     ("Declaracao_Conformidade_DICOM", "Declaração de Conformidade DICOM"),
     ("Licenciamento_e_Ativacao", "Licenciamento e Ativação"),
@@ -86,6 +87,58 @@ REQUIRED_TESTS = [
     (34, "Proteção da chave privada", [r"t34_"], ["LM-01", "LM-03"]),
     (35, "Backup e restauração", [r"t35_|backup_restore_roundtrip"], ["LM-01"]),
 ]
+
+
+# Testes da arquitetura DICOM simplificada e do VYONIX Reception (prompt de desenvolvimento, seção 20).
+RECEPTION_TESTS = [
+    (1, "Criação de regra sem IP do equipamento", [r"r01_"], []),
+    (2, "Associação usando Called AE Title correto", [r"r02_"], []),
+    (3, "Rejeição ou tratamento de AE Title desconhecido", [r"r03_"], []),
+    (4, "Duas regras com AE Titles diferentes na mesma porta", [r"r04_"], []),
+    (5, "Mesmo Called AE Title e Calling AE Titles diferentes", [r"r05_"], []),
+    (6, "Tratamento de regras ambíguas", [r"r06_"], []),
+    (7, "Mudança de IP do equipamento sem editar a regra", [r"r07_"], []),
+    (8, "Restrição opcional por IP", [r"r08_"], []),
+    (9, "Restrição opcional por Calling AE Title", [r"r09_"], []),
+    (10, "Recepção C-STORE", [r"r10_"], []),
+    (11, "Recepção DICOM Print", [r"r11_|printer_status_and_full_film"], []),
+    (12, "C-ECHO", [r"r12_|dedicated_listener"], ["SRV-02"]),
+    (13, "Impressão automática", [r"r10_r13"], ["INS-06"]),
+    (14, "Impressão sob demanda", [r"r14_"], []),
+    (15, "Calibração individual", [r"r15_|two_ct_devices"], []),
+    (16, "Impressão 3 × 3", [r"r15_r16|sheet_page_has_nine"], []),
+    (17, "Cabeçalho e rodapé", [r"r16_r17|default_templates"], []),
+    (18, "Pesquisa na recepção", [r"r18_"], ["RCP-01"]),
+    (19, "Prevenção de duplicidade", [r"r19_"], []),
+    (20, "Reimpressão", [r"r19_r20"], []),
+    (21, "Controle de retirada", [r"r21_"], []),
+    (22, "Recuperação após reinicialização", [r"r22_|recovery_after_crash"], []),
+    (23, "Atualização sem perda de configuração", [r"r23_"], ["INS-07", "LIC-06"]),
+    (24, "Validação de licença", [r"r24_|t14_"], ["LIC-04", "LIC-05"]),
+]
+
+
+def matrix(title: str, intro: str, items, junit: dict, by_id: dict) -> list[str]:
+    lines = ["", title, "", intro, "",
+             "| Nº | Teste obrigatório | Casos automatizados (aprovados/total) | Verificação no Windows | Situação |",
+             "|---|---|---|---|---|"]
+    for num, name, pats, ci_ids in items:
+        cases = [c for c in junit["cases"] if any(re.search(p, c["name"], re.I) for p in pats)]
+        ok_cases = [c for c in cases if c["status"] == "aprovado"]
+        ci = [by_id[i] for i in ci_ids if i in by_id]
+        ci_txt = ", ".join(f"{r['id']} {'aprovado' if r['ok'] else 'FALHOU'}" for r in ci) or "—"
+        not_verifiable = any("NÃO VERIFICÁVEL" in (r.get("detail") or "") for r in ci)
+        failed = any(c["status"] in ("falhou", "erro") for c in cases) or any(not r["ok"] for r in ci)
+        if failed:
+            sit = "**Falhou**"
+        elif not ok_cases and not ci:
+            sit = "**Sem evidência**"
+        elif not_verifiable:
+            sit = "Aprovado em simulação; hardware real indisponível no CI"
+        else:
+            sit = "Aprovado"
+        lines.append(f"| {num} | {name} | {len(ok_cases)}/{len(cases)} | {ci_txt} | {sit} |")
+    return lines
 
 
 def sha256(path: Path) -> str:
@@ -190,29 +243,12 @@ def validation_report(version: str, commit: str, build_date: str, installer: Pat
     for r in v_results:
         lines.append(f"| {r['id']} | {r['area']} | {md_escape(r['name'])} | "
                      f"{'Aprovado' if r['ok'] else '**FALHOU**'} | {md_escape(r['detail'])} |")
-    lines += ["", "## 3A. Matriz dos 35 testes obrigatórios", "",
-              "Cada linha relaciona o requisito aos casos automatizados (pytest, com relógio, hardware e TPM "
-              "simulados quando indicado) e às verificações executadas no Windows com os executáveis reais.", "",
-              "| Nº | Teste obrigatório | Casos automatizados (aprovados/total) | Verificação no Windows | Situação |",
-              "|---|---|---|---|---|"]
     by_id = {r["id"]: r for r in v_results}
-    for num, title, pats, ci_ids in REQUIRED_TESTS:
-        cases = [c for c in junit["cases"] if any(re.search(p, c["name"], re.I) for p in pats)]
-        ok_cases = [c for c in cases if c["status"] == "aprovado"]
-        ci = [by_id[i] for i in ci_ids if i in by_id]
-        ci_txt = ", ".join(f"{r['id']} {'aprovado' if r['ok'] else 'FALHOU'}" for r in ci) or "—"
-        not_verifiable = any("NÃO VERIFICÁVEL" in (r.get("detail") or "") for r in ci)
-        failed = any(c["status"] in ("falhou", "erro") for c in cases) or \
-            any(not r["ok"] for r in ci)
-        if failed:
-            sit = "**Falhou**"
-        elif not cases and not ci:
-            sit = "**Sem evidência**"
-        elif not_verifiable:
-            sit = "Aprovado em simulação; hardware real indisponível no CI"
-        else:
-            sit = "Aprovado"
-        lines.append(f"| {num} | {title} | {len(ok_cases)}/{len(cases)} | {ci_txt} | {sit} |")
+    lines += matrix("## 3A. Matriz dos 24 testes da arquitetura DICOM simplificada e do VYONIX Reception",
+                    "Prompt de desenvolvimento (regras DICOM sem IP, Reception), seção 20.", RECEPTION_TESTS, junit, by_id)
+    lines += matrix("## 3B. Matriz dos 35 testes do licenciamento (prompt definitivo)",
+                    "Casos automatizados (pytest, com relógio, hardware e TPM simulados quando indicado) e "
+                    "verificações com os executáveis reais no Windows.", REQUIRED_TESTS, junit, by_id)
     lines += [""] + perf_section(perf)
     n = 5 if perf else 4
     lines += [f"## {n}. Testes automatizados", "",
@@ -256,6 +292,7 @@ Conteúdo
   Documentacao\\Manual_Instalacao.pdf
   Documentacao\\Manual_Usuario.pdf
   Documentacao\\Guia_Configuracao_DICOM.pdf
+  Documentacao\\Manual_VYONIX_Reception.pdf
   Documentacao\\Notas_da_Versao.pdf
   Documentacao\\Declaracao_Conformidade_DICOM.pdf
   Documentacao\\Licenciamento_e_Ativacao.pdf

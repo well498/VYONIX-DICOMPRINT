@@ -83,6 +83,22 @@ A avaliação visual não comprova qualidade diagnóstica. Calibração densitom
 | M-61 | License Manager portátil em pen drive, em computador sem Python e sem o VYONIX | Abre, emite e exporta; dados ao lado do executável | | | | |
 | M-62 | Backup protegido do License Manager e restauração em outro computador | Dados restaurados; chave exige a frase-senha | | | | |
 
+## 7. Regras DICOM e VYONIX Reception
+
+| Nº | Procedimento | Esperado | Resultado | Data | Responsável | Observações |
+|---|---|---|---|---|---|---|
+| M-70 | Criar a regra "Tomografia 01" (VYONIX_CT01, 11112) sem IP e configurar o equipamento com os dados da tela "Configurar destino" | Verify/Echo do equipamento aceito; envio cai na regra | | | | |
+| M-71 | Trocar o IP do equipamento e reenviar | Aceito sem editar a regra | | | | |
+| M-72 | Enviar com AE Title de destino errado | Recusado; motivo em "Erros de associação" | | | | |
+| M-73 | Duas modalidades com o mesmo AE Title de fábrica: regras com Calling AE diferentes | Cada envio na regra certa | | | | |
+| M-74 | Regra sob demanda: exame aparece "Disponível" no Reception; IMPRIMIR EXAME | Impressão na impressora da regra | | | | |
+| M-75 | IMPRIMIR AGORA em outra impressora, 2 cópias | Regra inalterada; histórico registra | | | | |
+| M-76 | Tentar imprimir de novo como recepcionista; depois como supervisor com motivo | Aviso; supervisor reimprime; registro com motivo | | | | |
+| M-77 | Clicar várias vezes em IMPRIMIR | Uma única impressão | | | | |
+| M-78 | Controle de retirada até "Entregue" (com nome) e cancelamento pelo supervisor | Situações e registro corretos | | | | |
+| M-79 | Abrir o Reception de outro computador da rede e de fora da rede | Rede local: login; fora: recusado | | | | |
+| M-80 | Relatório por modalidade e por usuário; exportar CSV | Valores coerentes com o dia | | | | |
+
 ## Conclusão
 
 | Item | Preenchimento |

@@ -1,11 +1,9 @@
 """Política de associações DICOM (§4.1 itens 6, 9, 11 e 12; §16).
 
-Uma associação é aceita somente quando:
-
-1. o *Called AE Title* é o AE Title local configurado (senão: rejeição 0x07);
-2. o *Calling AE Title* pertence a um equipamento ativo **e autorizado** — ou a opção
-   "aceitar equipamentos não cadastrados" está ligada (senão: rejeição 0x03);
-3. o equipamento tem IP cadastrado e a conexão vem desse IP (senão: rejeição 0x03).
+Uma associação é aceita quando existe uma **Regra DICOM** habilitada para a combinação porta de
+entrada + *Called AE Title* (com o *Calling AE Title* e o IP dentro das restrições opcionais da
+regra) — ver ``routing.py``. Destino desconhecido: rejeição 0x07; origem fora das restrições:
+rejeição 0x03. Opcionalmente, o AE padrão do servidor na porta padrão aceita envios sem regra.
 
 O limite de associações simultâneas é aplicado pelo próprio pynetdicom
 (``maximum_associations``), que rejeita com "local limit exceeded".
@@ -43,33 +41,50 @@ class Decision:
 
 
 class AssociationPolicy:
+    """Aceita/recusa associações escolhendo a Regra DICOM (``app/dicom/routing.py``)."""
+
     def __init__(self, devices: DeviceRepository) -> None:
         self.devices = devices
 
     def evaluate(self, *, calling_ae: str, called_ae: str, address: str, local_ae: str,
-                 accept_unknown: bool, local_addresses: frozenset[str] = frozenset()) -> Decision:
+                 accept_unknown: bool, local_addresses: frozenset[str] = frozenset(), port: int | None = None,
+                 default_port: int | None = None, service: str = "store") -> Decision:
+        from app.dicom import routing
         calling = (calling_ae or "").strip()
         called = (called_ae or "").strip()
-        if called != local_ae.strip():
-            return Decision(False, f"Called AE '{called}' diferente do AE local '{local_ae}'",
-                            diagnostic=DIAG_CALLED_AE)
-        if calling == SELFTEST_AE and (address in LOOPBACK or address in local_addresses):
-            return Decision(True, "Autoteste local")
-        device, conflict = self.devices.match(calling, address)
-        if conflict:
-            return Decision(False, conflict.capitalize(), diagnostic=DIAG_CALLING_AE)
-        if device is None:
-            if accept_unknown:
-                return Decision(True, "Equipamento não cadastrado aceito (opção habilitada)")
-            return Decision(False, f"AE '{calling}' não cadastrado", diagnostic=DIAG_CALLING_AE)
-        if not device.authorized:
-            return Decision(False, f"Equipamento \"{device.name}\" bloqueado", device.id, device.name,
-                            diagnostic=DIAG_CALLING_AE)
-        if device.ip_address and device.ip_address != address:
-            return Decision(False, f"IP de origem {address} diferente do cadastrado "
-                                   f"({device.ip_address}) para \"{device.name}\"",
-                            device.id, device.name, diagnostic=DIAG_CALLING_AE)
-        return Decision(True, f"Equipamento \"{device.name}\" autorizado", device.id, device.name)
+        port = int(port or default_port or 0)
+        default_port = int(default_port or port)
+        local = {"127.0.0.1", "::1", *local_addresses}
+        try:
+            from app.utils.net import all_local_addresses
+            local |= set(all_local_addresses())
+        except Exception:  # noqa: BLE001
+            pass
+        res = routing.select(self.devices.routes(service), port=port, default_port=default_port, called_ae=called,
+                             calling_ae=calling, address=address)
+        if calling == SELFTEST_AE and address in local:
+            # Autoteste do próprio computador (tela "Configurar destino"): valida porta + destino.
+            if res.rule is not None or called == local_ae.strip():
+                return Decision(True, "Autoteste local" + (f" ({res.reason})" if res.rule else ""),
+                                res.rule.id if res.rule else None, res.rule.name if res.rule else None)
+            return Decision(False, res.reason, diagnostic=res.diagnostic)
+        if res.accepted:
+            return Decision(True, f"Associação aceita pela {res.reason}", res.rule.id, res.rule.name)
+        if service == "print" and res.rule is None and res.diagnostic == routing.DIAG_CALLED_AE \
+                and called == local_ae.strip() and port == default_port:
+            # Compatibilidade 1.0.0: impressão DICOM no AE padrão de impressão, origem identificada pela
+            # regra de recepção com o mesmo Calling AE Title (e IP, se restrito).
+            from app.security.validators import ip_allowed
+            legacy = [r for r in self.devices.routes("store")
+                      if r.calling_restriction == calling and ip_allowed(address, r.ip_address)]
+            if len(legacy) == 1 and legacy[0].authorized:
+                return Decision(True, f"Impressão DICOM no AE padrão; origem pela regra “{legacy[0].name}”",
+                                legacy[0].id, legacy[0].name)
+        if res.rule is None and res.diagnostic == routing.DIAG_CALLED_AE and called == local_ae.strip() \
+                and port == default_port and accept_unknown:
+            return Decision(True, "Destino padrão do servidor sem regra (configurações globais)")
+        return Decision(False, res.reason[:1].upper() + res.reason[1:], res.rule.id if res.rule else None,
+                        res.rule.name if res.rule else None, diagnostic=res.diagnostic)
 
 
 @dataclass

@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VYONIX Reception</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div id="login" class="login hidden">
+  <form id="login-form" class="card login-card" autocomplete="off">
+    <div class="brand">VYONIX <span>Reception</span></div>
+    <p class="muted">Precisão em cada imagem</p>
+    <label>Usuário <input id="login-user" required autofocus></label>
+    <label>Senha <input id="login-pass" type="password" required></label>
+    <button class="primary" type="submit">Entrar</button>
+    <p id="login-error" class="error"></p>
+    <p class="muted small">Acesso restrito à rede local. Os acessos e as ações são registrados.</p>
+  </form>
+</div>
+
+<div id="app" class="hidden">
+  <header class="topbar">
+    <div class="brand">VYONIX <span>Reception</span></div>
+    <nav id="tabs">
+      <button data-tab="print" class="tab active">Controle de Impressão</button>
+      <button data-tab="pickup" class="tab">Controle de Retirada</button>
+      <button data-tab="reports" class="tab" data-perm="reports">Relatórios</button>
+      <button data-tab="alerts" class="tab">Alertas <span id="alert-count" class="badge hidden">0</span></button>
+    </nav>
+    <div class="user"><span id="user-name"></span> <button id="btn-password" class="link">Senha</button>
+      <button id="btn-logout" class="link">Sair</button></div>
+  </header>
+
+  <section id="search" class="card searchbar">
+    <input id="f-q" placeholder="Paciente, ID, atendimento, Accession Number, descrição">
+    <select id="f-rule"><option value="">Todas as regras/equipamentos</option></select>
+    <label class="inline">De <input id="f-from" type="date"></label>
+    <label class="inline">Até <input id="f-to" type="date"></label>
+    <select id="f-print"><option value="">Qualquer situação de impressão</option></select>
+    <select id="f-pickup"><option value="">Qualquer situação de retirada</option></select>
+    <button id="btn-search" class="primary">Pesquisar</button>
+    <div id="chips" class="chips"></div>
+  </section>
+
+  <main>
+    <section id="view-list" class="card">
+      <table id="exam-table">
+        <thead><tr><th>Recebido</th><th>Paciente</th><th>ID</th><th>Atendimento / Accession</th><th>Mod.</th>
+          <th>Regra</th><th>Impressão</th><th>Retirada</th><th class="actions-col"></th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <p id="empty" class="muted hidden">Nenhum exame encontrado.</p>
+    </section>
+
+    <aside id="detail" class="card detail hidden">
+      <button id="detail-close" class="link close">Fechar ✕</button>
+      <h2 id="d-title"></h2>
+      <div id="d-info" class="info"></div>
+      <div class="buttons">
+        <button id="btn-preview">Visualizar páginas</button>
+        <button id="btn-print" class="primary">IMPRIMIR EXAME</button>
+        <button id="btn-print-now" class="warn">IMPRIMIR AGORA…</button>
+      </div>
+      <div class="buttons" id="pickup-buttons"></div>
+      <h3>Histórico do exame</h3>
+      <table id="d-history"><thead><tr><th>Data/hora</th><th>Usuário</th><th>Ação</th><th>Detalhe</th></tr></thead>
+        <tbody></tbody></table>
+      <h3>Trabalhos de impressão</h3>
+      <table id="d-jobs"><thead><tr><th>Nº</th><th>Situação</th><th>Impressora</th><th>Cópias</th><th>Páginas</th>
+        <th>Solicitado por</th></tr></thead><tbody></tbody></table>
+    </aside>
+
+    <section id="view-reports" class="card hidden">
+      <div class="row">
+        <label class="inline">Agrupar por <select id="r-group">
+          <option value="modality">Modalidade</option><option value="rule">Regra/equipamento</option>
+          <option value="printer">Impressora</option><option value="user">Usuário</option><option value="day">Dia</option>
+        </select></label>
+        <label class="inline">De <input id="r-from" type="date"></label>
+        <label class="inline">Até <input id="r-to" type="date"></label>
+        <button id="btn-report" class="primary">Gerar</button>
+        <button id="btn-report-csv">Exportar CSV</button>
+      </div>
+      <table id="r-table"><thead><tr><th>Grupo</th><th>Exames</th><th>Trabalhos</th><th>Folhas enviadas</th>
+        <th>Folhas confirmadas</th><th>Reimpressões</th><th>Falhas</th></tr></thead><tbody></tbody></table>
+      <p id="r-saved" class="saved"></p>
+      <p id="r-note" class="muted small"></p>
+    </section>
+
+    <section id="view-alerts" class="card hidden"><ul id="alert-list" class="alerts"></ul></section>
+  </main>
+</div>
+
+<div id="modal" class="modal hidden"><div class="card modal-card">
+  <h3 id="m-title"></h3><div id="m-body"></div>
+  <div class="buttons right"><button id="m-cancel">Cancelar</button><button id="m-ok" class="primary">Confirmar</button></div>
+</div></div>
+<div id="toast" class="toast hidden"></div>
+<script src="app.js"></script>
+</body>
+</html>

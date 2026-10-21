@@ -109,6 +109,7 @@ class JobService:
         self.printer_id = printer_id
         self.wakeup = threading.Event()
         self._listeners: list[Callable[[int], None]] = []
+        self.after_create: list[Callable[[int, int | None, str], None]] = []
 
     def subscribe(self, fn: Callable[[int], None]) -> None:
         self._listeners.append(fn)
@@ -219,6 +220,11 @@ class JobService:
                             message=f"Trabalho #{job_id} criado ({SOURCE_LABELS[source_type]}, "
                                     f"{len(items)} imagem(ns)" + (", retido" if hold else "") + ").",
                             device_id=device_id, job_id=job_id, actor=actor)
+        for hook in list(self.after_create):
+            try:
+                hook(job_id, items[0][0] if items else None, actor)
+            except Exception:  # noqa: BLE001 - o trabalho já está gravado
+                log.exception("Falha em ouvinte de criação de trabalho")
         self._notify(job_id)
         return job_id, True
 

@@ -288,6 +288,23 @@ Invoke-Check "SRV-02" "Serviço" "Serviço responde ao canal de controle e aos C
     $svcs = ($r.status.services | ForEach-Object { "$($_.name)=$($_.state)" }) -join ", "
     "serviço $($r.status.version); $svcs; C-ECHO storage $($r.echo.storage_bound.ms) ms, print $($r.echo.print_bound.ms) ms"
 }
+Invoke-Check "RCP-01" "Reception" "VYONIX Reception pelo serviço: HTTPS na rede local, API exige login" {
+    $ok = $false; $last = ""
+    for ($i = 0; $i -lt 20 -and -not $ok; $i++) {
+        try {
+            $r = Invoke-WebRequest "https://127.0.0.1:8443/" -SkipCertificateCheck -UseBasicParsing -TimeoutSec 10
+            $ok = $r.StatusCode -eq 200 -and $r.Content -match "VYONIX Reception"
+        } catch { $last = $_.Exception.Message; Start-Sleep 3 }
+    }
+    if (-not $ok) { throw "painel não respondeu: $last" }
+    $code = 0
+    try { Invoke-WebRequest "https://127.0.0.1:8443/api/exams" -SkipCertificateCheck -UseBasicParsing -TimeoutSec 10 | Out-Null; $code = 200 }
+    catch { $code = [int]$_.Exception.Response.StatusCode }
+    if ($code -ne 401) { throw "API sem login respondeu $code" }
+    $cert = Join-Path $DataDir "reception\tls\cert.pem"
+    if (-not (Test-Path $cert)) { throw "certificado não gerado" }
+    "https://127.0.0.1:8443/ (TLS); API sem sessão: 401; certificado em $cert"
+}
 Invoke-Check "SRV-03" "Serviço" "Registro de inicialização da bandeja" {
     $v = (Get-ItemProperty "HKLM:\Software\Microsoft\Windows\CurrentVersion\Run")."VYONIX DICOM Print"
     if ($v -notmatch "--tray") { throw "valor '$v'" }
