@@ -45,6 +45,43 @@ def _write_report(path: str | None, payload: dict) -> None:
     target.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def _service_check(args) -> int:
+    """Consulta o serviço pelo canal de controle e testa os servidores dele com C-ECHO."""
+    from app.dicom import scu
+    from app.dicom.association_manager import SELFTEST_AE
+    from app.service.ipc import IpcClient
+    from app.service.remote import windows_service_state
+    from app.utils.paths import resolve_paths
+    paths = resolve_paths(args.data_dir)
+    scm_state, scm_text = windows_service_state()
+    report: dict = {"ok": False, "scm": scm_state, "scm_detail": scm_text}
+    try:
+        status = IpcClient(paths.machine_root, timeout=10).call("status")
+        report["status"] = status
+        echoes = {}
+        for key, ae_key in (("storage_bound", "dicom.storage.ae_title"), ("print_bound", "dicom.print.ae_title")):
+            bound = status.get(key)
+            if bound:
+                host = "127.0.0.1" if bound[0] in ("0.0.0.0", "") else bound[0]
+                from app.bootstrap import bootstrap
+                ae = None
+                ctx = bootstrap(data_dir=args.data_dir, role="check")
+                try:
+                    ae = ctx.settings.get(ae_key)
+                finally:
+                    ctx.close()
+                echoes[key] = scu.echo(host, int(bound[1]), ae, calling_ae=SELFTEST_AE, timeout=10)
+        report["echo"] = echoes
+        states = {s["name"]: s["state"] for s in status["services"]}
+        report["ok"] = (states.get("DICOM Storage SCP") == "running" and states.get("Fila de impressão") == "running"
+                        and all(e.get("ok") for e in echoes.values()) and bool(echoes))
+    except Exception as exc:  # noqa: BLE001
+        report["error"] = str(exc)
+    _emit(json.dumps(report, ensure_ascii=False, indent=2, default=str))
+    _write_report(args.report, report)
+    return EXIT_OK if report["ok"] else EXIT_STARTUP_ERROR
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="Vyonix", description=f"{brand.PRODUCT_NAME} — {brand.SLOGAN}")
     p.add_argument("--version", action="store_true", help="mostra a versão e sai")
@@ -52,6 +89,10 @@ def build_parser() -> argparse.ArgumentParser:
                    help="inicializa diretórios, banco e logs sem abrir a interface")
     p.add_argument("--smoke-test", action="store_true",
                    help="abre a interface, percorre todas as páginas, salva uma configuração e fecha")
+    p.add_argument("--tray", action="store_true",
+                   help="inicia só com o ícone na bandeja (usado ao entrar no Windows)")
+    p.add_argument("--service-check", action="store_true",
+                   help="verifica o serviço Windows: canal de controle, estado e C-ECHO dos servidores")
     p.add_argument("--report", help="grava o resultado de --check/--smoke-test neste arquivo JSON")
     p.add_argument("--data-dir", help="pasta isolada para dados (desenvolvimento e testes)")
     p.add_argument("--log-level", choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
@@ -77,6 +118,9 @@ def main(argv: list[str] | None = None) -> int:
     from app.bootstrap import bootstrap
     from app.core.errors import VyonixError
 
+    if args.service_check:
+        return _service_check(args)
+
     if args.check:
         try:
             ctx = bootstrap(data_dir=args.data_dir, role="check", log_level=args.log_level,
@@ -101,7 +145,7 @@ def main(argv: list[str] | None = None) -> int:
         _write_report(args.report, {"ok": False, "error": f"ImportError: {exc}"})
         return EXIT_MISSING_DEPENDENCY
     return run_ui(data_dir=args.data_dir, log_level=args.log_level, console_log=console,
-                  smoke_test=args.smoke_test, report=args.report)
+                  smoke_test=args.smoke_test, report=args.report, tray_start=args.tray)
 
 
 if __name__ == "__main__":

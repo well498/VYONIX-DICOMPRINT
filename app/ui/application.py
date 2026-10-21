@@ -17,8 +17,50 @@ from app.utils.paths import resolve_paths
 from app.utils.resources import asset_path
 
 
+SHOW_REQUEST = "show.request"
+
+
+def _make_tray(app, window, ctx):
+    """Ícone na bandeja: estado dos serviços, abrir e sair."""
+    from app.ui.qt import QMenu, QSystemTrayIcon
+    tray = QSystemTrayIcon(QIcon(str(asset_path("vyonix_icon.svg"))), app)
+    menu = QMenu()
+    menu.addAction("Abrir o VYONIX", window.bring_to_front)
+    status_action = menu.addAction("Estado: —")
+    status_action.setEnabled(False)
+    menu.addSeparator()
+
+    def quit_app():
+        window.quitting = True
+        window.close()
+        app.quit()
+    menu.addAction("Sair do VYONIX", quit_app)
+    tray.setContextMenu(menu)
+    tray.activated.connect(lambda reason: window.bring_to_front()
+                           if reason in (QSystemTrayIcon.Trigger, QSystemTrayIcon.DoubleClick) else None)
+
+    def update():
+        try:
+            states = ctx.runtime.service_statuses()
+        except Exception:  # noqa: BLE001
+            return
+        bad = [s for s in states if s.state.value == "error"]
+        running = [s for s in states if s.state.value == "running"]
+        text = (f"{brand.PRODUCT_NAME}: " + ("; ".join(f"{s.name} com erro" for s in bad) if bad
+                                            else f"{len(running)} serviço(s) em execução"))
+        tray.setToolTip(text[:120])
+        status_action.setText(text[:80])
+    timer = QTimer(tray)
+    timer.setInterval(5000)
+    timer.timeout.connect(update)
+    timer.start()
+    update()
+    tray.show()
+    return tray
+
+
 def run_ui(*, data_dir=None, log_level=None, console_log=False, smoke_test=False,
-           report=None) -> int:
+           report=None, tray_start=False) -> int:
     from app.main import (EXIT_ALREADY_RUNNING, EXIT_OK, EXIT_SMOKE_FAILED,
                           EXIT_STARTUP_ERROR, _write_report)
 
@@ -41,6 +83,17 @@ def run_ui(*, data_dir=None, log_level=None, console_log=False, smoke_test=False
     lock = QLockFile(str(paths.user_root / "vyonix-ui.lock"))
     if not lock.tryLock(200):
         if not smoke_test:
+            # Pede à instância em execução (talvez só na bandeja) que mostre a janela.
+            request = paths.user_root / SHOW_REQUEST
+            try:
+                request.write_text("show", encoding="utf-8")
+                for _ in range(25):
+                    if not request.exists():
+                        return EXIT_ALREADY_RUNNING
+                    time.sleep(0.1)
+                request.unlink(missing_ok=True)
+            except OSError:
+                pass
             QMessageBox.information(None, brand.PRODUCT_NAME,
                                     f"O {brand.PRODUCT_NAME} já está aberto nesta sessão.")
         _write_report(report, {"ok": False, "error": "already running"})
@@ -62,9 +115,32 @@ def run_ui(*, data_dir=None, log_level=None, console_log=False, smoke_test=False
     result: dict = {"ok": False}
     try:
         theme.apply_theme(app, ctx.settings.get("ui.theme"))
-        ctx.runtime.start()
+        from app.service import remote
+        if not remote.attach(ctx):      # serviço Windows ausente/parado: servidores rodam nesta janela
+            ctx.runtime.start()
         window = MainWindow(ctx)
-        window.show_fitted()
+        tray = None
+        from app.ui.qt import QSystemTrayIcon
+        if not smoke_test and QSystemTrayIcon.isSystemTrayAvailable():
+            tray = _make_tray(app, window, ctx)
+            window.hide_on_close = bool(ctx.settings.get("ui.close_to_tray")) or tray_start
+            app.setQuitOnLastWindowClosed(not window.hide_on_close)
+            ctx.settings.subscribe(lambda ch: "ui.close_to_tray" in ch and (
+                setattr(window, "hide_on_close", bool(ch["ui.close_to_tray"])),
+                app.setQuitOnLastWindowClosed(not ch["ui.close_to_tray"])))
+        request = paths.user_root / SHOW_REQUEST
+        request.unlink(missing_ok=True)
+        poll = QTimer()
+        poll.setInterval(700)
+
+        def check_request():
+            if request.exists():
+                request.unlink(missing_ok=True)
+                window.bring_to_front()
+        poll.timeout.connect(check_request)
+        poll.start()
+        if not (tray_start and tray is not None):
+            window.show_fitted()
         if smoke_test:
             QTimer.singleShot(300, lambda: _smoke(app, window, ctx, result, translations))
         code = exec_app(app)

@@ -72,12 +72,14 @@ Name: "ptbr"; MessagesFile: "compiler:Languages\BrazilianPortuguese.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
+Name: "service"; Description: "Instalar o serviço Windows (recepção e impressão continuam com o VYONIX fechado e após reiniciar o computador)"; GroupDescription: "Serviço:"
+Name: "tray"; Description: "Mostrar o ícone do VYONIX na bandeja ao entrar no Windows"; GroupDescription: "Serviço:"
 Name: "firewall"; Description: "Permitir que equipamentos DICOM se conectem ao VYONIX (Firewall do Windows, redes privadas e de domínio)"; GroupDescription: "Rede:"
 
 [Dirs]
 ; Dados da máquina: preservados em atualizações e, por padrão, na desinstalação.
-; Usuários comuns precisam gravar o banco enquanto não existe o serviço Windows (Fase 7);
-; nessa fase a permissão será restringida à conta do serviço.
+; O serviço (conta Sistema Local) e a interface (usuário comum) compartilham o banco em ProgramData;
+; por isso Usuários têm permissão de modificação (limitação documentada no Manual de Instalação).
 Name: "{#DataDir}"; Permissions: users-modify; Flags: uninsneveruninstall
 
 [InstallDelete]
@@ -92,17 +94,42 @@ Source: "AVISO.txt"; DestDir: "{app}"; Flags: ignoreversion
 Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppExe}"; WorkingDir: "{app}"
 Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; WorkingDir: "{app}"; Tasks: desktopicon
 
+[Registry]
+Root: HKLM; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "VYONIX DICOM Print"; ValueData: """{app}\{#AppExe}"" --tray"; Flags: uninsdeletevalue; Tasks: tray
+
 [Run]
+; Serviço Windows: instala (ou atualiza) com início automático atrasado, reinício automático em falhas.
+Filename: "{app}\VyonixService.exe"; Parameters: "--startup delayed install"; Flags: runhidden waituntilterminated; Tasks: service; StatusMsg: "Instalando o serviço Windows..."
+Filename: "{app}\VyonixService.exe"; Parameters: "--startup delayed update"; Flags: runhidden waituntilterminated; Tasks: service
+Filename: "{sys}\sc.exe"; Parameters: "failure VyonixDicomPrint reset= 86400 actions= restart/5000/restart/15000/restart/60000"; Flags: runhidden waituntilterminated; Tasks: service
+Filename: "{app}\VyonixService.exe"; Parameters: "--wait 60 start"; Flags: runhidden waituntilterminated; Tasks: service; StatusMsg: "Iniciando o serviço Windows..."
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""VYONIX DICOM Print (serviço)"""; Flags: runhidden; Tasks: firewall
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""VYONIX DICOM Print (serviço)"" dir=in action=allow program=""{app}\VyonixService.exe"" enable=yes profile=private,domain"; Flags: runhidden; Tasks: firewall
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""VYONIX DICOM Print"""; Flags: runhidden; Tasks: firewall
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""VYONIX DICOM Print"" dir=in action=allow program=""{app}\{#AppExe}"" enable=yes profile=private,domain"; Flags: runhidden; Tasks: firewall; StatusMsg: "Configurando o Firewall do Windows..."
 Filename: "{app}\{#AppExe}"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags: nowait postinstall skipifsilent runasoriginaluser
 
 [UninstallRun]
+Filename: "{app}\VyonixService.exe"; Parameters: "--wait 60 stop"; Flags: runhidden waituntilterminated; RunOnceId: "VyonixServiceStop"
+Filename: "{app}\VyonixService.exe"; Parameters: "remove"; Flags: runhidden waituntilterminated; RunOnceId: "VyonixServiceRemove"
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""VYONIX DICOM Print (serviço)"""; Flags: runhidden; RunOnceId: "VyonixFirewallService"
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""VYONIX DICOM Print"""; Flags: runhidden; RunOnceId: "VyonixFirewall"
 
 [Code]
 var
   RemoveData: Boolean;
+
+{ Atualização: para o serviço da versão anterior antes de substituir os arquivos. }
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  Code: Integer;
+  Exe: String;
+begin
+  Result := '';
+  Exe := ExpandConstant('{app}\VyonixService.exe');
+  if FileExists(Exe) then
+    Exec(Exe, '--wait 60 stop', '', SW_HIDE, ewWaitUntilTerminated, Code);
+end;
 
 function InitializeUninstall(): Boolean;
 begin

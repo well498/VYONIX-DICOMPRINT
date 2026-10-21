@@ -139,6 +139,22 @@ class MainWindow(QMainWindow):
         if "ui.theme" in changed:
             theme.apply_theme(QApplication.instance(), changed["ui.theme"])
 
+    hide_on_close = False      # definido pela aplicação quando há ícone na bandeja
+    quitting = False
+
+    def closeEvent(self, event) -> None:  # noqa: N802 - API Qt
+        if self.hide_on_close and not self.quitting:
+            event.ignore()
+            self.hide()
+            return
+        super().closeEvent(event)
+
+    def bring_to_front(self) -> None:
+        if self.isMinimized() or not self.isVisible():
+            self.show_fitted()
+        self.raise_()
+        self.activateWindow()
+
     def shutdown(self) -> None:
         """Interrompe atualizações e aguarda operações pendentes antes de fechar o banco."""
         for i in range(self.stack.count()):

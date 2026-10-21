@@ -64,7 +64,7 @@ Mostra o estado da recepção (em execução, parado ou erro, com o motivo), o A
 
 O cartão **Print SCP — impressão DICOM** tem os mesmos controles para o servidor de impressão (AE Title padrão `VYONIX_PRINT`, porta `11113`). Equipamentos que "imprimem em filme" podem usar o VYONIX como impressora DICOM: cada filme vira um trabalho em *Trabalhos de impressão*, com origem "DICOM Print".
 
-Nesta versão, os servidores funcionam enquanto o VYONIX estiver aberto.
+Com o serviço Windows instalado (padrão), os servidores e a fila rodam no serviço, mesmo com a janela fechada; os botões desta tela comandam o serviço. Sem o serviço, os servidores rodam enquanto a janela estiver aberta.
 
 ## 5A. Impressoras
 
@@ -116,6 +116,10 @@ As regras ativas são avaliadas da **prioridade menor para a maior** (use **Subi
 **Simular…** mostra, para um trabalho hipotético (equipamento, modalidade, horário etc.), por que cada regra se aplica ou não e o resultado final com a origem de cada valor. Nada é impresso. Os detalhes de cada trabalho real também mostram a avaliação das regras na hora da criação.
 
 **Reprocessar com config. atuais** (em Trabalhos) reavalia as regras e perfis atuais, mantendo o que veio do pedido DICOM Print.
+
+## 5F. Ícone na bandeja
+
+O ícone do VYONIX ao lado do relógio mostra o estado dos serviços. Clique nele para abrir a janela; o menu tem **Abrir o VYONIX** e **Sair do VYONIX**. Fechar a janela no **X** a mantém na bandeja (desligável em *Configurações → Interface*). Sair da janela não para o serviço Windows.
 
 ## 6. Senha de administrador
 

@@ -87,7 +87,7 @@ function Wait-Until([scriptblock]$Cond, [int]$TimeoutSec = 180) {
 }
 
 function Install-Silent([string]$Log) {
-    $code = Run-Exe $Installer @("/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/TASKS=desktopicon,firewall", "/LOG=$Log") @{} 600
+    $code = Run-Exe $Installer @("/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/TASKS=desktopicon,firewall,service,tray", "/LOG=$Log") @{} 600
     if ($code -ne 0) { throw "instalador retornou $code" }
 }
 
@@ -202,7 +202,34 @@ Invoke-Check "INS-05" "Instalador" "Programa instalado sem Python no PATH (--che
     $script:installationId = $r.installation_id
     "banco em $($r.database); ID $($r.installation_id)"
 }
-Invoke-Check "INS-06" "Interface" "Smoke test do programa instalado (Windows nativo)" {
+Invoke-Check "SRV-01" "Serviço" "Serviço Windows instalado, automático e em execução" {
+    Wait-Until { (Get-Service VyonixDicomPrint -ErrorAction SilentlyContinue).Status -eq "Running" } 90
+    $svc = Get-CimInstance Win32_Service -Filter "Name='VyonixDicomPrint'"
+    if (-not $svc) { throw "serviço não registrado" }
+    if ($svc.State -ne "Running") { throw "estado $($svc.State)" }
+    if ($svc.StartMode -ne "Auto") { throw "início $($svc.StartMode)" }
+    if ($svc.PathName -notmatch [regex]::Escape("$InstallDir\VyonixService.exe")) { throw "caminho $($svc.PathName)" }
+    if (-not $svc.PathName.StartsWith('"')) { throw "caminho do serviço sem aspas: $($svc.PathName)" }
+    "conta $($svc.StartName); início $($svc.StartMode); $($svc.PathName)"
+}
+Invoke-Check "SRV-02" "Serviço" "Serviço responde ao canal de controle e aos C-ECHO (Storage e Print SCP)" {
+    $rep = Join-Path $OutDir "service-check.json"
+    $code = 1
+    for ($i = 0; $i -lt 20 -and $code -ne 0; $i++) {
+        $code = Run-Exe $InstalledExe @("--service-check", "--report", $rep) $clean
+        if ($code -ne 0) { Start-Sleep 3 }
+    }
+    $r = Read-Report $rep
+    if ($code -ne 0 -or -not $r.ok) { throw "código $code; $($r.error)" }
+    $svcs = ($r.status.services | ForEach-Object { "$($_.name)=$($_.state)" }) -join ", "
+    "serviço $($r.status.version); $svcs; C-ECHO storage $($r.echo.storage_bound.ms) ms, print $($r.echo.print_bound.ms) ms"
+}
+Invoke-Check "SRV-03" "Serviço" "Registro de inicialização da bandeja" {
+    $v = (Get-ItemProperty "HKLM:\Software\Microsoft\Windows\CurrentVersion\Run")."VYONIX DICOM Print"
+    if ($v -notmatch "--tray") { throw "valor '$v'" }
+    $v
+}
+Invoke-Check "INS-06" "Interface" "Smoke test do programa instalado (Windows nativo, conectado ao serviço)" {
     Smoke $InstalledExe "installed-native" $clean @()
 }
 Invoke-Check "INS-07" "Instalador" "Atualização sobre instalação existente preserva dados" {
@@ -212,12 +239,15 @@ Invoke-Check "INS-07" "Instalador" "Atualização sobre instalação existente p
     $r = Read-Report $rep
     if ($code -ne 0) { throw "código $code" }
     if ($r.installation_id -ne $script:installationId) { throw "ID mudou: $($r.installation_id)" }
-    "ID da instalação mantido ($($r.installation_id))"
+    Wait-Until { (Get-Service VyonixDicomPrint -ErrorAction SilentlyContinue).Status -eq "Running" } 90
+    if ((Get-Service VyonixDicomPrint).Status -ne "Running") { throw "serviço não voltou após a atualização" }
+    "ID da instalação mantido ($($r.installation_id)); serviço em execução após atualizar"
 }
 Invoke-Check "INS-08" "Instalador" "Desinstalação silenciosa remove programa e preserva dados" {
     Uninstall-Silent
     if (Test-Path $StartMenuLnk) { throw "atalho permaneceu" }
     if ((Test-FirewallRule).exists) { throw "regra de firewall permaneceu" }
+    if (Get-Service VyonixDicomPrint -ErrorAction SilentlyContinue) { throw "serviço permaneceu registrado" }
     if (-not (Test-Path "$DataDir\database\vyonix.db")) { throw "banco removido" }
     "programa, atalhos e registro removidos; banco preservado"
 }

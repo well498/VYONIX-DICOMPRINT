@@ -24,7 +24,8 @@ SCP_RESTART_KEYS = {"dicom.storage.ae_title", "dicom.storage.bind_address", "dic
 
 class CoreRuntime:
     def __init__(self, *, storage_scp, retention, settings_get: Callable[[str], Any], worker=None,
-                 printers=None, print_scp=None) -> None:
+                 printers=None, print_scp=None, role: str = "ui") -> None:
+        self.role = role
         self.storage_scp = storage_scp
         self.print_scp = print_scp
         self.worker = worker
@@ -87,9 +88,19 @@ class CoreRuntime:
             self._queue_status(),
             self.print_scp.status() if self.print_scp is not None else
             ServiceStatus("DICOM Print SCP", ServiceState.NOT_IMPLEMENTED, ""),
-            ServiceStatus("Serviço Windows", ServiceState.NOT_IMPLEMENTED,
-                          "Previsto na Fase 7 (hoje os serviços rodam com a interface aberta)"),
+            self._windows_service_status(),
         ]
+
+    def _windows_service_status(self) -> ServiceStatus:
+        from app.service.remote import WINDOWS_SERVICE, windows_service_state
+        state, text = windows_service_state()
+        if self.role == "service":
+            return ServiceStatus(WINDOWS_SERVICE, ServiceState.RUNNING, "este processo é o serviço")
+        if state == "running":
+            return ServiceStatus(WINDOWS_SERVICE, ServiceState.ERROR,
+                                 "em execução, mas não respondeu à interface; servidores rodando nesta janela")
+        return ServiceStatus(WINDOWS_SERVICE, ServiceState.STOPPED,
+                             f"{text} — servidores e fila rodando nesta janela (param quando ela fecha)")
 
     def _queue_status(self) -> ServiceStatus:
         name = "Fila de impressão"

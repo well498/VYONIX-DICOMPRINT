@@ -101,6 +101,28 @@ class UiSmokeTest(TempDirTestCase):
         finally:
             ctx.close()
 
+    def test_tray_and_close_to_tray(self):
+        from app.bootstrap import bootstrap
+        from app.ui.application import _make_tray
+        from app.ui.main_window import MainWindow
+        ctx = bootstrap(data_dir=self.tmp / "tray")
+        try:
+            w = MainWindow(ctx)
+            tray = _make_tray(self.app, w, ctx)
+            self.assertIn("VYONIX", tray.toolTip())
+            w.hide_on_close = True
+            w.show()
+            w.close()
+            self.assertFalse(w.isVisible())          # escondida, não encerrada
+            w.bring_to_front()
+            self.assertTrue(w.isVisible())
+            w.quitting = True
+            w.close()
+            tray.hide()
+            w.shutdown()
+        finally:
+            ctx.close()
+
     def test_builtin_smoke_routine(self):
         import json
         from app.main import EXIT_OK, main

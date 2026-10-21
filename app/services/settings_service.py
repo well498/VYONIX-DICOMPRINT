@@ -183,6 +183,9 @@ DEFINITIONS: tuple[SettingDef, ...] = (
 
     SettingDef("ui.theme", "Tema", "ui", "choice", "system",
                choices=(("system", "Seguir o Windows"), ("light", "Claro"), ("dark", "Escuro"))),
+    SettingDef("ui.close_to_tray", "Fechar a janela mantém o VYONIX na bandeja", "ui", "bool", True,
+               help="O ícone ao lado do relógio mostra o estado dos serviços. Para sair, use “Sair” no menu "
+                    "do ícone. Com o serviço Windows ativo, a recepção e a impressão continuam mesmo após sair."),
 
     SettingDef("logging.level", "Nível de log", "diagnostics", "choice", "INFO",
                choices=tuple((lvl, lvl) for lvl in v.LOG_LEVELS),

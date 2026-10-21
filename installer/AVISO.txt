@@ -2,8 +2,8 @@
 
 ATENÇÃO — VERSÃO DE DESENVOLVIMENTO PARA HOMOLOGAÇÃO
 
-Esta compilação corresponde às Fases 1 a 6 (Fundação, Comunicação DICOM,
-Imagens e calibração, Impressão e fila, DICOM Print SCP, Regras).
+Esta compilação corresponde às Fases 1 a 7 (Fundação, Comunicação DICOM,
+Imagens e calibração, Impressão e fila, DICOM Print SCP, Regras, Serviço Windows).
 
 Requisitos: Windows 10 64 bits (versão 1809 ou posterior) ou Windows 11.
 
@@ -17,9 +17,10 @@ Incluído nesta versão:
   - Impressão em impressoras Windows e em PDF, fila persistente e perfis.
   - Impressão DICOM (Print SCP) para equipamentos que imprimem em filme.
   - Regras automáticas com simulação.
+  - Serviço Windows: recepção e impressão com a janela fechada; ícone na bandeja.
 
 Ainda NÃO incluído nesta versão:
-  - Serviço Windows e licenciamento.
+  - Licenciamento offline (Fase 8).
   - Impressão em papel não verificada em impressoras físicas.
 
 Este software NÃO está validado para uso clínico e NÃO possui declaração

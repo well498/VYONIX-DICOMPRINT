@@ -122,10 +122,47 @@ exe = EXE(
     version=str(version_file) if version_file.exists() else None,
 )
 
+# ---------------------------------------------------------------- serviço Windows (Fase 7)
+# Executável separado, sem Qt: roda na sessão 0 pelo Gerenciador de Serviços.
+SERVICE_HIDDEN = (["win32serviceutil", "win32service", "win32event", "servicemanager", "win32timezone"]
+                  if sys.platform == "win32" else [])
+s = Analysis(
+    [str(ROOT / "packaging" / "service_launcher.py")],
+    pathex=[str(ROOT)],
+    binaries=[],
+    datas=CODEC_METADATA,
+    hiddenimports=CODEC_HIDDEN + WIN32_HIDDEN + SERVICE_HIDDEN,
+    hookspath=[],
+    runtime_hooks=[],
+    excludes=["tkinter", "pytest", "tests", "license_admin", "unittest.mock", "PySide6", "PySide2", "shiboken6",
+              "shiboken2", "app.ui"] + PIL_EXCLUDES,
+    noarchive=False,
+)
+for entry in list(s.datas):
+    if "license_admin" in entry[0] or entry[0].lower().endswith((".pem", ".key")):
+        raise SystemExit(f"Arquivo proibido no pacote do serviço: {entry[0]}")
+service_pyz = PYZ(s.pure)
+service_exe = EXE(
+    service_pyz,
+    s.scripts,
+    [],
+    exclude_binaries=True,
+    name="VyonixService",
+    debug=False,
+    strip=False,
+    upx=False,
+    console=True,
+    icon=str(icon) if icon.exists() else None,
+    version=str(version_file) if version_file.exists() else None,
+)
+
 coll = COLLECT(
     exe,
     a.binaries,
     a.datas,
+    service_exe,
+    s.binaries,
+    s.datas,
     strip=False,
     upx=False,
     name="Vyonix",

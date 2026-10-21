@@ -4,7 +4,7 @@
 
 ## Natureza desta versão
 
-Versão de **desenvolvimento para homologação**, correspondente às **Fases 1 a 6** (Fundação, Comunicação DICOM, Imagens e calibração, Impressão e fila, DICOM Print SCP, Regras automáticas) do plano de 8 fases. Não é a versão comercial 1.0.0: o número `{VERSION}` indica uma pré-versão de 1.0.0.
+Versão de **desenvolvimento para homologação**, correspondente às **Fases 1 a 7** (Fundação, Comunicação DICOM, Imagens e calibração, Impressão e fila, DICOM Print SCP, Regras automáticas, Serviço Windows) do plano de 8 fases. Não é a versão comercial 1.0.0: o número `{VERSION}` indica uma pré-versão de 1.0.0.
 
 **Não validada para uso clínico. Sem declaração de conformidade DICOM.**
 
@@ -39,6 +39,7 @@ Windows 10 64 bits (versão 1809 ou posterior) ou Windows 11. O executável usa 
 - **Impressoras (Fase 4):** detecção das impressoras do Windows (driver, porta, papéis, resoluções, cor), impressora padrão do VYONIX, página de teste; impressora virtual **VYONIX PDF** que grava PDFs em tamanho real.
 - **Fila persistente (Fase 4):** impressão automática por série recebida, estados rastreados, chave de idempotência contra impressão duplicada, tentativas automáticas, recuperação após queda, reter, liberar, cancelar, tentar de novo, reprocessar e reimprimir; origem de cada configuração aplicada.
 - **Perfis de impressão (Fase 4):** associação a impressora, modalidade ou equipamento.
+- **Serviço Windows (Fase 7):** `VyonixService.exe` (sem Qt) executa recepção, impressão DICOM e fila com a janela fechada e após reiniciar o computador; início automático atrasado e reinício em falhas; a interface se conecta ao serviço por *named pipe* local autenticado e comanda os servidores; configurações alteradas na interface são aplicadas pelo serviço sem reiniciá-lo; ícone na bandeja com o estado dos serviços; verificação `--service-check`.
 - **Regras automáticas (Fase 6):** condições por AE Title, equipamento, modalidade, unidade, setor, origem, descrição do estudo, parte do corpo, número de imagens, filme pedido, horário (inclusive faixas que cruzam a meia-noite) e dia da semana, sem diferenciar maiúsculas nem acentos; ações para impressora, papel, orientação, layout, cópias, resolução, margens, textos, perfil, retenção, prioridade e "parar"; prioridade ajustável; simulação que mostra regra a regra por que se aplica ou não e o resultado final com a origem de cada valor; histórico, importação e exportação. Precedência: padrão < perfil < regra < pedido DICOM Print < escolha manual.
 - **DICOM Print SCP (Fase 5):** Basic Grayscale e Basic Color Print Management Meta SOP Classes, Presentation LUT, Printer (N-GET com o estado real da impressora e da fila); Film Session, Film Box (STANDARD\C,R de 1 × 1 a 8 × 8) e Image Box (8 e 12/16 bits, MONOCHROME1/2, RGB, polaridade REVERSE); N-ACTION no Film Box e no Film Session. A impressão só é confirmada ao equipamento depois que as imagens estão gravadas e o trabalho está na fila. Layout, orientação, cópias e prioridade pedidos pelo equipamento são respeitados e aparecem como "Pedido DICOM Print" nos detalhes do trabalho.
 
@@ -47,13 +48,13 @@ Windows 10 64 bits (versão 1809 ou posterior) ou Windows 11. O executável usa 
 | Recurso | Fase prevista |
 |---|---|
 | Declaração de conformidade DICOM | 8 |
-| Serviço Windows, operação em segundo plano, bandeja do sistema | 7 |
 | Licenciamento offline assinado, ferramenta de emissão | 8 |
 
 ## Limitações conhecidas
 
 - O executável e o instalador não possuem assinatura digital de código; o Windows SmartScreen pode exibir aviso.
-- Enquanto o serviço Windows não existir (Fase 7), o servidor DICOM só funciona com o VYONIX aberto, e todos os usuários do computador têm permissão de gravação na pasta de dados em `ProgramData`.
+- Todos os usuários do computador têm permissão de gravação na pasta de dados em `ProgramData` (interface e serviço compartilham o banco).
+- O serviço roda como Sistema Local: impressoras de rede conectadas apenas no perfil de um usuário podem não estar disponíveis para ele. A Microsoft não oferece suporte oficial à impressão GDI a partir de serviços; o envio foi verificado no CI com a impressora "Microsoft Print to PDF", mas deve ser homologado com as impressoras reais.
 - JPEG Lossless e JPEG Extended (12 bits) ainda não são aceitos: o equipamento deve enviar sem compressão ou em outra sintaxe.
 - "Enviado" significa aceito pelo spooler do Windows. O trabalho só passa a "Concluído" quando o driver informa que imprimiu; muitos drivers não informam, e o trabalho fica em "Enviado".
 - O envio real ao spooler foi verificado no CI com a impressora "Microsoft Print to PDF". Impressão em papel, em impressoras físicas, não foi verificada e deve ser feita na homologação.

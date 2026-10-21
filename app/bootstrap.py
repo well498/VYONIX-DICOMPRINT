@@ -179,7 +179,7 @@ def bootstrap(*, data_dir: str | os.PathLike[str] | None = None, role: str = "ui
         print_scp = PrintSCP(db=db, settings_get=get, devices=devices.repo, events=events, intake=intake,
                              printer_status=lambda: _printer_status(printers, worker))
         runtime = CoreRuntime(storage_scp=storage_scp, retention=retention, settings_get=get,
-                              worker=worker, printers=printers, print_scp=print_scp)
+                              worker=worker, printers=printers, print_scp=print_scp, role=role)
         access = AdminAccess(db, events, lock_minutes=lambda: int(get("security.lock_minutes")))
         ctx = AppContext(
             role=role, paths=paths, log_file=log_file, db=db, events=events, settings=settings,
@@ -219,9 +219,17 @@ def bootstrap(*, data_dir: str | os.PathLike[str] | None = None, role: str = "ui
 
 
 def _clean_temp(folder: Path) -> None:
-    """Remove recepções incompletas deixadas por uma queda anterior (arquivos rx-*.dcm)."""
+    """Remove recepções incompletas deixadas por uma queda anterior (arquivos rx-*.dcm).
+
+    Só apaga arquivos com mais de 1 hora: o serviço e a interface compartilham a pasta, e um
+    arquivo recente pode ser uma recepção em andamento no outro processo.
+    """
+    import time
+    limit = time.time() - 3600
     for leftover in folder.glob("rx-*.dcm"):
         try:
+            if leftover.stat().st_mtime > limit:
+                continue
             leftover.unlink()
             log.warning("Recepção incompleta removida após reinício", extra={"file": leftover.name})
         except OSError:
