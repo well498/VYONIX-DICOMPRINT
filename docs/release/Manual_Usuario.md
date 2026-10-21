@@ -23,9 +23,9 @@ A barra inferior mostra a pasta de dados em uso e o aviso de que a versão não 
 | Servidor DICOM | Disponível (recepção e impressão DICOM) |
 | Impressoras | Disponível |
 | Trabalhos de impressão | Disponível |
-| Regras automáticas | Não implementado — Fase 6 |
+| Regras automáticas | Disponível |
 | Calibração | Disponível |
-| Perfis de impressão | Disponível (regras automáticas na Fase 6) |
+| Perfis de impressão | Disponível |
 | Histórico | Disponível |
 | Configurações | Disponível |
 | Licença | Disponível (somente identificação da instalação) |
@@ -99,9 +99,23 @@ Ajuste a resposta de cada impressora sobre o padrão de teste ou sobre uma image
 
 ## 5D. Perfis de impressão
 
-Um perfil define papel, orientação, layout, cópias, margens, espaçamento, resolução, cabeçalho, rodapé, informações do exame e numeração. Campos "não definir" herdam o valor do próximo nível. Precedência: padrão do sistema < perfil da impressora < perfil da modalidade < perfil do equipamento < escolha manual.
+Um perfil define papel, orientação, layout, cópias, margens, espaçamento, resolução, cabeçalho, rodapé, informações do exame e numeração. Campos "não definir" herdam o valor do próximo nível. Precedência: padrão do sistema < perfil da impressora < perfil da modalidade < perfil do equipamento < regra automática < pedido DICOM Print < escolha manual.
 
 **Dados do paciente:** nome e ID no cabeçalho ficam desligados por padrão (LGPD). Quando ligados, são lidos do arquivo DICOM só no momento da impressão; não vão para o banco, os logs nem o nome do documento no spooler.
+
+## 5E. Regras automáticas
+
+Uma regra tem **condições** (todas precisam valer; sem condições, vale para todos os trabalhos) e **ações**. Exemplos:
+
+- *Modalidade é igual a MG* → papel A3, layout 1 × 2.
+- *Horário entre 19:00-07:00* e *Unidade é igual a Pronto-socorro* → impressora do plantão.
+- *Equipamento AE Title começa com US_* e *Número de imagens maior ou igual a 20* → reter para liberação manual.
+
+As regras ativas são avaliadas da **prioridade menor para a maior** (use **Subir/Descer**). Quando duas regras definem a mesma configuração, vale a de maior prioridade (a avaliada primeiro); as seguintes só completam o que falta. A ação **Parar** encerra a avaliação. Textos são comparados sem diferenciar maiúsculas e acentos.
+
+**Simular…** mostra, para um trabalho hipotético (equipamento, modalidade, horário etc.), por que cada regra se aplica ou não e o resultado final com a origem de cada valor. Nada é impresso. Os detalhes de cada trabalho real também mostram a avaliação das regras na hora da criação.
+
+**Reprocessar com config. atuais** (em Trabalhos) reavalia as regras e perfis atuais, mantendo o que veio do pedido DICOM Print.
 
 ## 6. Senha de administrador
 

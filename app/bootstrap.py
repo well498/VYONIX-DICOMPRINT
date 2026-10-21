@@ -41,6 +41,7 @@ from app.printing.backends import windows as win_backend
 from app.printing.backends.pdf import PdfFileBackend
 from app.printing.profiles import ProfileService
 from app.printing.service import PrinterService
+from app.rules.engine import RuleService
 from app.services.dashboard_service import DashboardService
 from app.services.imaging_service import ImagingService
 from app.services.retention import RetentionService
@@ -76,6 +77,7 @@ class AppContext:
     jobs: JobService
     worker: PrintWorker
     print_scp: PrintSCP
+    rules: RuleService
     schema_version: int
     applied_migrations: list[int] = field(default_factory=list)
     _closed: bool = False
@@ -157,7 +159,14 @@ def bootstrap(*, data_dir: str | os.PathLike[str] | None = None, role: str = "ui
         else:
             backend_errors["windows"] = win_why
         printers = PrinterService(db, events, backends, get, backend_errors)
-        jobs = JobService(db, events, get, profiles, printers.printer_id)
+        def profile_exists(pid: int) -> bool:
+            try:
+                return profiles.get(pid).active
+            except Exception:  # noqa: BLE001
+                return False
+
+        rules = RuleService(db, events, profile_exists)
+        jobs = JobService(db, events, get, profiles, printers.printer_id, rules=rules)
         collector = AutoPrintCollector(db, jobs, get)
         storage_scp.sink = collector
         worker = PrintWorker(db=db, events=events, jobs=jobs, printers=printers, imaging=imaging,
@@ -181,7 +190,7 @@ def bootstrap(*, data_dir: str | os.PathLike[str] | None = None, role: str = "ui
             devices=devices, store=store, storage_scp=storage_scp, retention=retention,
             access=access, runtime=runtime,
             imaging=imaging, profiles=profiles, printers=printers, jobs=jobs, worker=worker,
-            print_scp=print_scp,
+            print_scp=print_scp, rules=rules,
             schema_version=schema, applied_migrations=applied,
         )
         settings.subscribe(runtime.on_settings_changed)

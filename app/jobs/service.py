@@ -98,7 +98,8 @@ def group_key(items: Iterable[str], prefix: str) -> str:
 
 class JobService:
     def __init__(self, db: Database, events: EventRepository, settings_get: Callable[[str], Any],
-                 profiles: ProfileService, printer_id: Callable[[str], int | None]) -> None:
+                 profiles: ProfileService, printer_id: Callable[[str], int | None], rules=None) -> None:
+        self.rules = rules
         self.db = db
         self.events = events
         self.get = settings_get
@@ -162,7 +163,7 @@ class JobService:
                printer: str | None = None, overrides: dict[str, Any] | None = None,
                override_label: str = "Escolha manual", parent_job_id: int | None = None, priority: int = 0,
                actor: str = "system", hold: bool | None = None, resolved: resolver.Resolved | None = None,
-               reason: str | None = None) -> tuple[int, bool]:
+               reason: str | None = None, rule_facts: dict[str, Any] | None = None) -> tuple[int, bool]:
         """Cria o trabalho. Retorna (id, criado). Se a chave já existe, devolve o trabalho existente."""
         if source_type not in SOURCE_LABELS:
             raise ValidationError("Origem de trabalho inválida.")
@@ -180,12 +181,21 @@ class JobService:
                                 LEFT JOIN printers p ON p.id = d.printer_id WHERE d.id = ?""", (device_id,)).fetchone()
             if d:
                 dev_profile, dev_printer = d["print_profile_id"], d["printer_name"]
+        ev = None
         if resolved is None:
+            ev = self.evaluate_rules(source_type=source_type, source_ae=source_ae, device_id=device_id,
+                                     modality=modality, items=items, extra=rule_facts)
             resolved = resolver.resolve(self.get, self.profiles, device_id=device_id, device_profile_id=dev_profile,
-                                        modality=modality, printer=printer or dev_printer, overrides=overrides,
-                                        override_label=override_label)
-            if dev_printer and not printer and not (overrides or {}).get("printer"):
-                resolved.origins["printer"] = "Cadastro do equipamento"
+                                        modality=modality, printer=printer, overrides=overrides,
+                                        override_label=override_label, rules=ev, device_printer=dev_printer)
+            if ev is not None and ev.explanation:
+                resolved.origins["_rules"] = "\n".join(ev.explanation)
+        rule_id = ev.matched_ids[0] if ev is not None and ev.matched_ids else None
+        if ev is not None and ev.hold and hold is None:
+            hold = True
+            reason = "; ".join(x for x in (reason, f"Retido pela regra \u201c{ev.hold}\u201d") if x)
+        if ev is not None and ev.priority is not None:
+            priority = ev.priority if priority == 0 else max(priority, ev.priority)
         values = resolved.values
         hold = bool(self.get("jobs.hold_new")) if hold is None else hold
         state = JobState.HELD if hold else JobState.RECEIVED
@@ -194,11 +204,11 @@ class JobService:
         with self.db.transaction():
             cur = conn.execute(
                 """INSERT INTO jobs(uuid, idempotency_key, source_type, parent_job_id, device_id, source_ae, modality,
-                       printer_id, profile_id, state, state_reason, settings_json, settings_origin_json, copies,
+                       printer_id, profile_id, rule_id, state, state_reason, settings_json, settings_origin_json, copies,
                        attempts, max_attempts, priority, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)""",
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)""",
                 (str(uuid.uuid4()), key, source_type, parent_job_id, device_id, source_ae, modality, pid,
-                 resolved.profile_id, state.value, reason or ("Aguardando liberação manual" if hold else None),
+                 resolved.profile_id, rule_id, state.value, reason or ("Aguardando liberação manual" if hold else None),
                  json.dumps(values, ensure_ascii=False), json.dumps(resolved.origins, ensure_ascii=False),
                  int(values.get("copies") or 1), int(self.get("jobs.max_attempts")), priority, now, now))
             job_id = int(cur.lastrowid)
@@ -212,6 +222,26 @@ class JobService:
                             device_id=device_id, job_id=job_id, actor=actor)
         self._notify(job_id)
         return job_id, True
+
+    def evaluate_rules(self, *, source_type: str, source_ae: str | None, device_id: int | None,
+                       modality: str | None, items, extra: dict[str, Any] | None = None):
+        """Avalia as regras ativas para os fatos deste trabalho (None se não houver motor)."""
+        if self.rules is None:
+            return None
+        from types import SimpleNamespace
+        from app.rules.engine import facts_for
+        conn = self.db.connection()
+        device = None
+        if device_id:
+            d = conn.execute("SELECT id, site, department FROM devices WHERE id = ?", (device_id,)).fetchone()
+            device = SimpleNamespace(**dict(d)) if d else None
+        first_file = None
+        if items:
+            r = conn.execute("SELECT file_path FROM instances WHERE id = ?", (items[0][0],)).fetchone()
+            first_file = r["file_path"] if r else None
+        facts = facts_for(source=source_type, calling_ae=source_ae, device=device, modality=modality,
+                          image_count=len(items), first_file=first_file, extra=extra)
+        return self.rules.evaluate(facts)
 
     # ---------------------------------------------------------------- transições
     def transition(self, job_id: int, to: JobState, *, actor: str, reason: str | None = None,
@@ -284,8 +314,15 @@ class JobService:
             r = self.db.connection().execute("SELECT print_profile_id FROM devices WHERE id = ?",
                                              (job.device_id,)).fetchone()
             dev_profile = r["print_profile_id"] if r else None
+        items = [(it["instance_id"], it["frame_index"]) for it in self.items(job_id) if it["instance_id"]]
+        ev = self.evaluate_rules(source_type=job.source_type, source_ae=job.source_ae, device_id=job.device_id,
+                                 modality=job.modality, items=items)
+        dicom = {k: v for k, v in job.settings.items() if job.origins.get(k) == "Pedido DICOM Print"}
         res = resolver.resolve(self.get, self.profiles, device_id=job.device_id, device_profile_id=dev_profile,
-                               modality=job.modality)
+                               modality=job.modality, rules=ev, overrides=dicom or None,
+                               override_label="Pedido DICOM Print")
+        if ev is not None and ev.explanation:
+            res.origins["_rules"] = "\n".join(ev.explanation)
         self._act(job_id, JobState.VALIDATING, actor, "Reprocessado com as configurações atuais", "job.reprocess",
                   f"Trabalho #{job_id} reprocessado com as configurações atuais.", attempts=0, next_attempt_at=None,
                   settings_json=json.dumps(res.values, ensure_ascii=False),

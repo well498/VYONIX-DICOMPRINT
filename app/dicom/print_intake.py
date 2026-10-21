@@ -111,6 +111,7 @@ class PrintIntake:
             source_type="dicom_print", items=items, idempotency_key=f"dicom_print:{film.film_box_uid}",
             device_id=device_id, source_ae=peer.calling_ae, modality=modality, overrides=overrides,
             override_label="Pedido DICOM Print", priority=priority,
+            rule_facts={"film_size": film_size or None, "display_format": f"{film.cols},{film.rows}"},
             reason="; ".join(notes) if notes else None)
         log.info("Filme recebido por DICOM Print", extra={"job": job_id, "images": len(items),
                                                           "format": f"{film.rows}x{film.cols}"})

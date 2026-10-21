@@ -53,6 +53,54 @@ class UiSmokeTest(TempDirTestCase):
         finally:
             ctx.close()
 
+    def test_print_and_rules_dialogs(self):
+        """Diálogos das Fases 4 a 6 com o Qt real: perfis, regras e simulação."""
+        from app.bootstrap import bootstrap
+        from app.printing.profiles import PrintProfile
+        from app.rules.engine import Rule
+        from app.ui.pages.profiles_page import ProfileDialog
+        from app.ui.pages.rules_page import RuleDialog, SimulationDialog
+        from app.ui.qt import QWidget
+
+        ctx = bootstrap(data_dir=self.tmp / "dlg")
+        try:
+            ctx.printers.refresh()
+            parent = QWidget()
+            pd = ProfileDialog(parent, ctx.profiles, None)
+            pd.name.setText("Perfil UI")
+            pd.layout_box.setCurrentIndex(pd.layout_box.findData("2x2"))
+            pd.copies.setValue(2)
+            pd._save()
+            self.assertEqual(pd.error.text(), "")
+            prof = ctx.profiles.list()[0]
+            self.assertEqual((prof.layout, prof.copies, prof.margins), ("2x2", 2, None))
+            pd2 = ProfileDialog(parent, ctx.profiles, prof)
+            self.assertEqual(pd2._collect().layout, "2x2")
+
+            rd = RuleDialog(parent, ctx, None)
+            rd.name.setText("Regra UI")
+            rd._add_condition({"field": "modality", "op": "eq", "value": "CT"})
+            chk, w = rd.actions["copies"]
+            chk.setChecked(True)
+            w.setValue(3)
+            chk, w = rd.actions["profile_id"]
+            chk.setChecked(True)
+            rd._save()
+            self.assertEqual(rd.error.text(), "")
+            rule = ctx.rules.list()[0]
+            self.assertEqual(rule.actions, {"copies": 3, "profile_id": prof.id})
+            self.assertEqual(RuleDialog(parent, ctx, rule).collect().conditions, rule.conditions)
+
+            sim = SimulationDialog(parent, ctx)
+            sim.modality.setText("CT")
+            sim.simulate()
+            text = sim.explanation.toPlainText()
+            self.assertIn("Regra UI", text)
+            self.assertGreater(sim.result.rowCount(), 5)
+            parent.deleteLater()
+        finally:
+            ctx.close()
+
     def test_builtin_smoke_routine(self):
         import json
         from app.main import EXIT_OK, main

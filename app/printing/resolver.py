@@ -1,12 +1,14 @@
 """Resolução das configurações de um trabalho, com a origem de cada valor (§10).
 
-Precedência (da menor para a maior), até a chegada do motor de regras (Fase 6):
+Precedência (da menor para a maior):
 
 1. padrões do sistema (Configurações → Impressão);
 2. perfil associado à impressora;
 3. perfil associado à modalidade;
 4. perfil associado ao equipamento (ou o perfil escolhido no cadastro do equipamento);
-5. valores escolhidos manualmente na ação (ex.: reimprimir com outra impressora).
+5. regras automáticas (Fase 6) — inclusive o perfil que uma regra mandar aplicar;
+6. pedido DICOM Print (layout, orientação, cópias enviados pelo equipamento);
+7. valores escolhidos manualmente na ação (ex.: reimprimir com outra impressora).
 
 O resultado é gravado no trabalho (``settings_json`` e ``settings_origin_json``) — reprocessar
 um trabalho antigo usa os valores dele, não os padrões atuais (salvo "Reprocessar com as
@@ -89,13 +91,18 @@ def _apply_profile(values: dict, origins: dict, profile: PrintProfile, label: st
 
 def resolve(get: Callable[[str], Any], profiles: ProfileService, *, device_id: int | None = None,
             device_profile_id: int | None = None, modality: str | None = None, printer: str | None = None,
-            overrides: Mapping[str, Any] | None = None, override_label: str = "Escolha manual") -> Resolved:
+            overrides: Mapping[str, Any] | None = None, override_label: str = "Escolha manual",
+            rules=None, device_printer: str | None = None) -> Resolved:
+    """``rules`` é uma ``app.rules.engine.Evaluation`` (ou None). Precedência: padrão < perfis <
+    regra (perfil aplicado pela regra e, acima dele, as ações da regra) < pedido < escolha manual."""
     values = defaults(get)
     origins = {k: SYSTEM for k in values}
     if not values["printer"]:
         origins["printer"] = "Impressora padrão do Windows"
     profile_id = None
-    target_printer = (overrides or {}).get("printer") or printer or values["printer"]
+    rule_printer = rules.values.get("printer") if rules is not None else None
+    target_printer = ((overrides or {}).get("printer") or printer or rule_printer or device_printer
+                      or values["printer"])
 
     chain: list[tuple[PrintProfile | None, str]] = []
     if target_printer:
@@ -113,6 +120,20 @@ def resolve(get: Callable[[str], Any], profiles: ProfileService, *, device_id: i
         if prof is not None and prof.active:
             _apply_profile(values, origins, prof, label)
             profile_id = prof.id
+    if device_printer:
+        values["printer"], origins["printer"] = device_printer, "Cadastro do equipamento"
+    if rules is not None and rules.profile_id:
+        try:
+            prof = profiles.get(rules.profile_id)
+            if prof.active:
+                _apply_profile(values, origins, prof, f"regra “{rules.profile_rule}”")
+                profile_id = prof.id
+        except Exception:  # noqa: BLE001 - perfil removido depois da regra
+            pass
+    if rules is not None:
+        for key, val in rules.values.items():
+            if key in values:
+                values[key], origins[key] = val, rules.origins[key]
     if printer:
         values["printer"], origins["printer"] = printer, "Pedido"
     for key, val in (overrides or {}).items():

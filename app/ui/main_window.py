@@ -10,13 +10,14 @@ from app.ui.qt import (QApplication, QHBoxLayout, QLabel, QListWidget, QListWidg
 from app import __version__, brand
 from app.bootstrap import AppContext
 from app.ui import theme
-from app.ui.pages.base import Page, PlaceholderPage
+from app.ui.pages.base import Page
 from app.ui.pages.calibration_page import CalibrationPage
 from app.ui.pages.dashboard_page import DashboardPage
 from app.ui.pages.devices_page import DevicesPage
 from app.ui.pages.jobs_page import JobsPage
 from app.ui.pages.printers_page import PrintersPage
 from app.ui.pages.profiles_page import ProfilesPage
+from app.ui.pages.rules_page import RulesPage
 from app.ui.pages.server_page import ServerPage
 from app.ui.pages.history_page import HistoryPage
 from app.ui.pages.info_pages import AboutPage, LicensePage
@@ -68,10 +69,7 @@ class MainWindow(QMainWindow):
             ServerPage(ctx),
             PrintersPage(ctx),
             JobsPage(ctx),
-            PlaceholderPage("Regras automáticas", "Fase 6", [
-                "Editor visual de condições e ações, com prioridade",
-                "Simulação: qual regra seria aplicada a um trabalho",
-                "Exibição da origem de cada configuração aplicada"]),
+            RulesPage(ctx),
             CalibrationPage(ctx),
             ProfilesPage(ctx),
             HistoryPage(ctx.events, ctx.changes, exports),
