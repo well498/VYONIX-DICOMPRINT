@@ -16,6 +16,7 @@ from app.database.connection import Database
 from app.database.repositories.events_repo import Category, EventRepository
 from app.database.repositories.settings_repo import ChangeHistoryRepository
 from app.imaging.calibration import CalibrationProfile
+from app.printing.paper import paper_mm, parse_layout
 from app.security import validators as v
 from app.utils.timeutil import utc_now_iso
 
@@ -96,6 +97,19 @@ class ProfileService:
             errors["calibration"] = str(exc)
         if profile.orientation and profile.orientation not in ORIENTATIONS:
             errors["orientation"] = "Orientação inválida."
+        if profile.paper_size:
+            try:
+                paper_mm(profile.paper_size)
+            except ValidationError as exc:
+                errors["paper_size"] = str(exc)
+        if profile.layout:
+            try:
+                parse_layout(profile.layout)
+            except ValidationError as exc:
+                errors["layout"] = str(exc)
+        for key, val in (profile.margins or {}).items():
+            if key not in ("top", "right", "bottom", "left", "spacing") or not 0 <= float(val) <= 60:
+                errors["margins"] = "Margens devem estar entre 0 e 60 mm."
         if profile.copies is not None and not 1 <= int(profile.copies) <= 99:
             errors["copies"] = "Cópias devem estar entre 1 e 99."
         dup = self.db.connection().execute("SELECT id FROM print_profiles WHERE name = ? AND id IS NOT ?",

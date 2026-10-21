@@ -56,6 +56,11 @@ class AppPaths:
         return self.machine_root / "backups"
 
     @property
+    def output_dir(self) -> Path:
+        """PDFs gerados pela impressora VYONIX PDF e por impressoras de arquivo (ex.: Microsoft Print to PDF)."""
+        return self.machine_root / "output"
+
+    @property
     def service_logs_dir(self) -> Path:
         return self.machine_root / "logs"
 
@@ -71,7 +76,7 @@ class AppPaths:
     def all_dirs(self) -> list[Path]:
         return [
             self.database_dir, self.storage_dir, self.cache_dir, self.temp_dir,
-            self.backups_dir, self.service_logs_dir, self.user_logs_dir, self.exports_dir,
+            self.backups_dir, self.output_dir, self.service_logs_dir, self.user_logs_dir, self.exports_dir,
         ]
 
     def ensure(self) -> "AppPaths":

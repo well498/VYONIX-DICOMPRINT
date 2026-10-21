@@ -64,7 +64,7 @@ class PythonJsonFallbackTest(TempDirTestCase):
         os.environ[ENV_FORCE_PY_JSON] = "1"
         try:
             db = Database(self.tmp / "py-json.db")
-            self.assertEqual(migrate(db, MIGRATIONS), [1])
+            self.assertEqual(migrate(db, MIGRATIONS), [m.version for m in MIGRATIONS])
             self.assertEqual(db.json_mode, "python")
             conn = db.connection()
             conn.execute("INSERT INTO settings VALUES ('ok', '{\"a\": [1, 2]}', 'x', 'y')")

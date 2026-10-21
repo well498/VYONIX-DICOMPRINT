@@ -10,6 +10,7 @@ pynetdicom>=3.0,<4
 # Fase 3 — imagens (sem OpenCV nem GDCM: ver relatório de análise de desempenho)
 numpy>=2,<3
 Pillow>=11
+pywin32>=306; sys_platform == "win32"
 pylibjpeg>=2.0
 pylibjpeg-openjpeg>=2.3
 pyjpegls>=1.4

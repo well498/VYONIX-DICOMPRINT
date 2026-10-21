@@ -73,14 +73,15 @@ Depois, use o "Verify/Echo" do equipamento: no VYONIX, a coluna "Último contato
 
 **Classes de imagem (24):** CR; DX (apresentação e processamento); MG (apresentação, processamento e tomossíntese); CT e Enhanced CT; MR e Enhanced MR; US e US multiframe; captura secundária (simples e multiframe); XA e Enhanced XA; RF e Enhanced RF; NM; PET e Enhanced PET.
 
-**Sintaxes de transferência:** Implicit VR Little Endian, Explicit VR Little Endian, Deflated Explicit VR Little Endian e Explicit VR Big Endian. Sintaxes comprimidas (JPEG, JPEG 2000, JPEG-LS, RLE) só são aceitas quando o VYONIX tem o decodificador correspondente, o que entra com o processamento de imagens (Fase 3). Até lá, o equipamento envia sem compressão, o que todos os equipamentos DICOM suportam.
+**Sintaxes de transferência:** Implicit VR Little Endian, Explicit VR Little Endian, Deflated Explicit VR Little Endian e Explicit VR Big Endian. Comprimidas: RLE Lossless, JPEG Baseline (8 bits), JPEG 2000 (com e sem perdas) e JPEG-LS (com e sem perdas). JPEG Lossless e JPEG Extended (12 bits) ainda não são aceitos. Quando o equipamento oferece sem compressão e comprimido, o VYONIX escolhe sem compressão.
 
 ## 7. Armazenamento
 
 - Cada imagem é gravada primeiro em uma pasta temporária e só então movida para `C:\ProgramData\VYONIX\DICOM Print\storage\<estudo>\<série>\<instância>.dcm`. O arquivo original nunca é alterado.
 - A confirmação ao equipamento (status 0x0000) só é enviada depois que a imagem está gravada no disco e registrada no banco.
 - **Duplicatas:** uma imagem reenviada com o mesmo conteúdo é confirmada e descartada. Uma imagem com o mesmo identificador e conteúdo diferente mantém a original e gera um alerta.
-- **Retenção:** imagens são removidas após o prazo de *Configurações → Retenção de dados* (padrão 30 dias), exceto as ligadas a trabalhos em andamento.
+- **Retenção:** imagens são removidas após o prazo de *Configurações → Retenção de dados* (padrão 30 dias), exceto as ligadas a trabalhos ainda não concluídos. PDFs gerados seguem o mesmo prazo.
+- **Impressão automática:** cada série recebida vira um trabalho de impressão (desligável em *Configurações → Fila de impressão*). O C-STORE não transporta configurações de impressão: papel, layout e impressora vêm dos perfis e dos padrões do VYONIX.
 
 ## 8. Diagnóstico
 

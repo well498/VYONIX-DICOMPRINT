@@ -10,6 +10,7 @@
 
 import os
 import re
+import sys
 from pathlib import Path
 
 from PyInstaller.utils.hooks import collect_submodules, copy_metadata
@@ -56,6 +57,10 @@ for dist in ("pylibjpeg", "pylibjpeg-openjpeg", "pyjpegls", "pydicom", "pynetdic
     except Exception:  # pacote ausente: o build segue e o autoteste aponta o codec indisponível
         pass
 
+# Impressão Windows (Fase 4): pywin32 é importado sob demanda pelo backend de impressão.
+WIN32_HIDDEN = (["win32print", "win32ui", "win32gui", "win32con", "pywintypes", "PIL.ImageWin"]
+                if sys.platform == "win32" else [])
+
 # Partes do Pillow que o VYONIX não usa (AVIF sozinho tem ~7,5 MB).
 PIL_EXCLUDES = ["PIL._avif", "PIL.AvifImagePlugin", "PIL._webp", "PIL.WebPImagePlugin",
                 "PIL.ImageQt", "PIL._imagingcms", "PIL.ImageCms", "PIL._imagingtk", "PIL.ImageTk"]
@@ -65,7 +70,7 @@ a = Analysis(
     pathex=[str(ROOT)],
     binaries=[],
     datas=[(str(ROOT / "assets"), "assets")] + CODEC_METADATA,
-    hiddenimports=[f"{QT_BINDING}.QtSvg"] + CODEC_HIDDEN,
+    hiddenimports=[f"{QT_BINDING}.QtSvg"] + CODEC_HIDDEN + WIN32_HIDDEN,
     hookspath=[],
     runtime_hooks=[],
     excludes=["tkinter", "pytest", "tests", "license_admin", "unittest.mock",

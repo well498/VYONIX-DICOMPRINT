@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import shutil
 import sys
 import xml.etree.ElementTree as ET
@@ -159,8 +160,8 @@ def validation_report(version: str, commit: str, build_date: str, installer: Pat
         "| Windows 10 e 11 | O pipeline executa em Windows Server 2022 (mesmo núcleo do Windows 10/11). |",
         "| Usuário sem privilégios administrativos | O pipeline executa como administrador. |",
         "| Aparência visual da interface | O smoke test verifica funcionamento, não a aparência. |",
-        "| Recepção DICOM com equipamentos reais | Funcionalidade não implementada nesta versão (Fase 2). |",
-        "| Impressão em impressoras físicas | Funcionalidade não implementada nesta versão (Fase 4). |",
+        "| Recepção DICOM com equipamentos reais | Verificada apenas com equipamento simulado (pynetdicom). |",
+        "| Impressão em papel em impressoras físicas | Não verificada: o CI usa a impressora Microsoft Print to PDF. |",
         "| Licenciamento | Funcionalidade não implementada nesta versão (Fase 8). |",
         "| Assinatura digital de código | Não aplicada nesta compilação. |",
     ]
@@ -171,7 +172,7 @@ README = """VYONIX DICOM Print {version}
 Precisão em cada imagem.
 ======================================================================
 
-VERSÃO DE DESENVOLVIMENTO PARA HOMOLOGAÇÃO (Fase 1 — Fundação).
+VERSÃO DE DESENVOLVIMENTO PARA HOMOLOGAÇÃO ({phase}).
 NÃO VALIDADA PARA USO CLÍNICO. SEM DECLARAÇÃO DE CONFORMIDADE DICOM.
 
 Conteúdo
@@ -197,6 +198,15 @@ licenciamento ainda não estão implementados — veja Notas_da_Versao.pdf.
 
 Compilação: {build_date} · commit {commit}
 """
+
+
+def _phase() -> str:
+    init = (Path(__file__).resolve().parent.parent / "app" / "__init__.py").read_text(encoding="utf-8")
+    m = re.search(r'__phase__\s*=\s*"([^"]+)"', init)
+    return m.group(1) if m else "fase não informada"
+
+
+PHASE = _phase()
 
 
 def main() -> int:
@@ -250,7 +260,7 @@ def main() -> int:
         shutil.copy2(f, evid / f.name)
 
     (rel / "README.txt").write_text(
-        README.format(version=a.version, installer=installer.name, digest=digest,
+        README.format(version=a.version, phase=PHASE, installer=installer.name, digest=digest,
                       build_date=build_date, commit=commit), encoding="utf-8-sig")
 
     files = sorted(p for p in rel.rglob("*") if p.is_file() and p.parent.name != "Integridade")
@@ -269,7 +279,7 @@ def main() -> int:
                "installer_size": installer.stat().st_size, "zip": zip_path.name,
                "zip_sha256": sha256(zip_path), "zip_size": zip_path.stat().st_size,
                "tests": junit["totals"], "validation_passed": sum(r["ok"] for r in validation["results"]),
-               "validation_total": len(validation["results"])}
+               "validation_total": len(validation["results"]), "phase": PHASE}
     (a.out / "release-summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
     print(json.dumps(summary, indent=2))
     return 0

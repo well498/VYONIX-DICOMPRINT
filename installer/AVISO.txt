@@ -2,7 +2,8 @@
 
 ATENÇÃO — VERSÃO DE DESENVOLVIMENTO PARA HOMOLOGAÇÃO
 
-Esta compilação corresponde às Fases 1 (Fundação) e 2 (Comunicação DICOM).
+Esta compilação corresponde às Fases 1 a 4 (Fundação, Comunicação DICOM,
+Imagens e calibração, Impressão e fila).
 
 Requisitos: Windows 10 64 bits (versão 1809 ou posterior) ou Windows 11.
 
@@ -12,11 +13,12 @@ Incluído nesta versão:
   - Senha de administrador e retenção automática de dados.
   - Banco de dados local com migrações e backups automáticos.
   - Registro de eventos e logs, com proteção de dados de pacientes.
+  - Processamento de imagens, pré-visualização e calibração.
+  - Impressão em impressoras Windows e em PDF, fila persistente e perfis.
 
 Ainda NÃO incluído nesta versão:
-  - Processamento de imagens, calibração e pré-visualização.
-  - Impressão em impressoras Windows e fila de trabalhos.
   - DICOM Print SCP, motor de regras, serviço Windows e licenciamento.
+  - Impressão em papel não verificada em impressoras físicas.
 
 Este software NÃO está validado para uso clínico e NÃO possui declaração
 de conformidade DICOM. Não o utilize para fins diagnósticos ou assistenciais.

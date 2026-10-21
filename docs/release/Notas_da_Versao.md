@@ -4,7 +4,7 @@
 
 ## Natureza desta versão
 
-Versão de **desenvolvimento para homologação**, correspondente às **Fases 1 (Fundação) e 2 (Comunicação DICOM)** do plano de 8 fases. Não é a versão comercial 1.0.0: o número `{VERSION}` indica uma pré-versão de 1.0.0.
+Versão de **desenvolvimento para homologação**, correspondente às **Fases 1 a 4** (Fundação, Comunicação DICOM, Imagens e calibração, Impressão e fila) do plano de 8 fases. Não é a versão comercial 1.0.0: o número `{VERSION}` indica uma pré-versão de 1.0.0.
 
 **Não validada para uso clínico. Sem declaração de conformidade DICOM.**
 
@@ -33,15 +33,19 @@ Windows 10 64 bits (versão 1809 ou posterior) ou Windows 11. O executável usa 
 - **Retenção (LGPD):** remoção automática de imagens e eventos antigos, com sobrescrita do arquivo antes de apagar.
 - **Senha de administrador** para configurações, equipamentos e servidor.
 - **Firewall:** regra opcional criada pelo instalador e removida na desinstalação.
+- **Imagens (Fase 3):** decodificação de imagens não comprimidas e comprimidas (RLE, JPEG Baseline, JPEG 2000, JPEG-LS); LUT de modalidade, janela (VOI), MONOCHROME1, ajustes explícitos; pré-visualização com cache.
+- **Calibração (Fase 3):** brilho, contraste, gama, níveis de preto e branco, inversão, escala e deslocamento físicos; padrão de teste com régua de 10 cm; perfis com histórico.
+- **Impressão (Fase 4):** papéis A4, A3, Carta, Ofício, A5 e Tabloide e formatos de filme DICOM; layouts de 1 × 1 a 4 × 4; margens, espaçamento, bordas, cabeçalho, rodapé e numeração; resolução de saída configurável.
+- **Impressoras (Fase 4):** detecção das impressoras do Windows (driver, porta, papéis, resoluções, cor), impressora padrão do VYONIX, página de teste; impressora virtual **VYONIX PDF** que grava PDFs em tamanho real.
+- **Fila persistente (Fase 4):** impressão automática por série recebida, estados rastreados, chave de idempotência contra impressão duplicada, tentativas automáticas, recuperação após queda, reter, liberar, cancelar, tentar de novo, reprocessar e reimprimir; origem de cada configuração aplicada.
+- **Perfis de impressão (Fase 4):** associação a impressora, modalidade ou equipamento.
 
 ## Não implementado nesta versão
 
 | Recurso | Fase prevista |
 |---|---|
-| Decodificação e processamento de imagens, pré-visualização, calibração | 3 |
-| Impressoras Windows, layouts, papel, fila persistente de impressão | 4 |
 | DICOM Print SCP e declaração de conformidade | 5 |
-| Motor de regras, editor e simulação, perfis | 6 |
+| Motor de regras, editor e simulação | 6 |
 | Serviço Windows, operação em segundo plano, bandeja do sistema | 7 |
 | Licenciamento offline assinado, ferramenta de emissão | 8 |
 
@@ -49,7 +53,10 @@ Windows 10 64 bits (versão 1809 ou posterior) ou Windows 11. O executável usa 
 
 - O executável e o instalador não possuem assinatura digital de código; o Windows SmartScreen pode exibir aviso.
 - Enquanto o serviço Windows não existir (Fase 7), o servidor DICOM só funciona com o VYONIX aberto, e todos os usuários do computador têm permissão de gravação na pasta de dados em `ProgramData`.
-- Imagens comprimidas (JPEG, JPEG 2000, JPEG-LS, RLE) ainda não são aceitas; os equipamentos devem enviar sem compressão até a Fase 3.
+- JPEG Lossless e JPEG Extended (12 bits) ainda não são aceitos: o equipamento deve enviar sem compressão ou em outra sintaxe.
+- "Enviado" significa aceito pelo spooler do Windows. O trabalho só passa a "Concluído" quando o driver informa que imprimiu; muitos drivers não informam, e o trabalho fica em "Enviado".
+- O envio real ao spooler foi verificado no CI com a impressora "Microsoft Print to PDF". Impressão em papel, em impressoras físicas, não foi verificada e deve ser feita na homologação.
+- Imagens multiframe com mais de 16 quadros: na impressão automática, sai só o primeiro quadro.
 - Testes de recepção feitos com equipamento simulado (pynetdicom). Interoperabilidade com equipamentos reais deve ser verificada na homologação.
 - Os testes automatizados foram executados em Windows Server 2022 no GitHub Actions. O teste em Windows 10 e 11 limpos, sem Python, deve ser feito na homologação (ver Relatório de Validação).
 - A disponibilidade jurídica do nome VYONIX ainda deve ser verificada antes da distribuição comercial.

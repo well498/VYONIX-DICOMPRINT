@@ -185,6 +185,55 @@ def _smoke(app: QApplication, window, ctx, result: dict, translations) -> None:
             raise RuntimeError("calibração não alterou a imagem")
         return f"padrão de teste {r.pixels.shape[1]}x{r.pixels.shape[0]} calibrado"
 
+    def _wait_job(jid: int, done: tuple[str, ...], timeout: float = 90.0):
+        import time
+        end = time.monotonic() + timeout
+        while time.monotonic() < end:
+            job = ctx.jobs.get_job(jid)
+            if job.state.value in done or job.state.value == "failed":
+                return job
+            QApplication.processEvents()
+            time.sleep(0.2)
+        return ctx.jobs.get_job(jid)
+
+    def print_pdf() -> str:
+        from pathlib import Path
+        from app.printing.backends.pdf import PDF_PRINTER
+        jid = ctx.jobs.test_page(printer=PDF_PRINTER, actor="smoke-test")
+        job = _wait_job(jid, ("completed",))
+        if job.state.value != "completed":
+            raise RuntimeError(f"trabalho #{jid} em '{job.state.label}': {job.state_reason}")
+        size = Path(job.output_path).stat().st_size
+        return f"trabalho #{jid} concluído; PDF de {size // 1024} KB ({job.page_count} página)"
+
+    def windows_printers() -> str:
+        if sys.platform != "win32":
+            return "não aplicável fora do Windows"
+        err = ctx.printers.backend_errors.get("windows")
+        if err:
+            raise RuntimeError(err)
+        win = [p for p in ctx.printers.refresh() if p.backend == "windows"]
+        names = [p.name for p in win]
+        target = next((p for p in win if "print to pdf" in p.driver.lower() or p.name == "Microsoft Print to PDF"),
+                      None)
+        if target is None:
+            return f"{len(win)} impressora(s) do Windows; \"Microsoft Print to PDF\" ausente — envio GDI não verificado"
+        jid = ctx.jobs.test_page(printer=target.name, actor="smoke-test")
+        job = _wait_job(jid, ("spooled", "completed"))
+        if job.state.value not in ("spooled", "completed"):
+            raise RuntimeError(f"envio para '{target.name}' falhou: {job.state_reason}")
+        from pathlib import Path
+        out = Path(job.output_path) if job.output_path else None
+        import time
+        for _ in range(100):
+            if out and out.exists() and out.stat().st_size > 0:
+                break
+            time.sleep(0.2)
+        if not out or not out.exists() or out.stat().st_size == 0:
+            raise RuntimeError(f"spooler aceitou, mas o arquivo não foi gerado: {job.output_path}")
+        return (f"{len(names)} impressora(s); página de teste via GDI/spooler em '{target.name}' gerou "
+                f"{out.stat().st_size // 1024} KB (estado: {job.state.label})")
+
     def logs() -> str:
         if not ctx.log_file.exists() or ctx.log_file.stat().st_size == 0:
             raise RuntimeError("arquivo de log vazio")
@@ -214,6 +263,7 @@ def _smoke(app: QApplication, window, ctx, result: dict, translations) -> None:
                      ("dashboard", dashboard), ("configurações", settings_roundtrip),
                      ("temas", themes), ("histórico", history), ("servidor DICOM", dicom_server),
                      ("codecs de imagem", image_codecs), ("calibração", calibration_preview),
+                     ("impressão em PDF (fila)", print_pdf), ("impressoras do Windows", windows_printers),
                      ("logs", logs)):
         check(name, fn)
 

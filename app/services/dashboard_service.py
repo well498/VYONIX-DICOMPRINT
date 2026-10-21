@@ -61,7 +61,9 @@ class DashboardService:
         failures = self.events.query(EventFilter(
             start=utc_now() - timedelta(hours=24), min_level="ERROR", limit=5))
         services = self._status_provider(s)
-        printer = s["printing.default_printer"] or "Não configurada"
+        win_default = self.stats.windows_default_printer()
+        printer = s["printing.default_printer"] or (f"{win_default} (padrão do Windows)" if win_default
+                                                     else "Não configurada")
 
         alerts: list[Alert] = [Alert("warning", brand.CLINICAL_DISCLAIMER)]
         if not self.stats.active_license():
@@ -75,8 +77,13 @@ class DashboardService:
         for st in services:
             if st.state.value == "error":
                 alerts.append(Alert("error", f"{st.name}: {st.detail}"))
-        if not s["printing.default_printer"]:
-            alerts.append(Alert("info", "Nenhuma impressora selecionada (gerenciamento na Fase 4)."))
+        if not s["printing.default_printer"] and not win_default:
+            alerts.append(Alert("warning", "Nenhuma impressora definida: os trabalhos vão falhar até que uma "
+                                           "impressora padrão seja escolhida na página Impressoras."))
+        held = self.stats.jobs_held()
+        if held:
+            alerts.append(Alert("warning", f"{held} trabalho(s) retido(s) aguardando liberação em Trabalhos de "
+                                           "impressão."))
         for w in self.settings.current_warnings():
             alerts.append(Alert("warning", w))
         if failures:

@@ -21,11 +21,11 @@ A barra inferior mostra a pasta de dados em uso e o aviso de que a versão não 
 | Dashboard | Disponível |
 | Equipamentos DICOM | Disponível |
 | Servidor DICOM | Recepção disponível; impressão DICOM na Fase 5 |
-| Impressoras | Não implementado — Fase 4 |
-| Trabalhos de impressão | Não implementado — Fase 4 |
+| Impressoras | Disponível |
+| Trabalhos de impressão | Disponível |
 | Regras automáticas | Não implementado — Fase 6 |
-| Calibração | Não implementado — Fase 3 |
-| Perfis de impressão | Não implementado — Fases 4 e 6 |
+| Calibração | Disponível |
+| Perfis de impressão | Disponível (regras automáticas na Fase 6) |
 | Histórico | Disponível |
 | Configurações | Disponível |
 | Licença | Disponível (somente identificação da instalação) |
@@ -37,7 +37,7 @@ As páginas não implementadas mostram o escopo planejado e não executam nenhum
 
 Atualizado automaticamente a cada 5 segundos, com dados lidos do banco local:
 
-- **Indicadores:** trabalhos recebidos, em fila, enviados à impressão e com falha nas últimas 24 horas. Permanecem em zero até a fila de impressão (Fase 4).
+- **Indicadores:** trabalhos recebidos, em fila, enviados à impressão e com falha nas últimas 24 horas.
 - **Serviços:** estado real do servidor de recepção (Storage SCP); Print SCP e Serviço Windows aparecem como *Não implementado*, com a fase prevista.
 - **Configuração DICOM:** AE Title, endereço e porta configurados.
 - **Equipamentos, Impressora selecionada, Alertas operacionais e Falhas recentes.**
@@ -63,6 +63,43 @@ Mostra o estado da recepção (em execução, parado ou erro, com o motivo), o A
 - **Testar (C-ECHO local):** verifica o próprio servidor.
 
 Nesta versão, o servidor funciona enquanto o VYONIX estiver aberto.
+
+## 5A. Impressoras
+
+Lista as impressoras do Windows e a impressora virtual **VYONIX PDF (arquivo)**.
+
+- **Atualizar lista:** consulta o Windows de novo (driver, porta, papéis, resoluções, cor, situação).
+- **Definir como padrão do VYONIX:** impressora usada quando nenhum perfil indica outra. Sem ela, vale a impressora padrão do Windows. Se nenhuma estiver definida, os trabalhos falham com uma mensagem clara; o VYONIX nunca troca para o PDF por conta própria.
+- **Imprimir página de teste:** imprime o padrão de teste (escala de cinza e régua de 10 cm).
+- **VYONIX PDF** grava cada trabalho em `C:\ProgramData\VYONIX\DICOM Print\output\pdf`, no tamanho real do papel. Impressoras que pediriam um nome de arquivo (como "Microsoft Print to PDF") gravam em `output\arquivo`, sem abrir janela.
+
+## 5B. Trabalhos de impressão
+
+Cada série recebida vira um trabalho depois de alguns segundos sem novas imagens (*Configurações → Fila de impressão*). Estados:
+
+| Estado | Significado |
+|---|---|
+| Recebido / Validando / Processando | Na fila, em preparação |
+| Aguardando impressão | Páginas prontas, enviando ao Windows |
+| Enviado ao sistema de impressão | Aceito pelo spooler do Windows; **não significa papel impresso** |
+| Concluído | Saída confirmada (PDF gravado e conferido, ou o driver informou que imprimiu) |
+| Falhou | Erro; tentativas automáticas quando o problema é passageiro (ex.: impressora offline) |
+| Retido | Aguardando liberação manual |
+| Cancelado | Cancelado pelo usuário |
+
+Ações: **Detalhes** (configurações aplicadas com a origem de cada uma, histórico de estados e imagens), **Reter**, **Liberar**, **Tentar de novo**, **Reprocessar com config. atuais**, **Reimprimir…** (cria um novo trabalho, com outra impressora ou número de cópias se você quiser) e **Cancelar trabalho**.
+
+**Sem impressão duplicada:** se o equipamento reenviar a mesma série, nada é impresso de novo, e o Histórico registra o reenvio. Para outra cópia, use Reimprimir. Se o programa for fechado durante o envio ao Windows, o trabalho volta como *Retido*: confira se a impressão saiu antes de liberar.
+
+## 5C. Calibração
+
+Ajuste a resposta de cada impressora sobre o padrão de teste ou sobre uma imagem recebida: brilho, contraste, gama, níveis de preto e branco, inversão, escala (%) e deslocamento (mm). **Imprimir página de teste** usa os valores dos controles, mesmo antes de salvar o perfil. Meça a régua de 10 cm no papel: se medir 9,8 cm, ajuste a escala para cerca de 102 %. Salve como perfil e associe-o à impressora.
+
+## 5D. Perfis de impressão
+
+Um perfil define papel, orientação, layout, cópias, margens, espaçamento, resolução, cabeçalho, rodapé, informações do exame e numeração. Campos "não definir" herdam o valor do próximo nível. Precedência: padrão do sistema < perfil da impressora < perfil da modalidade < perfil do equipamento < escolha manual.
+
+**Dados do paciente:** nome e ID no cabeçalho ficam desligados por padrão (LGPD). Quando ligados, são lidos do arquivo DICOM só no momento da impressão; não vão para o banco, os logs nem o nome do documento no spooler.
 
 ## 6. Senha de administrador
 

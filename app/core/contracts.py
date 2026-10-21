@@ -17,7 +17,7 @@ import enum
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Mapping, Protocol, Sequence, runtime_checkable
+from typing import Any, Callable, Iterator, Mapping, Protocol, Sequence, runtime_checkable
 
 
 # ---------------------------------------------------------------------------
@@ -230,22 +230,57 @@ class PrinterInfo:
     resolutions_dpi: Sequence[int]
     supports_color: bool | None
     status_text: str
+    backend: str = "windows"        # "windows" (spooler) ou "pdf" (arquivo gerado pelo VYONIX)
+    port: str = ""
+    available: bool = True
+
+
+@dataclass(frozen=True)
+class SpoolRequest:
+    """Pedido ao backend. ``pages`` é uma fábrica: cada chamada gera as páginas de novo, uma por
+    vez (permite repetir cópias quando o driver não as suporta, sem manter todas em memória)."""
+
+    printer: str
+    document_name: str
+    pages: Callable[[], Iterator[ComposedPage]]
+    page_count: int
+    copies: int
+    paper: str
+    width_mm: float
+    height_mm: float
+    orientation: str
+    dpi: int
 
 
 @dataclass(frozen=True)
 class SpoolResult:
-    """Resultado do envio ao spooler. ``accepted`` NÃO significa papel impresso."""
+    """Resultado do envio. ``accepted`` NÃO significa papel impresso.
+
+    ``confirmed`` só é verdadeiro quando a saída foi efetivamente produzida e verificada
+    (ex.: arquivo PDF gravado e relido). Para impressoras Windows é sempre falso no envio;
+    a confirmação, se houver, vem depois por ``job_status``.
+    """
 
     accepted: bool
     spool_job_id: int | None
     error: str | None = None
+    confirmed: bool = False
+    output_path: str | None = None
+    detail: str = ""
+
+
+@dataclass(frozen=True)
+class SpoolStatus:
+    state: str          # "queued" | "printing" | "printed" | "error" | "deleted" | "gone" | "unknown"
+    detail: str = ""
 
 
 @runtime_checkable
 class PrinterBackend(Protocol):
+    name: str
     def list_printers(self) -> list[PrinterInfo]: ...
-    def submit(self, printer: str, pages: Sequence[ComposedPage], copies: int,
-               document_name: str) -> SpoolResult: ...
+    def submit(self, request: SpoolRequest) -> SpoolResult: ...
+    def job_status(self, printer: str, spool_job_id: int) -> SpoolStatus: ...
 
 
 # ---------------------------------------------------------------------------

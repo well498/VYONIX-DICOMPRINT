@@ -152,8 +152,9 @@ class CalibrationPage(Page):
             buttons.addWidget(b)
         fl.addRow(self._wrap(buttons))
         self.print_test = QPushButton("Imprimir página de teste")
-        self.print_test.setEnabled(False)
-        self.print_test.setToolTip("Disponível com o gerenciamento de impressoras (Fase 4).")
+        self.print_test.setToolTip("Imprime o padrão de teste (régua de 10 cm, escala de cinza) com a "
+                                   "calibração atual dos controles, mesmo antes de salvar o perfil.")
+        self.print_test.clicked.connect(self.test_page)
         fl.addRow(self.print_test)
         grid.addWidget(prof, 2, 1)
         grid.setColumnStretch(0, 3)
@@ -301,6 +302,7 @@ class CalibrationPage(Page):
         kind = QComboBox()
         kind.addItem("Modalidade", "modality")
         kind.addItem("Equipamento", "device")
+        kind.addItem("Impressora", "printer")
         value = QComboBox()
 
         def fill_values() -> None:
@@ -308,17 +310,16 @@ class CalibrationPage(Page):
             if kind.currentData() == "modality":
                 for code, name in MODALITIES:
                     value.addItem(f"{code} — {name}", code)
-            else:
+            elif kind.currentData() == "device":
                 for d in self.ctx.devices.list():
                     value.addItem(f"{d.name} ({d.ae_title})", str(d.id))
+            else:
+                for pr in self.ctx.printers.list():
+                    value.addItem(pr.name, pr.name)
         kind.currentIndexChanged.connect(lambda _: fill_values())
         fill_values()
         form.addRow("Associar a", kind)
         form.addRow("Qual", value)
-        note = QLabel("A associação a impressoras fica disponível com o gerenciamento de impressoras (Fase 4).")
-        note.setObjectName("muted")
-        note.setWordWrap(True)
-        form.addRow(note)
         bb = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         bb.accepted.connect(dlg.accept)
         bb.rejected.connect(dlg.reject)
@@ -327,6 +328,25 @@ class CalibrationPage(Page):
             self.ctx.profiles.bind(pid, kind.currentData(), value.currentData(), actor=current_actor())
             self._msg("Associação salva.", "ok")
             run_async(lambda: self.ctx.profiles.bindings(pid), self._show_bindings)
+
+    def test_page(self) -> None:
+        from app.core.errors import VyonixError
+        from app.ui.pages.printers_page import choose_printer
+        choice = choose_printer(self, self.ctx.printers.list(), title="Página de teste com esta calibração",
+                                ask_paper=True)
+        if choice is None:
+            return
+        printer, _copies, paper = choice
+        try:
+            cal = self.current_profile()
+            cal.validate()
+            jid = self.ctx.jobs.test_page(printer=printer, actor=current_actor(),
+                                          overrides={"paper": paper, "calibration": cal.to_json()})
+        except VyonixError as exc:
+            self._msg(str(exc), "err")
+            return
+        self._msg(f"Página de teste enviada (trabalho #{jid}). Meça a régua de 10 cm no papel e ajuste a escala "
+                  "se necessário.", "ok")
 
     def history(self) -> None:
         pid = self.profile.currentData()

@@ -8,6 +8,7 @@ import logging
 from app.bootstrap import bootstrap
 from app.core.contracts import ServiceState
 from app.core.errors import DatabaseIntegrityError
+from app.database.migrations import MIGRATIONS
 from app.database.repositories.events_repo import Category, EventFilter
 from app.main import EXIT_OK, EXIT_STARTUP_ERROR, main
 from tests.helpers import TempDirTestCase
@@ -16,7 +17,7 @@ from tests.helpers import TempDirTestCase
 class BootstrapTest(TempDirTestCase):
     def test_first_and_second_start(self):
         ctx = bootstrap(data_dir=self.tmp, role="ui")
-        self.assertEqual(ctx.applied_migrations, [1])
+        self.assertEqual(ctx.applied_migrations, [m.version for m in MIGRATIONS])
         for d in ctx.paths.all_dirs():
             self.assertTrue(d.is_dir(), d)
         iid = ctx.settings.get("system.installation_id")
@@ -71,7 +72,7 @@ class BootstrapTest(TempDirTestCase):
             code = main(["--check", "--data-dir", str(self.tmp)])
         self.assertEqual(code, EXIT_OK)
         summary = json.loads(out.getvalue())
-        self.assertEqual(summary["schema_version"], 1)
+        self.assertEqual(summary["schema_version"], MIGRATIONS[-1].version)
 
     def test_cli_check_report_without_console(self):
         import sys
@@ -86,7 +87,7 @@ class BootstrapTest(TempDirTestCase):
         self.assertEqual(code, EXIT_OK)
         data = json.loads(report.read_text(encoding="utf-8"))
         self.assertTrue(data["ok"])
-        self.assertEqual(data["schema_version"], 1)
+        self.assertEqual(data["schema_version"], MIGRATIONS[-1].version)
 
     def test_cli_bad_argument_returns_code(self):
         with contextlib.redirect_stderr(io.StringIO()):

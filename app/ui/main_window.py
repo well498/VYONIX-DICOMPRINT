@@ -14,6 +14,9 @@ from app.ui.pages.base import Page, PlaceholderPage
 from app.ui.pages.calibration_page import CalibrationPage
 from app.ui.pages.dashboard_page import DashboardPage
 from app.ui.pages.devices_page import DevicesPage
+from app.ui.pages.jobs_page import JobsPage
+from app.ui.pages.printers_page import PrintersPage
+from app.ui.pages.profiles_page import ProfilesPage
 from app.ui.pages.server_page import ServerPage
 from app.ui.pages.history_page import HistoryPage
 from app.ui.pages.info_pages import AboutPage, LicensePage
@@ -63,22 +66,14 @@ class MainWindow(QMainWindow):
             DashboardPage(ctx.dashboard),
             DevicesPage(ctx.devices, ctx.access, exports),
             ServerPage(ctx),
-            PlaceholderPage("Impressoras", "Fase 4", [
-                "Detecção das impressoras Windows, impressora padrão e driver",
-                "Capacidades do driver: papéis, resoluções, cor",
-                "Página de teste, status do spooler e reenvio"]),
-            PlaceholderPage("Trabalhos de impressão", "Fase 4", [
-                "Fila persistente com estados, retenção, liberação e cancelamento",
-                "Reimpressão explícita e proteção contra duplicidade",
-                "Distinção entre 'enviado ao spooler' e 'concluído'"]),
+            PrintersPage(ctx),
+            JobsPage(ctx),
             PlaceholderPage("Regras automáticas", "Fase 6", [
                 "Editor visual de condições e ações, com prioridade",
                 "Simulação: qual regra seria aplicada a um trabalho",
                 "Exibição da origem de cada configuração aplicada"]),
             CalibrationPage(ctx),
-            PlaceholderPage("Perfis de impressão", "Fases 4 e 6", [
-                "Papel, orientação, layout, margens, cópias e anotações",
-                "Associação a impressora, equipamento ou modalidade"]),
+            ProfilesPage(ctx),
             HistoryPage(ctx.events, ctx.changes, exports),
             self.settings_page,
             LicensePage(ctx.settings),

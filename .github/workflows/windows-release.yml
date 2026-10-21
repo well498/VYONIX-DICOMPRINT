@@ -57,6 +57,14 @@ jobs:
       - name: Compilar fontes (compileall)
         run: python -m compileall -q app packaging
 
+      - name: Spooler do Windows e impressora "Microsoft Print to PDF"
+        continue-on-error: true
+        run: |
+          Set-Service Spooler -StartupType Automatic; Start-Service Spooler
+          $f = Get-WindowsOptionalFeature -Online -FeatureName Printing-PrintToPDFServices-Features -ErrorAction SilentlyContinue
+          if ($f -and $f.State -ne "Enabled") { Enable-WindowsOptionalFeature -Online -FeatureName Printing-PrintToPDFServices-Features -NoRestart -All | Out-Null }
+          Get-Printer | Format-Table Name, DriverName, PortName -AutoSize | Out-String | Tee-Object dist\validation\printers.txt
+
       - name: Testes automatizados
         env:
           QT_QPA_PLATFORM: offscreen
@@ -119,7 +127,7 @@ jobs:
           $tag = "v$v"
           $s = Get-Content dist\release-summary.json -Raw | ConvertFrom-Json
           $notes = @"
-          VYONIX DICOM Print $v — versão de desenvolvimento para homologação (Fase 1 — Fundação).
+          VYONIX DICOM Print $v — versão de desenvolvimento para homologação ($($s.phase)).
           Requisito mínimo: Windows 10 64 bits (1809) ou Windows 11.
           NÃO validada para uso clínico. Sem declaração de conformidade DICOM.
 

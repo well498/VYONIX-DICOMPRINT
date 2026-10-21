@@ -5,13 +5,15 @@ import sqlite3
 from app.core.errors import MigrationError
 from app.database.connection import Database
 from app.database.migrations import MIGRATIONS
+
+LAST = MIGRATIONS[-1].version
 from app.database.migrator import Migration, current_version, migrate
 from tests.helpers import TempDirTestCase
 
 EXPECTED_TABLES = {
     "schema_migrations", "settings", "change_history", "events", "printers", "print_profiles",
     "profile_bindings", "devices", "rules", "instances", "print_sessions", "jobs", "job_items",
-    "job_state_history", "licenses",
+    "job_state_history", "licenses", "autoprint_pending",
 }
 
 
@@ -29,9 +31,9 @@ class MigrationsTest(TempDirTestCase):
             "SELECT name FROM sqlite_master WHERE type='table'")}
 
     def test_initial_schema_has_all_entities(self):
-        self.assertEqual(migrate(self.db, MIGRATIONS), [1])
+        self.assertEqual(migrate(self.db, MIGRATIONS), [m.version for m in MIGRATIONS])
         self.assertTrue(EXPECTED_TABLES.issubset(self.tables()))
-        self.assertEqual(current_version(self.db), 1)
+        self.assertEqual(current_version(self.db), LAST)
 
     def test_idempotent(self):
         migrate(self.db, MIGRATIONS)
@@ -39,12 +41,12 @@ class MigrationsTest(TempDirTestCase):
 
     def test_failed_migration_is_atomic(self):
         migrate(self.db, MIGRATIONS)
-        bad = MIGRATIONS + (Migration(2, "broken",
+        bad = MIGRATIONS + (Migration(LAST + 1, "broken",
                                       "CREATE TABLE half_done(id INTEGER); INSERT INTO nope VALUES (1);"),)
         with self.assertRaises(MigrationError):
             migrate(self.db, bad)
         self.assertNotIn("half_done", self.tables())
-        self.assertEqual(current_version(self.db), 1)
+        self.assertEqual(current_version(self.db), LAST)
 
     def test_checksum_mismatch_is_rejected(self):
         migrate(self.db, MIGRATIONS)
@@ -62,17 +64,17 @@ class MigrationsTest(TempDirTestCase):
     def test_backup_before_migrating_existing_database(self):
         migrate(self.db, MIGRATIONS)
         backups = self.tmp / "backups"
-        extra = MIGRATIONS + (Migration(2, "extra", "CREATE TABLE t2(id INTEGER);"),)
-        self.assertEqual(migrate(self.db, extra, backup_dir=backups), [2])
-        files = list(backups.glob("vyonix-pre-migration-v1-*.db"))
+        extra = MIGRATIONS + (Migration(LAST + 1, "extra", "CREATE TABLE t2(id INTEGER);"),)
+        self.assertEqual(migrate(self.db, extra, backup_dir=backups), [LAST + 1])
+        files = list(backups.glob(f"vyonix-pre-migration-v{LAST}-*.db"))
         self.assertEqual(len(files), 1)
         conn = sqlite3.connect(files[0])
-        self.assertEqual(conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0], 1)
+        self.assertEqual(conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0], LAST)
         conn.close()
 
     def test_sequence_must_be_contiguous(self):
         with self.assertRaises(MigrationError):
-            migrate(self.db, (Migration(2, "gap", "SELECT 1;"),))
+            migrate(self.db, (Migration(3, "gap", "SELECT 1;"),))
 
     def test_constraints_are_enforced(self):
         migrate(self.db, MIGRATIONS)

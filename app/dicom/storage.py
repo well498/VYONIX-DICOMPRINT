@@ -109,12 +109,18 @@ class InstanceStore:
             size = tmp.stat().st_size
 
             conn = self.db.connection()
-            existing = conn.execute("SELECT id, file_sha256 FROM instances WHERE sop_instance_uid = ?",
-                                    (sop,)).fetchone()
+            existing = conn.execute("SELECT * FROM instances WHERE sop_instance_uid = ?", (sop,)).fetchone()
             if existing is not None:
                 tmp.unlink(missing_ok=True)
                 if existing["file_sha256"] == digest:
-                    return StoreOutcome(STATUS_SUCCESS, "Duplicata idêntica descartada", duplicate=True)
+                    # A instância (já armazenada) é repassada como duplicata: a fila decide pela chave
+                    # de idempotência se um reenvio gera ou não uma nova impressão.
+                    dup = ReceivedInstance(
+                        sop_instance_uid=sop, sop_class_uid=existing["sop_class_uid"], study_uid=existing["study_uid"],
+                        series_uid=existing["series_uid"], modality=existing["modality"] or "",
+                        transfer_syntax=existing["transfer_syntax"], file_path=Path(existing["file_path"]),
+                        file_sha256=digest, peer=peer, device_id=device_id, received_at=utc_now(), duplicate=True)
+                    return StoreOutcome(STATUS_SUCCESS, "Duplicata idêntica descartada", duplicate=True, instance=dup)
                 log.warning("Conflito de SOP Instance UID: conteúdo diferente; original mantido",
                             extra={"sop_instance_uid": sop})
                 return StoreOutcome(STATUS_SUCCESS, "UID já recebido com conteúdo diferente; original mantido",

@@ -49,7 +49,8 @@ def overwrite_and_delete(path: Path) -> bool:
 
 class RetentionService:
     def __init__(self, db: Database, events: EventRepository, settings_get: Callable[[str], Any],
-                 storage_dir: Path) -> None:
+                 storage_dir: Path, output_dir: Path | None = None) -> None:
+        self.output_dir = output_dir
         self.db = db
         self.events = events
         self.get = settings_get
@@ -80,13 +81,23 @@ class RetentionService:
                 removed += 1
                 freed += int(row["file_size"] or 0)
                 _prune_empty_dirs(path.parent, self.storage_dir)
+        outputs = 0
+        if self.output_dir is not None and self.output_dir.exists():
+            limit = (now - timedelta(days=int(self.get("retention.images_days")))).timestamp()
+            for f in self.output_dir.rglob("*.pdf"):
+                try:
+                    if f.stat().st_mtime < limit and overwrite_and_delete(f):
+                        outputs += 1
+                except OSError:
+                    continue
         events_removed = self.events.purge_older_than(int(self.get("retention.events_days")))
-        if removed or events_removed:
+        if removed or events_removed or outputs:
             self.events.add(level="INFO", category=Category.SYSTEM, action="retention.purge",
                             message=f"Retenção: {removed} imagem(ns) removida(s) "
-                                    f"({freed / 1048576:.1f} MB) e {events_removed} evento(s) antigos.",
+                                    f"({freed / 1048576:.1f} MB), {outputs} PDF(s) gerado(s) e "
+                                    f"{events_removed} evento(s) antigos.",
                             actor=actor)
-        return {"instances": removed, "bytes": freed, "events": events_removed}
+        return {"instances": removed, "bytes": freed, "events": events_removed, "outputs": outputs}
 
 
 def _prune_empty_dirs(folder: Path, root: Path) -> None:

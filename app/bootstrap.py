@@ -33,7 +33,12 @@ from app.dicom.storage import InstanceStore
 from app.dicom.storage_scp import StorageSCP
 from app.security.access import AdminAccess
 from app.imaging.cache import PreviewCache
+from app.jobs.service import JobService
+from app.jobs.worker import AutoPrintCollector, PrintWorker
+from app.printing.backends import windows as win_backend
+from app.printing.backends.pdf import PdfFileBackend
 from app.printing.profiles import ProfileService
+from app.printing.service import PrinterService
 from app.services.dashboard_service import DashboardService
 from app.services.imaging_service import ImagingService
 from app.services.retention import RetentionService
@@ -65,6 +70,9 @@ class AppContext:
     runtime: CoreRuntime
     imaging: ImagingService
     profiles: ProfileService
+    printers: PrinterService
+    jobs: JobService
+    worker: PrintWorker
     schema_version: int
     applied_migrations: list[int] = field(default_factory=list)
     _closed: bool = False
@@ -135,8 +143,24 @@ def bootstrap(*, data_dir: str | os.PathLike[str] | None = None, role: str = "ui
         store = InstanceStore(db, paths.storage_dir, paths.temp_dir)
         storage_scp = StorageSCP(db=db, settings_get=get, devices=devices.repo, store=store,
                                  events=events)
-        retention = RetentionService(db, events, get, paths.storage_dir)
-        runtime = CoreRuntime(storage_scp=storage_scp, retention=retention, settings_get=get)
+        retention = RetentionService(db, events, get, paths.storage_dir, output_dir=paths.output_dir)
+        imaging = ImagingService(db, PreviewCache(paths.cache_dir / "previews"))
+        profiles = ProfileService(db, events)
+        backends: list = [PdfFileBackend(paths.output_dir / "pdf")]
+        backend_errors: dict[str, str] = {}
+        win_ok, win_why = win_backend.available()
+        if win_ok:
+            backends.insert(0, win_backend.WindowsPrinterBackend(paths.output_dir / "arquivo"))
+        else:
+            backend_errors["windows"] = win_why
+        printers = PrinterService(db, events, backends, get, backend_errors)
+        jobs = JobService(db, events, get, profiles, printers.printer_id)
+        collector = AutoPrintCollector(db, jobs, get)
+        storage_scp.sink = collector
+        worker = PrintWorker(db=db, events=events, jobs=jobs, printers=printers, imaging=imaging,
+                             collector=collector, settings_get=get)
+        runtime = CoreRuntime(storage_scp=storage_scp, retention=retention, settings_get=get,
+                              worker=worker, printers=printers)
         access = AdminAccess(db, events, lock_minutes=lambda: int(get("security.lock_minutes")))
         ctx = AppContext(
             role=role, paths=paths, log_file=log_file, db=db, events=events, settings=settings,
@@ -146,8 +170,7 @@ def bootstrap(*, data_dir: str | os.PathLike[str] | None = None, role: str = "ui
                                        access=access),
             devices=devices, store=store, storage_scp=storage_scp, retention=retention,
             access=access, runtime=runtime,
-            imaging=ImagingService(db, PreviewCache(paths.cache_dir / "previews")),
-            profiles=ProfileService(db, events),
+            imaging=imaging, profiles=profiles, printers=printers, jobs=jobs, worker=worker,
             schema_version=schema, applied_migrations=applied,
         )
         settings.subscribe(runtime.on_settings_changed)

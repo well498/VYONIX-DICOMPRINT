@@ -60,6 +60,15 @@ class StatsRepository:
     def printers_total(self) -> int:
         return self._scalar("SELECT COUNT(*) FROM printers WHERE active = 1")
 
+    def windows_default_printer(self) -> str | None:
+        r = self.db.connection().execute(
+            "SELECT name FROM printers WHERE is_default = 1 AND active = 1 AND "
+            "(last_status IS NULL OR last_status <> 'não encontrada no Windows') LIMIT 1").fetchone()
+        return r["name"] if r else None
+
+    def jobs_held(self) -> int:
+        return self._scalar("SELECT COUNT(*) FROM jobs WHERE state = 'held'")
+
     def active_license(self) -> bool:
         return self._scalar("SELECT COUNT(*) FROM licenses WHERE status = 'active'") > 0
 
