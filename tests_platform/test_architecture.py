@@ -56,6 +56,16 @@ class Architecture(unittest.TestCase):
                     bad.append(f"{p.relative_to(ROOT)}: {m}")
         self.assertEqual(bad, [])
 
+    def test_platform_does_not_depend_on_deploy(self):
+        bad = [f"{p.relative_to(ROOT)}: {m}" for p in py_files("vyonix") for m in imports(p)
+               if m == "vyonix_deploy" or m.startswith("vyonix_deploy.")]
+        self.assertEqual(bad, [])
+
+    def test_deploy_does_not_import_admin_tools(self):
+        bad = [f"{p.relative_to(ROOT)}: {m}" for p in py_files("vyonix_deploy") for m in imports(p)
+               if any(m == f or m.startswith(f + ".") for f in FORBIDDEN_IN_PLATFORM)]
+        self.assertEqual(bad, [])
+
     def test_domain_layers(self):
         rules = {"vyonix/clinical": ("vyonix.api", "vyonix.auth", "vyonix.licensing", "vyonix.cli"),
                  "vyonix/audit": ("vyonix.api", "vyonix.auth", "vyonix.clinical", "vyonix.licensing"),
@@ -74,7 +84,7 @@ class Architecture(unittest.TestCase):
 
     def test_no_signing_or_private_keys_in_platform(self):
         bad = []
-        for p in py_files("vyonix"):
+        for p in py_files("vyonix") + py_files("vyonix_deploy"):
             text = p.read_text(encoding="utf-8")
             for pat in (r"Ed25519PrivateKey", r"build_signed\(", r"BEGIN [A-Z ]*PRIVATE KEY", r"sign_ed25519"):
                 if re.search(pat, text):

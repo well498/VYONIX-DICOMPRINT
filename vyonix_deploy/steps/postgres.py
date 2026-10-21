@@ -1,0 +1,116 @@
+"""PostgreSQL 17 do VYONIX: instância própria (serviço ``VyonixPostgreSQL``), só em 127.0.0.1, porta
+escolhida no plano, autenticação scram-sha-256. A senha do superusuário é aleatória e guardada com
+DPAPI de máquina na pasta do DEPLOY; nunca vai para relatório, manifesto ou banco do DEPLOY."""
+
+from __future__ import annotations
+
+import os
+import secrets
+import shutil
+from pathlib import Path
+
+from vyonix_deploy.engine import Context, Step
+from vyonix_deploy.errors import DeployError
+from vyonix_deploy.sysrun import run
+
+SUPERUSER = "vyonix_admin"
+SERVICE = "VyonixPostgreSQL"
+HBA = ("# Gerado pelo VYONIX DEPLOY: somente conexões locais, com senha (scram-sha-256).\n"
+       "host all all 127.0.0.1/32 scram-sha-256\n"
+       "host all all ::1/128 scram-sha-256\n")
+MARK = "# VYONIX DEPLOY"
+
+
+def superuser_password(ctx: Context) -> str:
+    return ctx.secrets.get_or_create_text("pg_superuser")
+
+
+def admin_url(ctx: Context, db: str = "postgres") -> str:
+    from urllib.parse import quote
+    return f"postgresql://{SUPERUSER}:{quote(superuser_password(ctx), safe='')}@127.0.0.1:{ctx.cfg.pg_port}/{db}"
+
+
+def can_connect(ctx: Context) -> tuple[bool, str]:
+    try:
+        import psycopg
+        with psycopg.connect(admin_url(ctx), connect_timeout=5) as c:
+            v = c.execute("SHOW server_version").fetchone()[0]
+        return True, f"PostgreSQL {v} aceita conexões em 127.0.0.1:{ctx.cfg.pg_port}"
+    except Exception as exc:  # noqa: BLE001
+        return False, f"sem conexão: {type(exc).__name__}: {str(exc)[:200]}"
+
+
+class PgClusterStep(Step):
+    category = "banco"
+    id = "postgres.cluster"
+    title = "Inicializar o PostgreSQL do VYONIX"
+
+    def __init__(self, pg_bin: Path, data: Path) -> None:
+        self.bin = Path(pg_bin)
+        self.data = Path(data)
+
+    def _conf(self, ctx: Context) -> str:
+        return (f"{MARK}\nport = {int(ctx.cfg.pg_port)}\nlisten_addresses = '127.0.0.1'\n"
+                "password_encryption = 'scram-sha-256'\nlogging_collector = on\nlog_directory = 'log'\n"
+                "log_rotation_age = '7d'\nlog_min_duration_statement = 2000\n")
+
+    def desired(self, ctx: Context) -> dict:
+        return {"data": str(self.data), "port": ctx.cfg.pg_port, "listen": "127.0.0.1", "auth": "scram-sha-256",
+                "superuser": SUPERUSER, "version": 17}
+
+    def observe(self, ctx: Context) -> dict:
+        pv = self.data / "PG_VERSION"
+        auto = self.data / "postgresql.auto.conf"
+        port = None
+        if auto.exists():
+            for line in auto.read_text(encoding="utf-8", errors="ignore").splitlines():
+                if line.strip().startswith("port"):
+                    port = int(line.split("=", 1)[1].strip())
+        return {"data": str(self.data), "initialized": pv.exists(),
+                "version": pv.read_text().strip() if pv.exists() else None, "port": port,
+                "hba_vyonix": (self.data / "pg_hba.conf").exists()
+                and (self.data / "pg_hba.conf").read_text(encoding="utf-8", errors="ignore") == HBA}
+
+    def describe(self, ctx: Context) -> dict:
+        return {"current": self.observe(ctx), "proposed": self.desired(ctx),
+                "impact": "Cria o cluster de banco de dados do VYONIX (vazio). Outras instalações de PostgreSQL não "
+                          "são alteradas.",
+                "undo": "Remove o cluster somente se foi criado nesta execução."}
+
+    def check(self, ctx: Context) -> bool:
+        o = self.observe(ctx)
+        return o["initialized"] and o["version"] == "17" and o["port"] == int(ctx.cfg.pg_port) and o["hba_vyonix"]
+
+    def apply(self, ctx: Context) -> None:
+        initdb = self.bin / ("initdb.exe" if os.name == "nt" else "initdb")
+        if not initdb.exists():
+            raise DeployError(f"PostgreSQL não encontrado em {self.bin} (arquivos do programa incompletos).")
+        if not (self.data / "PG_VERSION").exists():
+            if self.data.exists() and any(self.data.iterdir()):
+                raise DeployError(f"A pasta {self.data} não está vazia e não é um cluster PostgreSQL. Nada foi "
+                                  "alterado; verifique o conteúdo manualmente.")
+            pwfile = ctx.paths.deploy_dir / f".pw-{secrets.token_hex(6)}"
+            pwfile.write_text(superuser_password(ctx), encoding="utf-8")
+            try:
+                r = run([str(initdb), "-D", str(self.data), "-U", SUPERUSER, "-A", "scram-sha-256",
+                         f"--pwfile={pwfile}", "-E", "UTF8", "--locale=C", "--locale-provider=builtin",
+                         "--builtin-locale=C.UTF-8", "--data-checksums"], timeout=600)
+            finally:
+                pwfile.unlink(missing_ok=True)
+            if not r.ok:
+                raise DeployError("initdb falhou: " + (r.err or r.out).strip()[-800:])
+        (self.data / "postgresql.auto.conf").write_text(
+            "# Do not edit this file manually!\n# It will be overwritten by the ALTER SYSTEM command.\n"
+            + self._conf(ctx), encoding="utf-8")
+        (self.data / "pg_hba.conf").write_text(HBA, encoding="utf-8")
+
+    def rollback(self, ctx: Context, before: dict) -> None:
+        if not before.get("initialized") and self.data.exists():
+            shutil.rmtree(self.data)
+
+    def how_to_check(self) -> str:
+        return f"type \"{self.data}\\PG_VERSION\" · sc query {SERVICE}"
+
+
+def pg_service_binpath(pg_bin: Path, data: Path) -> str:
+    return f'"{Path(pg_bin) / "pg_ctl.exe"}" runservice -N "{SERVICE}" -D "{data}" -w'

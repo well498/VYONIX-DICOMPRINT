@@ -16,6 +16,7 @@ Segurança da API:
 from __future__ import annotations
 
 import logging
+import sys
 import threading
 import time
 import uuid
@@ -36,7 +37,8 @@ from vyonix.errors import Forbidden, Unauthorized, VyonixError
 log = logging.getLogger("vyonix.api")
 COOKIE = "vyx_session"
 UNSAFE = {"POST", "PUT", "PATCH", "DELETE"}
-WEB_DIST = Path(__file__).resolve().parents[2] / "web" / "dist"
+WEB_DIST = (Path(getattr(sys, "_MEIPASS", Path(sys.executable).parent)) / "web" if getattr(sys, "frozen", False)
+            else Path(__file__).resolve().parents[2] / "web" / "dist")
 
 
 class RateLimiter:

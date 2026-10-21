@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VYONIX DEPLOY</title>
+<style>
+:root { --ink:#1b2a3a; --ink2:#4a5d70; --paper:#f2f5f7; --line:#d3dde4; --rail:#123047; --agent:#0f7c86;
+  --amber:#a85a00; --amber-s:#fbefdc; --red:#b3261e; --red-s:#fbe6e4; --green:#2e7d4f; --green-s:#e3f3e9;
+  font: 15px/1.5 "Segoe UI Variable Text","Segoe UI",system-ui,sans-serif; color: var(--ink); }
+* { box-sizing: border-box; } body { margin: 0; background: var(--paper); }
+header { background: var(--rail); color: #dbe8ee; padding: 1rem 2rem; display: flex; align-items: baseline; gap: 1rem; }
+header strong { letter-spacing: .14em; color: #fff; } header span { color: #8fb0bf; font-size: .9rem; }
+main { max-width: 1040px; margin: 0 auto; padding: 1.5rem 2rem 4rem; }
+h1 { font-size: 1.6rem; margin: 0 0 .25rem; font-weight: 600; } h2 { font-size: 1.1rem; margin: 1.5rem 0 .5rem; }
+p.intro { color: var(--ink2); margin: 0 0 1rem; max-width: 72ch; }
+.ops { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px,1fr)); gap: .75rem; margin: 1rem 0; }
+.ops button { text-align: left; padding: 1rem; background: #fff; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; font: inherit; }
+.ops button strong { display: block; } .ops button span { color: var(--ink2); font-size: .88rem; }
+.ops button:hover { border-color: var(--agent); }
+button.primary { background: var(--agent); color: #fff; border: 1px solid var(--agent); padding: .5rem 1rem; border-radius: 4px; font: inherit; font-weight: 600; cursor: pointer; }
+button.ghost { background: #fff; border: 1px solid var(--line); padding: .5rem 1rem; border-radius: 4px; font: inherit; cursor: pointer; }
+button:disabled { opacity: .55; cursor: not-allowed; }
+.panel { background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 1.25rem; margin: 1rem 0; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px,1fr)); gap: .75rem 1rem; }
+label.f { display: grid; gap: .25rem; font-weight: 600; font-size: .9rem; }
+label.f span { font-weight: 400; color: var(--ink2); font-size: .8rem; }
+input, select { font: inherit; padding: .45rem .6rem; border: 1px solid #b9c7d1; border-radius: 4px; width: 100%; }
+input[type=checkbox], input[type=radio] { width: auto; accent-color: var(--agent); }
+table { width: 100%; border-collapse: collapse; background: #fff; }
+th, td { text-align: left; padding: .5rem .6rem; border-bottom: 1px solid var(--line); vertical-align: top; font-size: .9rem; }
+th { font-size: .8rem; color: var(--ink2); background: #f7f9fa; }
+.tag { display: inline-block; padding: .05rem .5rem; border-radius: 99px; font-size: .78rem; font-weight: 600; }
+.ok { background: var(--green-s); color: var(--green); } .alert { background: var(--amber-s); color: var(--amber); }
+.blocker, .bad { background: var(--red-s); color: var(--red); } .info { background: #e1f2f3; color: var(--agent); }
+.notice { padding: .65rem .85rem; border-left: 4px solid var(--agent); background: #e1f2f3; border-radius: 4px; margin: .5rem 0; }
+.notice.err { border-color: var(--red); background: var(--red-s); } .notice.warn { border-color: var(--amber); background: var(--amber-s); }
+.sub { color: var(--ink2); font-size: .85rem; }
+.actions { display: flex; gap: .5rem; flex-wrap: wrap; margin-top: 1rem; }
+code { font-family: Consolas, monospace; font-size: .85em; }
+</style>
+</head>
+<body>
+<header><strong>VYONIX DEPLOY</strong><span id="ver"></span></header>
+<main id="app" aria-live="polite"><p>Carregando…</p></main>
+<script src="/app.js"></script>
+</body>
+</html>

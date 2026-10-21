@@ -39,3 +39,9 @@ def current(owner_url: str) -> list[str]:
         heads = list(MigrationContext.configure(conn, opts={"version_table_schema": "platform"}).get_current_heads())
     eng.dispose()
     return heads
+
+
+def heads(prefix: str = "vyonix") -> list[str]:
+    """Revisões finais conhecidas por esta versão do código (o banco deve estar nelas)."""
+    from alembic.script import ScriptDirectory
+    return list(ScriptDirectory.from_config(alembic_config("", prefix)).get_heads())

@@ -26,6 +26,7 @@ jobs:
     env:
       VYONIX_TEST_ADMIN_URL: postgresql://postgres:ci-postgres@127.0.0.1:5432/postgres
       VYONIX_E2E_SHOTS: ${{ github.workspace }}/e2e-shots
+      VYONIX_REQUIRE_PYPDF: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -47,7 +48,7 @@ jobs:
           npm install --no-audit --no-fund
           npm run build
       - name: Testes da plataforma
-        run: python -m pytest tests_platform -ra -v --junitxml=platform-junit.xml
+        run: python -m pytest tests_platform tests_deploy -ra -v --junitxml=platform-junit.xml
       - name: Garantia de execução (nenhum teste pulado)
         run: |
           python - <<'PY'

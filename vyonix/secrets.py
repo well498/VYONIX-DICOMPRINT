@@ -79,6 +79,19 @@ class SecretStore:
             self.put(name, v)
         return v
 
+    def get_or_create_text(self, name: str) -> str:
+        """Senha aleatória (texto seguro para URL), criada na primeira vez."""
+        v = self.get(name)
+        if v is None:
+            v = secrets.token_urlsafe(24).encode()
+            self.put(name, v)
+        return v.decode()
+
+    def delete(self, name: str) -> None:
+        data = self._load()
+        if data.pop(name, None) is not None:
+            self._save(data)
+
     def expand(self, text: str) -> str:
         import re
 

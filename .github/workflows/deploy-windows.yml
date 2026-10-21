@@ -1,0 +1,127 @@
+name: deploy-windows
+
+# Fase 2 — VYONIX DEPLOY no Windows: testes do motor, empacotamento (PyInstaller + PostgreSQL 17 +
+# Inno Setup) e aceitação real no runner (instala, confere, repete, quebra e repara, atualiza, ativa
+# módulo, testa rede em adaptador de loopback e desinstala). Independente do pipeline do DICOM Print.
+on:
+  push:
+    branches: [develop, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-windows-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PG_VERSION: "17.11"
+  PG_URLS: "https://get.enterprisedb.com/postgresql/postgresql-17.11-1-windows-x64-binaries.zip https://sbp.enterprisedb.com/getfile.jsp?fileid=1260616"
+
+jobs:
+  deploy:
+    runs-on: windows-2022
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Dependências
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-platform.txt pyinstaller==6.16.0 pypdf pytest
+
+      - name: Testes do motor do DEPLOY (Windows)
+        env:
+          VYONIX_REQUIRE_PYPDF: "1"
+        run: python -m pytest tests_deploy -ra -q --junitxml=dist/deploy-junit.xml
+
+      - name: Interface web
+        working-directory: web
+        run: |
+          npm install --no-audit --no-fund
+          npm run build
+
+      - name: PyInstaller (dist\VyonixPlatform)
+        run: python -m PyInstaller --noconfirm --clean VyonixPlatform.spec
+
+      - name: PostgreSQL ${{ env.PG_VERSION }} (binários oficiais EDB)
+        shell: pwsh
+        run: |
+          $zip = "$env:RUNNER_TEMP\pgsql.zip"; $ok = $false
+          foreach ($u in $env:PG_URLS.Split(' ')) {
+            try { Invoke-WebRequest $u -OutFile $zip -UseBasicParsing -MaximumRedirection 5; $ok = (Get-Item $zip).Length -gt 100MB } catch { Write-Host "falhou: $u $_" }
+            if ($ok) { Write-Host "baixado de $u"; break }
+          }
+          if (-not $ok) { throw "Não foi possível baixar os binários do PostgreSQL" }
+          $sha = (Get-FileHash $zip -Algorithm SHA256).Hash
+          Expand-Archive $zip "$env:RUNNER_TEMP\pg" -Force
+          $dst = "dist\VyonixPlatform\pgsql"
+          New-Item -ItemType Directory $dst -Force | Out-Null
+          foreach ($d in 'bin','lib','share') { Copy-Item "$env:RUNNER_TEMP\pg\pgsql\$d" $dst -Recurse -Force }
+          $v = & "$dst\bin\postgres.exe" --version
+          if ($v -notmatch [regex]::Escape($env:PG_VERSION)) { throw "versão inesperada: $v" }
+          "PostgreSQL: $v; zip SHA-256 $sha" | Tee-Object -FilePath "dist\VyonixPlatform\pgsql\ORIGEM.txt"
+          Write-Host "::notice title=PostgreSQL embutido::$v (zip SHA-256 $sha)"
+
+      - name: Versão
+        shell: pwsh
+        run: |
+          $v = python -c "import vyonix; print(vyonix.__version__)"
+          Set-Content -NoNewline -Encoding ascii dist\VyonixPlatform\VERSION.txt $v
+          "APP_VERSION=$v" >> $env:GITHUB_ENV
+
+      - name: Inno Setup (VYONIX_Setup_x64.exe)
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress; }
+          & $iscc "/DAppVersion=$env:APP_VERSION" "/DFileVersion=$env:APP_VERSION.0" installer\VyonixPlatform.iss
+          if ($LASTEXITCODE -ne 0) { throw "ISCC falhou" }
+          $f = Get-Item dist\installer-platform\VYONIX_Setup_x64.exe
+          Write-Host "::notice title=Instalador::$($f.Name) $([math]::Round($f.Length/1MB,1)) MB SHA-256 $((Get-FileHash $f -Algorithm SHA256).Hash)"
+
+      - name: Nenhuma chave privada no pacote
+        run: python tools/scan_private_keys.py dist/VyonixPlatform dist/installer-platform
+
+      - name: DICOM Print (release publicada, para o teste de coexistência)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory dist\print -Force | Out-Null
+          gh release download v1.0.0-r5 -R ${{ github.repository }} -p "VYONIX_DICOM_Print_Setup_*.exe" -D dist\print
+          Get-ChildItem dist\print
+
+      - name: Aceitação real no Windows
+        shell: pwsh
+        run: |
+          $print = (Get-ChildItem dist\print\*.exe | Select-Object -First 1).FullName
+          python tools/ci_deploy_acceptance.py --setup dist\installer-platform\VYONIX_Setup_x64.exe `
+            --dist dist\VyonixPlatform --print-setup "$print" --out dist\acceptance
+          if ($LASTEXITCODE -ne 0) { throw "critérios reprovados" }
+
+      - name: Diagnóstico em caso de falha
+        if: failure()
+        shell: pwsh
+        run: |
+          Get-Service Vyonix* -ErrorAction SilentlyContinue | Format-Table -AutoSize | Out-String | Write-Host
+          foreach ($f in Get-ChildItem "$env:ProgramData\VYONIX\Platform\logs\*.log" -ErrorAction SilentlyContinue) { Write-Host "== $f"; Get-Content $f -Tail 80 }
+          foreach ($f in Get-ChildItem "$env:ProgramData\VYONIX\PostgreSQL\17\data\log\*" -ErrorAction SilentlyContinue) { Write-Host "== $f"; Get-Content $f -Tail 60 }
+          Get-WinEvent -LogName Application -MaxEvents 40 -ErrorAction SilentlyContinue | Where-Object { $_.ProviderName -match 'Vyonix|Python|PostgreSQL|Service Control' } | Format-List TimeCreated,ProviderName,Message | Out-String | Write-Host
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: deploy-windows
+          path: |
+            dist/acceptance/
+            dist/deploy-junit.xml
+            dist/installer-platform/VYONIX_Setup_x64.exe
+          if-no-files-found: ignore
