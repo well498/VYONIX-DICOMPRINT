@@ -513,13 +513,100 @@ class LicenseManager:
     def demo_history(self, hw: dict, hardware_id: str) -> list[dict]:
         return [r for r in self.related_licenses(hw, hardware_id) if r["type"] == "demo" and r["match"] == "mesmo computador"]
 
+    # ------------------------------------------------------------------ módulos da plataforma (licença v3)
+    @staticmethod
+    def license_modules_of(document: str) -> dict:
+        """Mapa ``modules`` assinado de uma licença (vazio para licenças v2)."""
+        try:
+            return dict(F.parse_signed(document, F.LICENSE_FORMAT).payload.get("modules") or {})
+        except F.FormatError:
+            return {}
+
+    def build_modules(self, spec: dict, previous: dict | None, issued: datetime) -> dict:
+        """Normaliza os módulos pedidos. ``spec``: {código: {"kind": "contract"|"demo", "days": N,
+        "limits": {...}, "new_trial": bool}}. Mantém o ``grant_id`` quando o direito continua o mesmo
+        (renovação, prorrogação da demonstração); conversão ou nova demonstração geram outro."""
+        previous = previous or {}
+        out: dict = {}
+        for code, m in spec.items():
+            if code == "print":
+                continue                      # o PRINT é definido pelos recursos/tipo da licença
+            if code not in F.MODULE_CODES:
+                raise LMError(f"Módulo desconhecido: {code}")
+            kind = m.get("kind") or "contract"
+            if kind not in F.MODULE_KINDS:
+                raise LMError(f"{F.MODULE_LABELS[code]}: tipo inválido.")
+            prev = previous.get(code) or {}
+            same = prev and prev.get("kind") == kind and not m.get("new_trial")
+            grant = prev["grant_id"] if same else "G-" + secrets.token_hex(6).upper()
+            entry: dict = {"kind": kind, "grant_id": grant}
+            limits = {k: int(v) for k, v in (m.get("limits") or {}).items() if v not in (None, "", 0)}
+            if limits:
+                entry["limits"] = limits
+            if kind == "demo":
+                try:
+                    days = int(m.get("days") or 0)
+                except (TypeError, ValueError):
+                    days = 0
+                if not 1 <= days <= F.DEMO_CUSTOM_MAX_DAYS:
+                    raise LMError(f"{F.MODULE_LABELS[code]}: demonstração de 1 a {F.DEMO_CUSTOM_MAX_DAYS} dias "
+                                  f"(padrões: {', '.join(map(str, F.DEMO_DAY_CHOICES))}).")
+                entry["days"] = days
+                entry["activate_by"] = prev.get("activate_by") if same and prev.get("activate_by") else \
+                    F.iso(issued + timedelta(days=F.DEMO_ACTIVATE_WITHIN_DAYS))
+            out[code] = entry
+        if "core" not in out:
+            raise LMError("Licença da plataforma: inclua o módulo VYONIX Core.")
+        errors = F.validate_modules({"schema": F.LICENSE_SCHEMA, "modules": out})
+        if errors:
+            raise LMError("Módulos inválidos: " + "; ".join(errors))
+        return out
+
+    def module_demo_history(self, hw: dict, hardware_id: str) -> dict[str, list[str]]:
+        """Demonstrações de módulos já emitidas para o mesmo computador: {módulo: [licenças]}."""
+        out: dict[str, list[str]] = {}
+        for r in self.related_licenses(hw, hardware_id):
+            if r["match"] != "mesmo computador":
+                continue
+            for code, m in self.license_modules_of(r["document"]).items():
+                if m.get("kind") == "demo":
+                    out.setdefault(code, []).append(r["license_id"])
+        return out
+
+    def amend_modules(self, user: User, license_id: str, modules: dict, *, reason: str,
+                      demo_override: str | None = None) -> dict:
+        """Altera os módulos de uma licença ativa (incluir/converter/prorrogar demonstração, limites), sem
+        mudar o contrato: mesmo tipo, mesmo vencimento, mesma instalação. A licença anterior é substituída."""
+        if not (reason or "").strip():
+            raise LMError("Descreva o motivo da alteração (fica no histórico).")
+        old = self.license(license_id)
+        if old["status"] != "active":
+            raise LMError("Somente licenças ativas podem ter os módulos alterados.")
+        if old["type"] == "demo":
+            raise LMError("Licença DEMO: emita a licença comercial (com os módulos) em vez de alterar.")
+        exp = F.parse_time(old["expires_at"]) if old["expires_at"] else None
+        new = self._issue(user, customer_id=old["customer_id"], product_id=old["product_id"], edition=old["edition"],
+                          ltype=old["type"], hw=old["hw"], hardware_id=old["hardware_id"],
+                          installation_id=old["installation_id"],
+                          starts=F.parse_time(old["starts_at"]) if old["starts_at"] else None, custom_end=exp,
+                          max_devices=old["max_devices"], max_printers=old["max_printers"], features=old["features"],
+                          notes=old["notes"], operation="amend", request_id=None, reissue_of=license_id,
+                          reason_code="modules", reason_text=reason, demo_override=demo_override,
+                          validation=self._validation_of(old), modules=modules,
+                          previous_modules=self.license_modules_of(old["document"]), fixed_expires=exp)
+        with self.db.tx() as c:
+            c.execute("UPDATE licenses SET status = 'superseded' WHERE license_id = ?", (license_id,))
+        return new
+
     def _issue(self, user: User, *, customer_id: int, product_id: str, edition: str, ltype: str, hw: dict,
                hardware_id: str, installation_id: str, starts: datetime | None, custom_end: datetime | None,
                max_devices: int | None, max_printers: int | None, features: list[str], notes: str | None,
                operation: str, request_id: str | None, reissue_of: str | None, reason_code: str | None,
                reason_text: str | None, demo_override: str | None = None,
                expiry_base: datetime | None = None, validation: str = "offline", price_cents: int | None = None,
-               contract_allows_suspension: bool | None = None, auto_suspend: bool | None = None) -> dict:
+               contract_allows_suspension: bool | None = None, auto_suspend: bool | None = None,
+               modules: dict | None = None, previous_modules: dict | None = None,
+               fixed_expires: datetime | None = None) -> dict:
         user.require("issue")
         if ltype not in F.LICENSE_TYPES:
             raise LMError("Tipo de licença inválido.")
@@ -527,8 +614,8 @@ class LicenseManager:
         if edition not in prod["editions"]:
             raise LMError(f"Edição inválida para {prod['name']}.")
         features = [f for f in F.FEATURES if f in features]
-        if not features:
-            raise LMError("Selecione pelo menos um recurso.")
+        if not features and not modules:
+            raise LMError("Selecione pelo menos um recurso (ou módulos da plataforma).")
         for label, v in (("equipamentos", max_devices), ("impressoras", max_printers)):
             if v is not None and (int(v) < 1 or int(v) > 999):
                 raise LMError(f"Quantidade de {label} deve estar entre 1 e 999 (ou ilimitada).")
@@ -542,9 +629,21 @@ class LicenseManager:
         issued = self.clock()
         start = starts or issued
         try:
-            expires = F.compute_expiry(ltype, expiry_base or start, custom_end)
+            expires = fixed_expires if fixed_expires is not None else F.compute_expiry(ltype, expiry_base or start,
+                                                                                        custom_end)
         except ValueError as exc:
             raise LMError(str(exc)) from exc
+        mods = None
+        if modules:
+            mods = self.build_modules(modules, previous_modules, issued)
+            new_demos = [c for c, m in mods.items() if m["kind"] == "demo"
+                         and m["grant_id"] != ((previous_modules or {}).get(c) or {}).get("grant_id")]
+            used = self.module_demo_history(hw, hardware_id)
+            repeated = [c for c in new_demos if c in used]
+            if repeated and not (demo_override and demo_override.strip()):
+                raise LMError("Este computador já recebeu demonstração de: "
+                              + ", ".join(f"{F.MODULE_LABELS[c]} ({', '.join(used[c])})" for c in repeated)
+                              + ". Informe a justificativa para emitir outra demonstração.")
         if expires is not None and expires <= start:
             raise LMError("A data de vencimento deve ser posterior ao início.")
         duration = None
@@ -561,6 +660,9 @@ class LicenseManager:
             "duration_hours": duration, "max_devices": max_devices, "max_printers": max_printers,
             "features": features, "request_id": request_id, "reissue_of": reissue_of,
         }
+        if mods is not None:
+            payload["schema"] = F.LICENSE_SCHEMA
+            payload["modules"] = mods
         if ltype != "demo":
             try:
                 payload["policy"] = self.commercial.policy_for_license(validation)
@@ -592,7 +694,7 @@ class LicenseManager:
                          "installation_id": installation_id, "expires_at": payload["expires_at"], "key_id": key_id,
                          "features": features, "max_devices": max_devices, "max_printers": max_printers,
                          "reissue_of": reissue_of, "reason": reason_code, "demo_override": demo_override,
-                         "policy": payload.get("policy")}, c)
+                         "policy": payload.get("policy"), "modules": mods}, c)
         if ltype != "demo":
             try:
                 self.commercial.upsert_from_license(
@@ -629,7 +731,7 @@ class LicenseManager:
               max_devices: int | None = None, max_printers: int | None = None, features: list[str] | None = None,
               notes: str | None = None, demo_override: str | None = None, validation: str = "offline",
               price_cents: int | None = None, contract_allows_suspension: bool | None = None,
-              auto_suspend: bool | None = None) -> dict:
+              auto_suspend: bool | None = None, modules: dict | None = None) -> dict:
         req = self.request_data(request_id)
         active = self.db.conn().execute(
             "SELECT license_id FROM licenses WHERE installation_id = ? AND hardware_id = ? AND status = 'active'",
@@ -645,7 +747,9 @@ class LicenseManager:
                            reissue_of=active["license_id"] if active else None,
                            reason_code=None, reason_text=None, demo_override=demo_override, validation=validation,
                            price_cents=price_cents, contract_allows_suspension=contract_allows_suspension,
-                           auto_suspend=auto_suspend)
+                           auto_suspend=auto_suspend, modules=modules,
+                           previous_modules=self.license_modules_of(self.license(active["license_id"])["document"])
+                           if active else None)
         if active:
             with self.db.tx() as c:
                 c.execute("UPDATE licenses SET status = 'superseded' WHERE license_id = ?", (active["license_id"],))
@@ -654,8 +758,9 @@ class LicenseManager:
     def renew(self, user: User, license_id: str, *, ltype: str, starts: datetime | None = None,
               custom_end: datetime | None = None, edition: str | None = None, max_devices: int | None = -1,
               max_printers: int | None = -1, features: list[str] | None = None, notes: str | None = None,
-              validation: str | None = None) -> dict:
+              validation: str | None = None, modules: dict | None = None) -> dict:
         old = self.license(license_id)
+        prev_mods = self.license_modules_of(old["document"])
         if old["status"] in ("revoked", "replaced"):
             raise LMError("Licença revogada ou substituída não pode ser renovada.")
         base = None
@@ -671,7 +776,8 @@ class LicenseManager:
                           features=features if features is not None else old["features"], notes=notes,
                           operation="renew", request_id=None, reissue_of=license_id, reason_code="renewal",
                           reason_text=None, expiry_base=base,
-                          validation=validation or self._validation_of(old))
+                          validation=validation or self._validation_of(old),
+                          modules=modules if modules is not None else (prev_mods or None), previous_modules=prev_mods)
         with self.db.tx() as c:
             c.execute("UPDATE licenses SET status = 'superseded' WHERE license_id = ?", (license_id,))
         return new
@@ -708,7 +814,9 @@ class LicenseManager:
                           notes=old["notes"], operation="reactivate", request_id=request_id, reissue_of=old_license_id,
                           reason_code=reason_code, reason_text=reason_text,
                           demo_override="reativação" if ltype == "demo" else None,
-                          validation=self._validation_of(old))
+                          validation=self._validation_of(old),
+                          modules=self.license_modules_of(old["document"]) or None,
+                          previous_modules=self.license_modules_of(old["document"]))
         with self.db.tx() as c:
             if old["status"] == "active":
                 c.execute("UPDATE licenses SET status = 'replaced' WHERE license_id = ?", (old_license_id,))

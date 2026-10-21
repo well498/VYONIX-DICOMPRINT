@@ -315,6 +315,101 @@ def validate_license_payload(p: dict[str, Any]) -> list[str]:
     return errors
 
 
+# ---------------------------------------------------------------------------- módulos (licença v3)
+# A licença v3 é o mesmo documento ``vyonix-license`` (envelope v2) com ``"schema": 3`` e o mapa
+# assinado ``modules``. Os campos legados (tipo, vencimento, recursos, política) continuam valendo para
+# o VYONIX DICOM Print e descrevem o **contrato** da licença. Cada módulo da plataforma é:
+#   {"kind": "contract"} — segue o contrato (assinatura/permanente; renovações e autorizações de uso
+#                          valem para ele), ou
+#   {"kind": "demo", "days": N, "activate_by": data} — demonstração própria do módulo, contada a partir
+#                          da aplicação da licença; deve ser aplicada até ``activate_by``.
+# Todos levam ``grant_id`` (identifica o direito: prorrogação = mesmo grant_id com mais dias) e ``limits``.
+# O módulo PRINT não aparece em ``modules``: ele é sempre derivado dos campos legados.
+LICENSE_SCHEMA = 3
+MODULE_CODES = ("core", "print", "edge", "cloud", "pacs", "viewer", "report", "ris", "patient", "notify", "flow",
+                "connect", "deploy")
+MODULE_LABELS = {"core": "VYONIX Core", "print": "VYONIX PRINT", "edge": "VYONIX EDGE", "cloud": "VYONIX CLOUD",
+                 "pacs": "VYONIX PACS", "viewer": "VYONIX VIEWER", "report": "VYONIX REPORT", "ris": "VYONIX RIS",
+                 "patient": "VYONIX PATIENT", "notify": "VYONIX NOTIFY", "flow": "VYONIX FLOW",
+                 "connect": "VYONIX CONNECT", "deploy": "VYONIX DEPLOY"}
+MODULE_KINDS = ("contract", "demo")
+DEMO_DAY_CHOICES = (5, 15, 30)
+DEMO_CUSTOM_MAX_DAYS = 90
+MODULE_LIMITS = {"core": ("users", "sites"), "print": ("devices", "printers")}
+_GRANT = re.compile(r"^G-[0-9A-F]{8,32}$")
+
+
+def validate_modules(p: dict[str, Any]) -> list[str]:
+    """Erros do mapa ``modules`` de uma licença v3 (vazio = válido). Licenças sem ``schema`` 3 não têm módulos."""
+    if p.get("schema") in (None, 2):
+        return [] if "modules" not in p else ["módulos em licença sem schema 3"]
+    if p.get("schema") != LICENSE_SCHEMA:
+        return [f"schema de licença desconhecido: {p.get('schema')}"]
+    mods = p.get("modules")
+    if not isinstance(mods, dict) or not mods:
+        return ["licença v3 sem módulos"]
+    errors: list[str] = []
+    grants: set[str] = set()
+    for code, m in mods.items():
+        if code == "print":
+            errors.append("o módulo PRINT é definido pelos campos da licença, não em modules")
+            continue
+        if code not in MODULE_CODES:
+            errors.append(f"módulo desconhecido: {code}")
+            continue
+        if not isinstance(m, dict):
+            errors.append(f"{code}: definição inválida")
+            continue
+        kind = m.get("kind")
+        if kind not in MODULE_KINDS:
+            errors.append(f"{code}: tipo inválido ({kind})")
+        g = str(m.get("grant_id") or "")
+        if not _GRANT.match(g):
+            errors.append(f"{code}: grant_id inválido")
+        elif g in grants:
+            errors.append(f"{code}: grant_id repetido")
+        grants.add(g)
+        if kind == "demo":
+            days = m.get("days")
+            if not isinstance(days, int) or not 1 <= days <= DEMO_CUSTOM_MAX_DAYS:
+                errors.append(f"{code}: demonstração deve ter de 1 a {DEMO_CUSTOM_MAX_DAYS} dias")
+            try:
+                parse_time(m["activate_by"])
+            except (KeyError, ValueError, TypeError):
+                errors.append(f"{code}: prazo de ativação ausente ou inválido")
+        limits = m.get("limits") or {}
+        if not isinstance(limits, dict):
+            errors.append(f"{code}: limites inválidos")
+        else:
+            for k, v in limits.items():
+                if k not in MODULE_LIMITS.get(code, ()):
+                    errors.append(f"{code}: limite desconhecido ({k})")
+                elif v is not None and (not isinstance(v, int) or not 1 <= v <= 100000):
+                    errors.append(f"{code}: limite {k} inválido")
+    if "core" not in mods:
+        errors.append("licença da plataforma sem o módulo core")
+    return errors
+
+
+def license_modules(p: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """Módulos efetivos de uma licença (v2 ou v3), já com o PRINT derivado dos campos legados.
+
+    Licença v2 (anterior à plataforma): core e print seguem o contrato da licença — compatibilidade.
+    """
+    lid = str(p.get("license_id") or "")
+    out: dict[str, dict[str, Any]] = {}
+    if p.get("schema") == LICENSE_SCHEMA:
+        for code, m in (p.get("modules") or {}).items():
+            out[code] = {"kind": m["kind"], "grant_id": m["grant_id"], "limits": dict(m.get("limits") or {}),
+                         **({"days": m["days"], "activate_by": m["activate_by"]} if m["kind"] == "demo" else {})}
+    else:
+        out["core"] = {"kind": "contract", "grant_id": "L-" + lid, "limits": {}}
+    if p.get("features"):
+        out["print"] = {"kind": "contract", "grant_id": "L-" + lid,
+                        "limits": {"devices": p.get("max_devices"), "printers": p.get("max_printers")}}
+    return out
+
+
 # ---------------------------------------------------------------------------- datas
 BRT = timezone(timedelta(hours=-3))
 

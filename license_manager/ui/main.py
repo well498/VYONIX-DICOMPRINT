@@ -283,7 +283,8 @@ class LicensesPage(Page):
         top.addWidget(self.status)
         self.lay.addLayout(top)
         self.lay.addLayout(row(btn("Detalhes", self.details), btn("Exportar .vylic…", self.export),
-                               btn("Renovar…", self.renew), btn("REATIVAR / EMITIR NOVA LICENÇA…", self.reactivate,
+                               btn("Renovar…", self.renew), btn("Módulos…", self.modules),
+                               btn("REATIVAR / EMITIR NOVA LICENÇA…", self.reactivate,
                                                                "primary"),
                                btn("Revogar…", self.revoke, "danger"),
                                btn("Gerar lista de revogação…", self.revocation_list)))
@@ -325,6 +326,10 @@ class LicensesPage(Page):
             f"Recursos: {', '.join(F.FEATURE_LABELS[f] for f in x['features'])}<br>"
             f"Equipamentos: {x['max_devices'] or 'sem limite'} · impressoras: {x['max_printers'] or 'sem limite'}<br>"
             f"Operação: {x['operation']}" + (f" · reemissão de {x['reissue_of']}" if x["reissue_of"] else "")
+            + ("<br>Módulos da plataforma: " + ", ".join(
+                f"{F.MODULE_LABELS.get(c, c)} ({'demonstração ' + str(m.get('days')) + ' dias' if m.get('kind') == 'demo' else 'contrato'})"
+                for c, m in self.w.lm.license_modules_of(x["document"]).items())
+               if self.w.lm.license_modules_of(x["document"]) else "")
             + (f" · motivo: {F.REACTIVATION_REASONS.get(x['reason_code'] or '', x['reason_code'])} — {x['reason_text']}"
                if x["reason_code"] else "")
             + (f"<br>Revogada em {when(x['revoked_at'])}: {x['revoked_reason']}" if x["revoked_at"] else "")
@@ -350,6 +355,13 @@ class LicensesPage(Page):
         x = self._sel()
         if x and RenewDialog(self.w.lm, self.w.user, x, self).exec():
             self.w.refresh_all()
+
+    def modules(self) -> None:
+        x = self._sel()
+        if x:
+            from license_manager.ui.dialogs import ModulesDialog
+            if ModulesDialog(self.w.lm, self.w.user, x, self).exec():
+                self.w.refresh_all()
 
     def reactivate(self) -> None:
         x = self._sel()

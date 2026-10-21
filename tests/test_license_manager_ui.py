@@ -53,6 +53,13 @@ class LicenseManagerUiTest(TempDirTestCase):
         dlg.validity.type.setCurrentIndex(dlg.validity.type.findData("permanent"))
         self.assertIn("Sem vencimento", dlg.validity.preview.text())
         RenewDialog(lm, admin, lic, w)
+        from license_manager.ui.dialogs import ModulesBox, ModulesDialog
+        mb = ModulesBox(requested=["core", "ris"], demo_days=15)
+        vals = mb.values()
+        self.assertEqual((vals["core"]["kind"], vals["ris"]["kind"], vals["ris"]["days"]), ("contract", "demo", 15))
+        self.assertNotIn("print", vals)
+        self.assertIsNone(ModulesBox().values())                 # desmarcado = licença v2
+        ModulesDialog(lm, admin, lic, w)
         ReactivateDialog(lm, admin, lic, w)
         CustomerDialog(lm, admin, cid, w)
         LoginDialog(lm, w)

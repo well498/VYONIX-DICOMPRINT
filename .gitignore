@@ -10,3 +10,4 @@ license_admin/keys/
 *.pem
 *.key
 dist/
+web/node_modules

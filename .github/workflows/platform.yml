@@ -1,0 +1,80 @@
+name: platform
+
+# VYONIX Platform (Core): testes com PostgreSQL 17 real, compilação da interface web e testes de
+# ponta a ponta no Chromium. O pipeline do DICOM Print (windows-release.yml) não é alterado.
+on:
+  push:
+    branches: [develop, main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  core:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: ci-postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      VYONIX_TEST_ADMIN_URL: postgresql://postgres:ci-postgres@127.0.0.1:5432/postgres
+      VYONIX_E2E_SHOTS: ${{ github.workspace }}/e2e-shots
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Dependências Python
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-platform-dev.txt
+          python -m playwright install --with-deps chromium
+      - name: Versão do PostgreSQL
+        run: psql "$VYONIX_TEST_ADMIN_URL" -tAc "SHOW server_version"
+      - name: Interface web (TypeScript estrito + empacotamento)
+        working-directory: web
+        run: |
+          npm install --no-audit --no-fund
+          npm run build
+      - name: Testes da plataforma
+        run: python -m pytest tests_platform -ra -v --junitxml=platform-junit.xml
+      - name: Garantia de execução (nenhum teste pulado)
+        run: |
+          python - <<'PY'
+          import xml.etree.ElementTree as ET
+          r = ET.parse("platform-junit.xml").getroot()
+          s = r if r.tag == "testsuite" else r.find("testsuite")
+          tests, skipped = int(s.get("tests")), int(s.get("skipped"))
+          fails = int(s.get("failures")) + int(s.get("errors"))
+          print(f"testes={tests} pulados={skipped} falhas={fails}")
+          assert tests > 0 and skipped == 0 and fails == 0, "testes pulados ou com falha"
+          PY
+      - name: CLI (init, migrate, status) em banco novo
+        env:
+          VYONIX_ADMIN_PASSWORD: Admin-CI-2026
+        run: |
+          python -m vyonix --data "$RUNNER_TEMP/vyx" init --admin-url "$VYONIX_TEST_ADMIN_URL" --db-name vyonix_cli \
+            --prefix vyxcli --org clinica-ci --org-name "Clínica CI"
+          python -m vyonix --data "$RUNNER_TEMP/vyx" migrate
+          python -m vyonix --data "$RUNNER_TEMP/vyx" status
+          ! grep -q "Admin-CI-2026" "$RUNNER_TEMP/vyx/config.json"
+      - name: Testes do DICOM Print continuam isolados (sem dependência da plataforma)
+        run: python -m pytest tests_platform/test_architecture.py -q
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: platform-test-results
+          path: |
+            platform-junit.xml
+            e2e-shots/
+          if-no-files-found: ignore

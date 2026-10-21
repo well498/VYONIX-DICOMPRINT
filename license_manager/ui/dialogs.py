@@ -275,6 +275,84 @@ def request_summary(info_obj) -> str:
             + ("<br><b>Este computador já usou a demonstração local.</b>" if d.get("demo_used") else ""))
 
 
+class ModulesBox(QGroupBox):
+    """Módulos da plataforma VYONIX (licença v3). Desmarcado = licença v2 (somente DICOM Print)."""
+
+    KINDS = (("contract", "Contrato"), ("demo", "Demonstração"))
+
+    def __init__(self, *, modules: dict | None = None, requested: list[str] | None = None,
+                 demo_days: int | None = None) -> None:
+        super().__init__("Módulos da plataforma VYONIX (licença v3)")
+        self.setCheckable(True)
+        modules = modules or {}
+        self.setChecked(bool(modules or requested))
+        grid = QFormLayout(self)
+        self.rows: dict[str, tuple] = {}
+        for code in F.MODULE_CODES:
+            if code == "print":
+                continue                       # o PRINT segue os recursos e o tipo da licença acima
+            cur = modules.get(code) or {}
+            cb = QCheckBox(F.MODULE_LABELS[code])
+            cb.setChecked(bool(cur) or code == "core" or code in (requested or []))
+            kind = QComboBox()
+            for k, label in self.KINDS:
+                kind.addItem(label, k)
+            want_demo = cur.get("kind") == "demo" or (not cur and demo_days and code in (requested or []))
+            kind.setCurrentIndex(kind.findData("demo" if want_demo else "contract"))
+            days = QSpinBox()
+            days.setRange(1, F.DEMO_CUSTOM_MAX_DAYS)
+            days.setValue(int(cur.get("days") or demo_days or 15))
+            days.setSuffix(" dias")
+            new_trial = QCheckBox("nova demonstração")
+            new_trial.setToolTip("Marcado: conta do zero (novo direito). Desmarcado: prorroga a demonstração atual.")
+            lims = {}
+            h = QHBoxLayout()
+            for w in (cb, kind, days, new_trial):
+                h.addWidget(w)
+            for lk in F.MODULE_LIMITS.get(code, ()):
+                sp = QSpinBox()
+                sp.setRange(0, 100000)
+                sp.setSpecialValueText("sem limite")
+                sp.setValue(int((cur.get("limits") or {}).get(lk) or 0))
+                sp.setPrefix({"users": "usuários: ", "sites": "unidades: "}.get(lk, f"{lk}: "))
+                lims[lk] = sp
+                h.addWidget(sp)
+            h.addStretch(1)
+            grid.addRow(h)
+            self.rows[code] = (cb, kind, days, new_trial, lims)
+
+            def sync(_=None, kind=kind, days=days, new_trial=new_trial):
+                d = kind.currentData() == "demo"
+                days.setEnabled(d)
+                new_trial.setEnabled(d)
+            kind.currentIndexChanged.connect(sync)
+            sync()
+        hint = QLabel(f"Demonstração: {', '.join(map(str, F.DEMO_DAY_CHOICES))} dias ou prazo personalizado, "
+                      f"contados da aplicação no servidor da clínica (prazo para aplicar: "
+                      f"{F.DEMO_ACTIVATE_WITHIN_DAYS} dias). O módulo PRINT segue os recursos acima.")
+        hint.setWordWrap(True)
+        grid.addRow(hint)
+
+    def values(self) -> dict | None:
+        if not self.isChecked():
+            return None
+        out = {}
+        for code, (cb, kind, days, new_trial, lims) in self.rows.items():
+            if not cb.isChecked():
+                continue
+            m = {"kind": kind.currentData(), "limits": {k: sp.value() for k, sp in lims.items() if sp.value()}}
+            if m["kind"] == "demo":
+                m["days"] = days.value()
+                if new_trial.isChecked():
+                    m["new_trial"] = True
+            out[code] = m
+        return out
+
+
+def _modules_of(lm, lic: dict) -> dict:
+    return lm.license_modules_of(lic["document"]) if lic.get("document") else {}
+
+
 class IssueDialog(QDialog):
     """Emitir licença a partir de uma solicitação importada."""
 
@@ -310,6 +388,9 @@ class IssueDialog(QDialog):
         lay.addLayout(form)
         self.validity = ValidityBox(lm, product=lm.product(F.PRODUCT_ID))
         lay.addWidget(self.validity)
+        plat = (req_info.data or {}).get("platform") or {}
+        self.modules = ModulesBox(requested=plat.get("modules"), demo_days=plat.get("demo_days"))
+        lay.addWidget(self.modules)
         self.demo_reason = QLineEdit()
         self.demo_reason.setPlaceholderText("Somente para emitir outra DEMO a um computador que já recebeu uma")
         f2 = QFormLayout()
@@ -347,7 +428,8 @@ class IssueDialog(QDialog):
         try:
             v = self.validity.values()
             self.result_license = self.lm.issue(self.user, self.req.request_id, cid, product_id=F.PRODUCT_ID,
-                                                demo_override=self.demo_reason.text().strip() or None, **v)
+                                                demo_override=self.demo_reason.text().strip() or None,
+                                                modules=self.modules.values(), **v)
         except LMError as exc:
             error(self, exc)
             return
@@ -366,6 +448,8 @@ class RenewDialog(QDialog):
                              "Na renovação antecipada, o novo período começa no fim do atual."))
         self.validity = ValidityBox(lm, product=lm.product(lic["product_id"]), defaults=lic)
         lay.addWidget(self.validity)
+        self.modules = ModulesBox(modules=_modules_of(lm, lic))
+        lay.addWidget(self.modules)
         bb = QDialogButtonBox(QDialogButtonBox.Cancel)
         bb.addButton("Renovar e exportar", QDialogButtonBox.AcceptRole).setObjectName("primary")
         bb.accepted.connect(self._ok)
@@ -380,11 +464,57 @@ class RenewDialog(QDialog):
         try:
             new = self.lm.renew(self.user, self.lic["license_id"], ltype=v["ltype"], starts=v["starts"],
                                 custom_end=v["custom_end"], edition=v["edition"], max_devices=v["max_devices"],
-                                max_printers=v["max_printers"], features=v["features"], notes=v["notes"])
+                                max_printers=v["max_printers"], features=v["features"], notes=v["notes"],
+                                modules=self.modules.values() or {})
         except LMError as exc:
             error(self, exc)
             return
         save_document(self, self.lm, self.user, new)
+        self.accept()
+
+
+class ModulesDialog(QDialog):
+    """Alterar módulos de uma licença ativa (incluir, prorrogar ou converter demonstração, limites),
+    mantendo contrato, vencimento e instalação."""
+
+    def __init__(self, lm, user, lic: dict, parent=None) -> None:
+        super().__init__(parent)
+        self.lm, self.user, self.lic = lm, user, lic
+        self.result_license = None
+        self.setWindowTitle(f"Módulos de {lic['license_id']}")
+        lay = QVBoxLayout(self)
+        lay.addWidget(QLabel(f"Cliente: <b>{lic['customer']}</b> · {lic['type_label']} · vencimento "
+                             f"{when(lic['expires_at'])}. A licença atual é substituída por uma nova com os módulos "
+                             "abaixo; o contrato não muda."))
+        self.modules = ModulesBox(modules=_modules_of(lm, lic))
+        self.modules.setChecked(True)
+        self.modules.setCheckable(False)
+        lay.addWidget(self.modules)
+        f = QFormLayout()
+        self.reason = QLineEdit()
+        self.demo_reason = QLineEdit()
+        self.demo_reason.setPlaceholderText("Somente para nova demonstração de módulo já demonstrado neste computador")
+        f.addRow("Motivo *", self.reason)
+        f.addRow("Justificativa de demonstração repetida", self.demo_reason)
+        lay.addLayout(f)
+        bb = QDialogButtonBox(QDialogButtonBox.Cancel)
+        bb.addButton("Emitir e exportar", QDialogButtonBox.AcceptRole).setObjectName("primary")
+        bb.accepted.connect(self._ok)
+        bb.rejected.connect(self.reject)
+        lay.addWidget(bb)
+
+    def _ok(self) -> None:
+        from license_manager.ui.main import ensure_unlocked
+        if not ensure_unlocked(self, self.lm, self.user):
+            return
+        try:
+            self.result_license = self.lm.amend_modules(self.user, self.lic["license_id"],
+                                                        self.modules.values() or {}, reason=self.reason.text(),
+                                                        demo_override=self.demo_reason.text().strip() or None)
+        except LMError as exc:
+            error(self, exc)
+            return
+        save_document(self, self.lm, self.user, self.result_license)
         self.accept()
 
 
