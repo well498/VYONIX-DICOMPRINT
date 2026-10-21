@@ -198,11 +198,11 @@ def validation_report(version: str, commit: str, build_date: str, installer: Pat
     by_id = {r["id"]: r for r in v_results}
     for num, title, pats, ci_ids in REQUIRED_TESTS:
         cases = [c for c in junit["cases"] if any(re.search(p, c["name"], re.I) for p in pats)]
-        ok_cases = [c for c in cases if c["status"] == "Aprovado"]
+        ok_cases = [c for c in cases if c["status"] == "aprovado"]
         ci = [by_id[i] for i in ci_ids if i in by_id]
         ci_txt = ", ".join(f"{r['id']} {'aprovado' if r['ok'] else 'FALHOU'}" for r in ci) or "—"
         not_verifiable = any("NÃO VERIFICÁVEL" in (r.get("detail") or "") for r in ci)
-        failed = any(c["status"] != "Aprovado" for c in cases if c["status"] not in ("Ignorado",)) or \
+        failed = any(c["status"] in ("falhou", "erro") for c in cases) or \
             any(not r["ok"] for r in ci)
         if failed:
             sit = "**Falhou**"
