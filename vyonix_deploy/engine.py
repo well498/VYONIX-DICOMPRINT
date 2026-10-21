@@ -131,7 +131,11 @@ class Engine:
     def plan(self, kind: str) -> list[PlanItem]:
         items = []
         for seq, st in enumerate(self.build(self.ctx, kind)):
-            d = st.describe(self.ctx)
+            try:
+                d = st.describe(self.ctx)
+            except Exception as exc:  # noqa: BLE001 - item ainda não pode ser lido (ex.: conta de serviço a criar)
+                d = {"current": {"não conferido": str(exc)[:200]}, "proposed": _safe(st.desired, self.ctx),
+                     "impact": "", "undo": ""}
             try:
                 already = bool(st.check(self.ctx))
             except Exception as exc:  # noqa: BLE001 - o plano mostra o que não pôde ser conferido
@@ -270,6 +274,13 @@ class Engine:
         db.set_run(run_id, status=status, message=msg)
         db.event(run_id, "ERROR", msg)
         return status
+
+
+def _safe(fn, ctx):
+    try:
+        return fn(ctx)
+    except Exception as exc:  # noqa: BLE001
+        return {"erro": str(exc)[:200]}
 
 
 def _os_user() -> str:

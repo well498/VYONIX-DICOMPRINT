@@ -297,9 +297,20 @@ def main() -> int:
         try:
             p = sh([dist / "vyonix-deploy.exe", "install", "--config", cfg_file, "--plan-only"], ok=(2,))
         finally:
-            filler.unlink(missing_ok=True)
+            for _ in range(60):
+                try:
+                    filler.unlink(missing_ok=True)
+                    break
+                except OSError:
+                    time.sleep(2)
+            end = time.monotonic() + 120
+            while shutil.disk_usage("C:\\").free < free - 2 * 1024 ** 3 and time.monotonic() < end:
+                time.sleep(2)
+        after = shutil.disk_usage("C:\\").free
+        assert not filler.exists() and after >= free - 2 * 1024 ** 3, f"espaço não liberado: {after / 1024 ** 3:.1f} GB"
         assert "Espaço livre" in p.stdout, p.stdout[-400:]
-        return "impeditivo de espaço livre apontado; arquivo de preenchimento removido"
+        return (f"impeditivo de espaço livre apontado com {6} GB livres; arquivo removido "
+                f"({after / 1024 ** 3:.1f} GB livres de novo)")
 
     # ---------------------------------------------------------------- 2.5 instalação
     @check("2.5", "Instalação silenciosa pelo VYONIX_Setup_x64.exe com plano aprovado")

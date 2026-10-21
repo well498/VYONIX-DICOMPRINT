@@ -114,8 +114,11 @@ $acl = [System.IO.Directory]::GetAccessControl($A.path)
         cur = self.observe(ctx)
         if not cur.get("exists") or not cur.get("protected"):
             return False
-        have = {(r["sid"], r["type"]) : r for r in cur["rules"]}
-        want = self._sids()
+        have = {(r["sid"], r["type"]): r for r in cur["rules"]}
+        try:
+            want = self._sids()
+        except DeployError:                         # conta de serviço ainda não criada
+            return False
         if {s for s, _ in want} != {r["sid"] for r in cur["rules"] if r["type"] == "Allow"}:
             return False
         for sid, right in want:
@@ -157,8 +160,8 @@ _SID_CACHE: dict[str, str] = {}
 
 def _sid_of(account: str) -> str:
     if account not in _SID_CACHE:
-        r = powershell("(New-Object System.Security.Principal.NTAccount($A.n)).Translate("
-                       "[System.Security.Principal.SecurityIdentifier]).Value", {"n": account})
+        r = powershell("try { (New-Object System.Security.Principal.NTAccount($A.n)).Translate("
+                       "[System.Security.Principal.SecurityIdentifier]).Value } catch { '' }", {"n": account})
         if not r:
             raise DeployError(f"Conta não encontrada: {account}")
         _SID_CACHE[account] = r
@@ -184,7 +187,10 @@ class AclGrantStep(Step):
     def observe(self, ctx: Context) -> dict:
         if not IS_WINDOWS or not self.path.exists():
             return {"path": str(self.path), "present": False}
-        sid = _sid_of(self.account)
+        try:
+            sid = _sid_of(self.account)
+        except DeployError:
+            return {"path": str(self.path), "present": False, "account": "ainda não existe"}
         r = powershell(r"""@(([System.IO.Directory]::GetAccessControl($A.path)).Access | Where-Object { -not $_.IsInherited -and $_.AccessControlType -eq 'Allow' } | ForEach-Object {
   $s = try { $_.IdentityReference.Translate([Security.Principal.SecurityIdentifier]).Value } catch { '' }
   if ($s -eq $A.sid) { [string]$_.FileSystemRights } })""", {"path": str(self.path), "sid": sid})
