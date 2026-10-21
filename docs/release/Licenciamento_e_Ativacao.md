@@ -1,8 +1,10 @@
 # Licenciamento e Ativação
 
-**VYONIX DICOM Print {VERSION}** · licenciamento offline, formato 2
+**VYONIX DICOM Print {VERSION}** · licenciamento formato 2 · assinatura comercial (offline ou online)
 
-O VYONIX DICOM Print funciona sem internet. A ativação é feita por arquivos: o computador do cliente exporta uma **solicitação**, o administrador emite a **licença assinada** no VYONIX License Manager e o cliente importa o arquivo. O VYONIX DICOM Print só **verifica** licenças: ele não contém nenhuma função de emissão nem a chave privada.
+O VYONIX DICOM Print funciona sem internet. A ativação é feita por arquivos: o computador do cliente exporta uma **solicitação**, o administrador emite a **licença assinada** no VYONIX License Manager e o cliente importa o arquivo. O VYONIX DICOM Print só **verifica** licenças e autorizações: ele não contém nenhuma função de emissão nem chave privada.
+
+Licenças por assinatura podem ser **offline** (renovação por arquivo `.vyauth`) ou **online** (o VYONIX consulta periodicamente o VYONIX License Server do fornecedor). O tipo vem gravado e assinado na licença.
 
 ## 1. Primeira abertura: tela de ativação
 
@@ -36,7 +38,30 @@ A licença vincula ao mesmo tempo Product ID, Hardware ID (com os resumos de cad
 | **Licença copiada para outro computador ou outra instalação** | Recusada (hardware/instalação não correspondem; com TPM, também falta a prova de posse). |
 | **Licença alterada** (qualquer byte) | Recusada: assinatura inválida. Arquivos com nome ou estrutura "parecidos" não são aceitos. |
 | **Licença permanente** | Sem vencimento comercial; continua sujeita à assinatura, ao hardware e à instalação. |
-| **Licença vencida** | Funções suspensas; o aviso aparece nos 15 dias anteriores. A renovação é um novo arquivo `.vylic`. |
+| **Assinatura vencendo / vencida** | Aviso ao administrador antes do vencimento e durante a carência (ver seção 3A); funcionamento normal até o fim da carência. Renovação: arquivo de autorização `.vyauth`, consulta online ou nova licença `.vylic`. |
+
+## 3A. Assinatura: avisos, carência, suspensão e reativação
+
+A página **Licença → Assinatura e validação** mostra a situação: **ATIVA**, **PRÓXIMA DO VENCIMENTO**, **EM ATRASO**, **SUSPENSÃO PROGRAMADA**, **SUSPENSA**, **EXPIRADA** ou **REATIVADA**, além do tipo de validação, da conectividade com o servidor e do histórico (licença, assinatura e conectividade, com data, origem e responsável). Os detalhes comerciais (vencimento, carência, motivo) aparecem somente com a senha de administrador; recepção e técnicos veem apenas "funções licenciadas suspensas — procure o administrador da clínica".
+
+- **Antes do vencimento** e **durante a carência** tudo funciona; o aviso aparece para o administrador.
+- **Suspensão** (decisão comercial após avisos e carência, conforme contrato) ou **expiração**: ficam suspensas apenas as **novas** operações licenciadas — recepção DICOM, DICOM Print, regras e novas impressões. **Trabalhos já aceitos são concluídos**; imagens, filas, calibrações, artes BMP, configurações e histórico são preservados; nada é apagado nem cifrado.
+- **Exportação sempre disponível:** Licença → **Exportar exames armazenados…** copia os arquivos DICOM originais (conferidos por SHA-256) para uma pasta, com manifesto sem nome de paciente.
+- **Reativação:** online, automática na próxima consulta após o pagamento confirmado; offline, importando o arquivo `.vyauth` em **Importar autorização / renovação…**. Nada precisa ser reinstalado.
+
+Licenças permanentes não são suspensas por mensalidade ou manutenção.
+
+## 3B. Validação online
+
+Licenças online consultam o VYONIX License Server a cada 6 horas (Configurações → Licença — validação online) e pelo botão **Verificar agora no License Server**. São enviados somente identificadores da licença, da instalação e do computador, a versão e um número aleatório de uso único — **nenhuma imagem ou dado de paciente**. A conexão é HTTPS; o certificado do servidor é conferido pela impressão digital gravada na licença.
+
+**Falta de internet não é inadimplência.** Sem contato (internet, DNS ou servidor indisponíveis), o VYONIX continua funcionando durante a validade da última autorização (7 dias) e mais a tolerância (10 dias, padrões do contrato). Só depois disso aparece **"Autorização local vencida"** — situação técnica, resolvida no primeiro contato bem-sucedido ou com um arquivo de autorização. Respostas inválidas (assinatura, número de consulta ou certificado divergentes) são registradas como suspeita de adulteração e não alteram a situação.
+
+Opções (administrador): endereço alternativo do servidor, arquivo de autoridade certificadora e proxy HTTPS.
+
+## 3C. Renovação offline
+
+O administrador do fornecedor envia o arquivo **`.vyauth`** (autorização assinada). Importe em Licença → **Importar autorização / renovação…** (senha de administrador). Uma autorização mais antiga que a instalada é recusada; cada autorização vale uma vez. Em licenças offline, uma suspensão só tem efeito no vencimento da autorização ou quando um arquivo com a suspensão é importado.
 
 Como a atualização é distinguida da reinstalação: antes de copiar os arquivos, o instalador consulta a entrada de desinstalação do produto mantida pelo Windows; depois, `Vyonix.exe --installation install --upgrade|--fresh` aplica a decisão sobre o registro selado da instalação. A desinstalação executa `--installation uninstall`. Não depende apenas da presença de um arquivo.
 
@@ -90,8 +115,10 @@ Quando a licença limita impressoras, a primeira impressão em cada impressora o
 
 ## 10. Linha de comando (suporte)
 
-`Vyonix.exe --license status|request|demo|install|diagnostic|revalidation|revocation [--file ARQUIVO] --report saida.json`
+`Vyonix.exe --license status|request|demo|install|diagnostic|revalidation|revocation|authorization|online|export [--file ARQUIVO|PASTA] --report saida.json`
+
+`authorization` importa o `.vyauth`; `online` consulta o License Server agora; `export` copia os exames armazenados para a pasta indicada.
 
 ## 11. Privacidade (LGPD)
 
-Solicitações, diagnósticos e licenças contêm apenas resumos criptográficos de identificadores de hardware, os IDs VYONIX, a versão, o nome da unidade e o nome do cliente na licença. Nenhum dado de paciente.
+Solicitações, diagnósticos, licenças, autorizações e consultas ao License Server contêm apenas resumos criptográficos de identificadores de hardware, os IDs VYONIX, a versão, o nome da unidade e o nome do cliente na licença. Nenhum dado de paciente.

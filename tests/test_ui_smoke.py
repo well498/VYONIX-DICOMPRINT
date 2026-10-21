@@ -190,6 +190,36 @@ class UiSmokeTest(TempDirTestCase):
         finally:
             ctx.close()
 
+    def test_license_page_subscription_card_real_qt(self):
+        """Página Licença com licença comercial: situação da assinatura, histórico e autorização offline."""
+        from app.bootstrap import bootstrap
+        from app.ui.pages.license_page import LicensePage
+        from app.ui.workers import wait_all
+        from tests.licensing_support import make_manager
+        os.environ["VYONIX_LICENSE_ENFORCE"] = "1"
+        try:
+            ctx = bootstrap(data_dir=self.tmp / "app")
+        finally:
+            os.environ["VYONIX_LICENSE_ENFORCE"] = "0"
+        lm, admin, keys, cid = make_manager(self.tmp / "lm")
+        try:
+            ctx.license.public_keys = keys
+            info = lm.import_request(admin, ctx.license.request_code())
+            lic = lm.issue(admin, info.request_id, cid, ltype="monthly", edition="Profissional")
+            ctx.license.install(lic["document"], actor="t")
+            ctx.license.import_authorization(lm.offline_authorization(admin, lic["license_id"])["document"],
+                                             actor="t")
+            page = LicensePage(ctx)
+            page.refresh()
+            wait_all(5000)
+            self.app.processEvents()
+            self.assertIn("ATIVA", page.sub.text())
+            self.assertIn("Offline", page.sub.text())
+            self.assertGreaterEqual(page.shist.rowCount(), 1)
+        finally:
+            lm.close()
+            ctx.close()
+
     def test_dicom_rule_dialog_and_reception_page_real_qt(self):
         """Adicionar Regra DICOM sem IP, impressão sob demanda, tela do técnico e página do Reception."""
         from app.bootstrap import bootstrap

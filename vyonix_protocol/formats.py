@@ -34,6 +34,61 @@ REVALIDATION_FORMAT = "vyonix-revalidation"
 REVOCATION_FORMAT = "vyonix-revocation"
 DIAGNOSTIC_FORMAT = "vyonix-diagnostic"
 REQUEST_FILE_FORMAT = "vyonix-request"
+AUTHORIZATION_FORMAT = "vyonix-authorization"     # autorização de uso (assinatura comercial), online ou arquivo
+
+# Escopo de cada chave de emissão: uma chave só é aceita para os documentos do seu escopo. A chave
+# do VYONIX License Server assina apenas autorizações de uso — mesmo que vaze, não emite licenças.
+SCOPE_OF_FORMAT = {LICENSE_FORMAT: "license", AUTHORIZATION_FORMAT: "authorization",
+                   REVALIDATION_FORMAT: "revalidation", REVOCATION_FORMAT: "revocation"}
+ALL_SCOPES = ("license", "authorization", "revalidation", "revocation")
+
+# Política comercial gravada (assinada) na licença.
+VALIDATION_MODES = {"offline": "Offline (arquivos de renovação)", "online": "Online (VYONIX License Server)"}
+DEFAULT_POLICY = {"validation": "offline", "warn_days": 5, "grace_days": 7, "online_tolerance_days": 10,
+                  "server_url": None, "server_pin": None}
+LEGACY_POLICY = {"validation": "offline", "warn_days": 15, "grace_days": 0, "online_tolerance_days": 0,
+                 "server_url": None, "server_pin": None}       # licenças emitidas antes da revisão 4
+
+
+def license_policy(payload: dict[str, Any]) -> dict[str, Any]:
+    """Política efetiva de uma licença (licenças antigas, sem política, mantêm o comportamento anterior)."""
+    pol = payload.get("policy")
+    if not isinstance(pol, dict):
+        return dict(LEGACY_POLICY)
+    out = dict(DEFAULT_POLICY)
+    out.update({k: v for k, v in pol.items() if k in DEFAULT_POLICY})
+    for k in ("warn_days", "grace_days", "online_tolerance_days"):
+        out[k] = max(0, min(365, int(out.get(k) or 0)))
+    if out["validation"] not in VALIDATION_MODES:
+        out["validation"] = "offline"
+    return out
+
+
+AUTHORIZATION_REQUIRED = ("authorization_id", "license_id", "product_id", "installation_id", "hardware_id", "seq",
+                          "issued_at", "valid_until", "commercial", "source")
+
+
+def validate_authorization_payload(p: dict[str, Any]) -> list[str]:
+    errors = [f"campo ausente: {k}" for k in AUTHORIZATION_REQUIRED if p.get(k) in (None, "", {})]
+    for k in ("issued_at", "valid_until"):
+        if p.get(k):
+            try:
+                parse_time(p[k])
+            except ValueError:
+                errors.append(f"data inválida em {k}")
+    com = p.get("commercial")
+    if isinstance(com, dict):
+        if not com.get("permanent") and not com.get("paid_until"):
+            errors.append("autorização sem período pago")
+    elif com is not None:
+        errors.append("situação comercial inválida")
+    if p.get("source") not in (None, "server", "manager"):
+        errors.append("origem desconhecida")
+    try:
+        int(p.get("seq") or 0)
+    except (TypeError, ValueError):
+        errors.append("sequência inválida")
+    return errors
 
 FEATURES = ("storage", "printing", "print_scp", "rules")
 FEATURE_LABELS = {"storage": "Recepção DICOM (C-STORE SCP)", "printing": "Impressão e fila",

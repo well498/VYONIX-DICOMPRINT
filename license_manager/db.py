@@ -182,6 +182,40 @@ CREATE TABLE audit (
 );
 """)]
 
+
+def _migration_2() -> str:
+    """Revisão 4: perfis comerciais (operador financeiro, suporte técnico) e Gestão Comercial."""
+    from vyonix_commercial.schema import DEFAULT_PLANS, DEFAULT_SETTINGS, SCHEMA
+
+    def q(v) -> str:
+        return "NULL" if v is None else ("'" + str(v).replace("'", "''") + "'")
+    seeds = "".join(f"INSERT OR IGNORE INTO com_settings(key, value) VALUES ({q(k)}, {q(v)});\n"
+                    for k, v in DEFAULT_SETTINGS.items())
+    seeds += "".join(f"INSERT OR IGNORE INTO com_plans(code, name, months) VALUES ({q(c)}, {q(n)}, {q(m)});\n"
+                     for c, n, m in DEFAULT_PLANS)
+    return r"""
+CREATE TABLE users_v2 (
+    id            INTEGER PRIMARY KEY,
+    username      TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    display_name  TEXT NOT NULL,
+    role          TEXT NOT NULL CHECK (role IN ('admin','financial','support','issuer','viewer')),
+    pw_hash       TEXT NOT NULL,
+    failed        INTEGER NOT NULL DEFAULT 0,
+    locked_until  TEXT,
+    active        INTEGER NOT NULL DEFAULT 1,
+    must_change   INTEGER NOT NULL DEFAULT 0,
+    created_at    TEXT NOT NULL,
+    last_login_at TEXT
+);
+INSERT INTO users_v2 SELECT id, username, display_name, role, pw_hash, failed, locked_until, active, must_change,
+                            created_at, last_login_at FROM users;
+DROP TABLE users;
+ALTER TABLE users_v2 RENAME TO users;
+""" + SCHEMA + seeds
+
+
+MIGRATIONS.append((2, _migration_2()))
+
 SCHEMA_VERSION = MIGRATIONS[-1][0]
 
 

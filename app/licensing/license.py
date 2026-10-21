@@ -44,7 +44,8 @@ from app.licensing import tpm as tpm_mod
 from app.licensing.demo import DemoService, fmt_remaining
 from app.licensing.hardware import HardwareProfile, HardwareProvider
 from app.licensing.installation import InstallationManager
-from app.licensing.keys import PUBLIC_KEYS
+from app.licensing.keys import KEY_SCOPES, PUBLIC_KEYS
+from app.licensing.subscription import CONNECTIVITY_LABELS, AuthorizationBook, Commercial, history_add
 from app.licensing.time_integrity import TimeIntegrity, TimeStatus
 from app.licensing.vault import Vault
 from app.utils.timeutil import from_iso, to_iso, utc_now_iso
@@ -56,7 +57,8 @@ DEMO_MARK = "VYONIX DICOM Print — DEMONSTRAÇÃO"
 CACHE_S = 60.0
 TPM_PROOF_S = 600.0
 WARN_EXPIRY = timedelta(days=15)
-CRITICAL_RECORDS = ("installation", "time", "demo", "activations", "revocation")
+CRITICAL_RECORDS = ("installation", "time", "demo", "activations", "revocation", "authorization")
+RESTRICTED_COMMERCIAL = (LicenseState.EXPIRED, LicenseState.COMMERCIAL_SUSPENDED, LicenseState.AUTH_EXPIRED)
 
 
 @dataclass
@@ -108,7 +110,8 @@ class LicenseService:
     def __init__(self, db: Database, events: EventRepository, settings_get: Callable[[str], Any], *,
                  vault: Vault, hardware: HardwareProvider, tpm, installation: InstallationManager,
                  time_integrity: TimeIntegrity, demo: DemoService, public_keys: dict[str, str] | None = None,
-                 enforced: bool | None = None, settings_set: Callable[[str, Any], None] | None = None) -> None:
+                 enforced: bool | None = None, settings_set: Callable[[str, Any], None] | None = None,
+                 key_scopes: dict[str, tuple[str, ...]] | None = None) -> None:
         self.db = db
         self.events = events
         self.get = settings_get
@@ -119,6 +122,9 @@ class LicenseService:
         self.time = time_integrity
         self.demo = demo
         self.public_keys = PUBLIC_KEYS if public_keys is None else public_keys
+        self.key_scopes = KEY_SCOPES if key_scopes is None else key_scopes
+        self.authorizations = AuthorizationBook(vault, db)
+        self._last_commercial: str | None = None
         self.enforced = enforced_default() if enforced is None else enforced
         self.settings_set = settings_set
         self._lock = threading.Lock()
@@ -187,6 +193,9 @@ class LicenseService:
                                   "emitido pelo VYONIX License Manager oficial.")
         if not verify_ed25519(key, doc.signed, doc.signature):
             raise ValidationError("Assinatura digital inválida: o documento foi alterado ou não é autêntico.")
+        scope = F.SCOPE_OF_FORMAT.get(fmt)
+        if scope not in self.key_scopes.get(doc.key_id, F.ALL_SCOPES):
+            raise ValidationError(f"A chave {doc.key_id} não está autorizada a emitir este tipo de documento.")
         if doc.payload.get("product_id") != F.PRODUCT_ID:
             raise ValidationError(f"Documento de outro produto ({doc.payload.get('product_id')}).")
         return doc
@@ -251,27 +260,70 @@ class LicenseService:
             return Verdict(LicenseStatus(LicenseState.INVALID, message=(
                 f"Licença válida somente a partir de {F.parse_time(lic.starts_at).astimezone():%d/%m/%Y}."), **info),
                 lic, detail)
-        exp = F.parse_time(lic.expires_at) if lic.expires_at else None
         if lic.type == "demo":
+            exp = F.parse_time(lic.expires_at) if lic.expires_at else None
             act = self._activation(lic.license_id) or (now if installing else None)
             if act is None:
                 act = now
             dur_end = act + timedelta(hours=int(lic.duration_hours or F.DEMO_HOURS))
             exp = min(exp, dur_end) if exp else dur_end
-        if exp is not None and now >= exp:
-            state = LicenseState.DEMO_EXPIRED if lic.type == "demo" else LicenseState.EXPIRED
-            return Verdict(LicenseStatus(state, expires_at=exp, message=(
-                f"{'Demonstração encerrada' if lic.type == 'demo' else 'Licença vencida'} em "
-                f"{exp.astimezone():%d/%m/%Y %H:%M}. Solicite a renovação ao administrador."), **info), lic, detail)
+            if now >= exp:
+                return Verdict(LicenseStatus(LicenseState.DEMO_EXPIRED, expires_at=exp, message=(
+                    f"Demonstração encerrada em {exp.astimezone():%d/%m/%Y %H:%M}. Solicite a licença ao "
+                    "administrador."), **info), lic, detail)
+            warn = None
+            if exp - now <= timedelta(hours=24):
+                warn = f"Vence em {fmt_remaining(exp - now)} ({exp.astimezone():%d/%m/%Y %H:%M})."
+            text_ = (f"{lic.type_label} — {lic.edition}, para {lic.customer}, válida até "
+                     f"{exp.astimezone():%d/%m/%Y %H:%M}.")
+            return Verdict(LicenseStatus(LicenseState.DEMO, expires_at=exp, message=text_,
+                                         remaining_s=(exp - now).total_seconds(), warning=warn, **info), lic, detail)
+        return self._commercial_verdict(lic, now, info, detail)
+
+    def _commercial_verdict(self, lic: LicenseData, now: datetime, info: dict, detail: dict) -> Verdict:
+        """Licença comercial: estado da assinatura (autorização mais recente ou a própria licença)."""
+        com: Commercial = self.authorizations.evaluate(lic, now)
+        ev = com.evaluation
+        detail["commercial"] = ev.as_dict()
+        extra = dict(commercial=ev.state.value, connectivity=com.connectivity, validation=com.policy["validation"],
+                     admin_notice=ev.admin_message)
+        if com.revoked:
+            return Verdict(LicenseStatus(LicenseState.REVOKED, message=f"Licença revogada pelo administrador "
+                                         f"({com.revoked}).", **extra, **info), lic, detail)
+        exp = None if lic.type == "permanent" else (ev.due_at or (F.parse_time(lic.expires_at) if lic.expires_at
+                                                                    else None))
+        if com.auth_expired_since is not None and not ev.restricts:
+            msg = ("Autorização local vencida: o VYONIX não conseguiu renovar a autorização com o License Server "
+                   "dentro da tolerância. Isso não indica inadimplência — verifique a conexão com a internet e "
+                   "use Licença → Verificar agora (ou importe um arquivo de renovação).")
+            extra["admin_notice"] = (com.connectivity_detail + " " + ev.admin_message).strip()
+            return Verdict(LicenseStatus(LicenseState.AUTH_EXPIRED, expires_at=exp, message=msg,
+                                         restricted_since=com.auth_expired_since,
+                                         user_notice="Funções licenciadas suspensas: sem contato com o servidor de "
+                                                     "licenças. Procure o administrador da clínica.", **extra, **info),
+                           lic, detail)
+        if ev.restricts:
+            state = LicenseState.COMMERCIAL_SUSPENDED if ev.state.value == "suspended" else LicenseState.EXPIRED
+            if state == LicenseState.EXPIRED:
+                msg = (f"Licença vencida: prazo de autorização encerrado em {ev.since.astimezone():%d/%m/%Y %H:%M}. "
+                       "Imagens, filas e configurações estão preservadas; a exportação continua disponível. "
+                       "Importe o arquivo de renovação ou verifique com o administrador.")
+            else:
+                msg = ("Assinatura suspensa: novas operações licenciadas (recepção DICOM, impressão e regras) estão "
+                       "suspensas. Trabalhos já aceitos foram concluídos; imagens, filas, calibrações e configurações "
+                       "estão preservadas e a exportação continua disponível.")
+            return Verdict(LicenseStatus(state, expires_at=exp, message=msg, restricted_since=ev.since,
+                                         user_notice=ev.user_message, **extra, **info), lic, detail)
         remaining = (exp - now).total_seconds() if exp else None
         warn = None
-        if exp is not None and exp - now <= (timedelta(hours=24) if lic.type == "demo" else WARN_EXPIRY):
-            warn = f"Vence em {fmt_remaining(exp - now)} ({exp.astimezone():%d/%m/%Y %H:%M})."
-        state = LicenseState.DEMO if lic.type == "demo" else LicenseState.VALID
+        if ev.state.value in ("due_soon", "overdue", "suspension_scheduled", "reactivated"):
+            warn = ev.admin_message
+        if com.connectivity_detail and com.connectivity not in (None, "offline"):
+            warn = ((warn + " ") if warn else "") + com.connectivity_detail
         text_ = (f"{lic.type_label} — {lic.edition}, para {lic.customer}"
                  + (f", válida até {exp.astimezone():%d/%m/%Y %H:%M}" if exp else ", sem vencimento") + ".")
-        return Verdict(LicenseStatus(state, expires_at=exp, message=text_, remaining_s=remaining, warning=warn, **info),
-                       lic, detail)
+        return Verdict(LicenseStatus(LicenseState.VALID, expires_at=exp, message=text_, remaining_s=remaining,
+                                     warning=warn, **extra, **info), lic, detail)
 
     # ------------------------------------------------------------------ estado
     def _active_row(self):
@@ -324,13 +376,46 @@ class LicenseService:
         v = self._compute()
         with self._lock:
             self._cache = (time.monotonic(), v, self._token())
-        if v.status.state.value != self._last_state:
-            if self._last_state is not None:
-                self.events.add(level="WARNING" if not v.status.active else "INFO", category=Category.LICENSE,
-                                action="license.state", message=f"{v.status.state.label}: {v.status.message}",
-                                actor="system", details={"state": v.status.state.value})
-            self._last_state = v.status.state.value
+        self._track(v)
         return v
+
+    def _track(self, v: Verdict) -> None:
+        """Histórico das transições (estado da licença e estado comercial), também entre processos."""
+        st = v.status
+        last = self._last_logged()
+        if st.state.value != self._last_state:
+            if self._last_state is not None:
+                self.events.add(level="WARNING" if not st.active else "INFO", category=Category.LICENSE,
+                                action="license.state", message=f"{st.state.label}: {st.message}",
+                                actor="system", details={"state": st.state.value, "commercial": st.commercial})
+            self._last_state = st.state.value
+        if last.get("license") != st.state.value:
+            history_add(self.db, license_id=st.license_id, kind="license", from_state=last.get("license"),
+                        to_state=st.state.value, source="verificação", actor="sistema", detail=st.message[:300])
+        if st.commercial and last.get("commercial") != st.commercial:
+            history_add(self.db, license_id=st.license_id, kind="commercial", from_state=last.get("commercial"),
+                        to_state=st.commercial, source="verificação", actor="sistema",
+                        detail=(st.admin_notice or "")[:300])
+            if self._last_commercial is not None or last.get("commercial"):
+                self.events.add(level="WARNING" if st.commercial in ("overdue", "suspension_scheduled", "suspended",
+                                                                     "expired") else "INFO",
+                                category=Category.LICENSE, action="license.commercial",
+                                message=f"Assinatura: {st.commercial_label}.", actor="system",
+                                details={"commercial": st.commercial, "license_id": st.license_id})
+            self._last_commercial = st.commercial
+
+    def _last_logged(self) -> dict[str, str]:
+        out: dict[str, str] = {}
+        try:
+            for kind in ("license", "commercial"):
+                r = self.db.connection().execute(
+                    "SELECT to_state FROM license_state_history WHERE kind = ? ORDER BY id DESC LIMIT 1",
+                    (kind,)).fetchone()
+                if r:
+                    out[kind] = r[0]
+        except Exception:  # noqa: BLE001
+            pass
+        return out
 
     def _compute(self) -> Verdict:
         inst = self.installation_id()
@@ -377,6 +462,123 @@ class LicenseService:
     def license_data(self) -> LicenseData | None:
         return self._verdict().lic
 
+    def installed_license(self) -> LicenseData | None:
+        """Licença comercial instalada (mesmo vencida ou suspensa)."""
+        row = self._active_row()
+        if row is None:
+            return None
+        try:
+            doc = self._verify_doc(row["raw"], F.LICENSE_FORMAT)
+        except ValidationError:
+            return None
+        return LicenseData.from_payload(doc.payload, doc.key_id)
+
+    # ------------------------------------------------------------------ assinatura comercial
+    def apply_authorization(self, text: str, *, actor: str, source: str = "file",
+                            expected_nonce: str | None = None) -> dict[str, Any]:
+        """Aplica uma autorização de uso (resposta online ou arquivo de renovação offline)."""
+        try:
+            doc = self._verify_doc(text, F.AUTHORIZATION_FORMAT)
+        except ValidationError as exc:
+            self.events.add(level="WARNING", category=Category.LICENSE, action="license.authorization_rejected",
+                            message=f"Autorização recusada: {exc}", actor=actor, details={"source": source})
+            raise
+        before = self.status(refresh=True)
+        lic = self.installed_license()
+        ts = self.time.check()
+        if not ts.ok:
+            raise ValidationError(ts.message)
+        prof = self.profile(refresh=True)
+        try:
+            p = self.authorizations.apply(doc, text, lic=lic, hardware_digests=prof.digests,
+                                          installation_id=self.installation_id(), now=ts.effective, actor=actor,
+                                          expected_nonce=expected_nonce)
+        except ValidationError as exc:
+            self.events.add(level="WARNING", category=Category.LICENSE, action="license.authorization_rejected",
+                            message=f"Autorização recusada: {exc}", actor=actor, details={"source": source})
+            raise
+        if p.get("revoked"):
+            cur = self.vault.best("revocation")[0] or {}
+            revoked = dict(cur.get("revoked") or {})
+            revoked[p["license_id"]] = str(p["revoked"])
+            self.vault.write("revocation", {**cur, "revoked": revoked})
+        self._invalidate()
+        after = self.status(refresh=True)
+        origin = {"online": "License Server (online)", "file": "arquivo de renovação (offline)"}.get(source, source)
+        self.events.add(level="INFO", category=Category.LICENSE, action="license.authorization",
+                        message=f"Autorização de uso aplicada ({origin}): assinatura {after.commercial_label or '—'}.",
+                        actor=actor, details={"authorization_id": p["authorization_id"], "seq": p["seq"],
+                                              "source": source, "issued_by": p.get("issued_by"),
+                                              "commercial": p["commercial"].get("state")})
+        history_add(self.db, license_id=p["license_id"], kind="commercial", from_state=before.commercial,
+                    to_state=after.commercial or "", source=origin, actor=f"{actor} / {p.get('issued_by') or '—'}",
+                    detail={"authorization_id": p["authorization_id"], "valid_until": p["valid_until"]})
+        if before.state in RESTRICTED_COMMERCIAL and after.active:
+            self.events.add(level="INFO", category=Category.LICENSE, action="license.reactivated",
+                            message=f"Licença reativada por {origin} (emitida por {p.get('issued_by') or '—'}).",
+                            actor=actor, details={"authorization_id": p["authorization_id"], "source": source,
+                                                  "issued_by": p.get("issued_by"), "at": utc_now_iso()})
+            history_add(self.db, license_id=p["license_id"], kind="license", from_state=before.state.value,
+                        to_state=after.state.value, source=origin, actor=f"{actor} / {p.get('issued_by') or '—'}",
+                        detail="reativação")
+        return p
+
+    def import_authorization(self, text: str, *, actor: str) -> LicenseStatus:
+        self.apply_authorization(text, actor=actor, source="file")
+        return self.status(refresh=True)
+
+    def record_online(self, kind: str, message: str, *, actor: str, authorization: dict | None = None):
+        from app.licensing.online import OnlineResult
+        prev = self.authorizations.online().get("result")
+        now = utc_now_iso()
+        vals = {"result": kind, "message": message if kind != "ok" else "", "last_attempt": now}
+        if kind == "ok":
+            vals["last_ok"] = now
+        self.authorizations.set_online(**vals)
+        if prev != kind:
+            lic = self.installed_license()
+            history_add(self.db, license_id=lic.license_id if lic else None, kind="connectivity", from_state=prev,
+                        to_state=kind, source="License Server", actor=actor, detail=message[:300])
+        level = "INFO" if kind == "ok" else ("ERROR" if kind == "invalid_response" else "WARNING")
+        self.events.add(level=level, category=Category.LICENSE, action=f"license.online.{kind}",
+                        message=f"{CONNECTIVITY_LABELS.get(kind, kind)}: {message}", actor=actor)
+        self._invalidate()
+        return OnlineResult(kind, message, authorization)
+
+    def online_validator(self, post=None):
+        from app.licensing.online import OnlineValidator
+        return OnlineValidator(self, post)
+
+    def check_online(self, *, actor: str = "sistema", post=None):
+        return self.online_validator(post).check(actor=actor)
+
+    def needs_online_check(self, every_hours: float) -> bool:
+        lic = self.installed_license()
+        if lic is None or lic.type == "demo":
+            return False
+        pol = F.license_policy({"policy": lic.extra.get("policy")} if lic.extra.get("policy") is not None else {})
+        if pol["validation"] != "online":
+            return False
+        last = self.authorizations.online().get("last_attempt")
+        if not last:
+            return True
+        return (datetime.now(from_iso(last).tzinfo) - from_iso(last)).total_seconds() >= every_hours * 3600
+
+    def drain_cutoff(self) -> datetime | None:
+        """Suspensão comercial: trabalhos aceitos antes deste instante ainda são concluídos."""
+        st = self.status()
+        if self.enforced and st.state in RESTRICTED_COMMERCIAL and st.restricted_since is not None:
+            return st.restricted_since + timedelta(seconds=1)      # datas comerciais têm precisão de segundos
+        return None
+
+    def state_history(self, limit: int = 200) -> list[dict[str, Any]]:
+        try:
+            return [dict(r) for r in self.db.connection().execute(
+                "SELECT at, license_id, kind, from_state, to_state, source, actor, detail FROM license_state_history "
+                "ORDER BY id DESC LIMIT ?", (limit,))]
+        except Exception:  # noqa: BLE001
+            return []
+
     def time_status(self) -> TimeStatus:
         return self.time.check()
 
@@ -394,7 +596,11 @@ class LicenseService:
         if not self.enforced:
             return None
         st = self.status()
-        return None if st.active else f"{st.state.label}: {st.message}"
+        if st.active:
+            return None
+        if st.state in RESTRICTED_COMMERCIAL and st.user_notice:
+            return f"{st.state.label}: {st.user_notice}"
+        return f"{st.state.label}: {st.message}"
 
     def evaluation_mode(self) -> bool:
         """Marca nas impressões: demonstração."""
@@ -463,6 +669,11 @@ class LicenseService:
                     "As configurações são preservadas na ativação comercial.")
         if st.active:
             return "Recursos limitados ao que a licença autoriza."
+        if st.state in RESTRICTED_COMMERCIAL:
+            return ("Novas operações licenciadas suspensas (recepção DICOM, impressão, Print SCP e regras). Trabalhos "
+                    "aceitos antes da suspensão são concluídos; imagens, filas, calibrações, histórico e configurações "
+                    "são preservados; a exportação dos exames e o acesso administrativo continuam disponíveis. Tudo "
+                    "volta a funcionar com a reativação.")
         return ("Funções licenciadas suspensas (recepção DICOM, impressão, Print SCP e regras). Cadastros, "
                 "configurações e trabalhos na fila são preservados e voltam a funcionar após a ativação.")
 

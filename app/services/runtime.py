@@ -19,14 +19,17 @@ RETENTION_FIRST_DELAY_S = 120
 PRINT_RESTART_KEYS = {"dicom.print.enabled", "dicom.print.ae_title", "dicom.print.port", "dicom.print.color",
                       "dicom.storage.bind_address", "dicom.storage.max_associations"}
 LISTENER_CHECK_S = 10
+LICENSE_CHECK_S = 600
 SCP_RESTART_KEYS = {"dicom.storage.ae_title", "dicom.storage.bind_address", "dicom.storage.port",
                     "dicom.storage.max_associations"}
 
 
 class CoreRuntime:
     def __init__(self, *, storage_scp, retention, settings_get: Callable[[str], Any], worker=None,
-                 printers=None, print_scp=None, role: str = "ui", backups=None, reception=None) -> None:
+                 printers=None, print_scp=None, role: str = "ui", backups=None, reception=None,
+                 license=None) -> None:
         self.role = role
+        self.license = license
         self.reception = reception
         self.backups = backups
         self.storage_scp = storage_scp
@@ -63,6 +66,8 @@ class CoreRuntime:
         self._thread = threading.Thread(target=self._periodic, name="vyonix-periodic", daemon=True)
         self._thread.start()
         self._watch = threading.Thread(target=self._watch_listeners, name="vyonix-listeners", daemon=True)
+        if self.license is not None:
+            threading.Thread(target=self._license_loop, name="vyonix-license", daemon=True).start()
         self._watch.start()
 
     def stop(self) -> None:
@@ -151,6 +156,27 @@ class CoreRuntime:
                 self.storage_scp.db.close_thread_connection()
             except Exception:  # noqa: BLE001
                 pass
+
+    def _license_loop(self) -> None:
+        """Validação online periódica (somente licenças online). Falha de rede só gera aviso: a
+        tolerância é avaliada pela licença; nada é suspenso por uma consulta que falhou."""
+        if self._stop.wait(30):
+            return
+        while True:
+            try:
+                if self.license.needs_online_check(float(self.get("licensing.online_check_hours") or 6)):
+                    r = self.license.check_online(actor="serviço")
+                    log.info("Validação online: %s — %s", r.result, r.message)
+                self.license.status(refresh=True)
+            except Exception:  # noqa: BLE001
+                log.exception("Falha na validação online da licença")
+            finally:
+                try:
+                    self.license.db.close_thread_connection()
+                except Exception:  # noqa: BLE001
+                    pass
+            if self._stop.wait(LICENSE_CHECK_S):
+                return
 
     def _periodic(self) -> None:
         if self._stop.wait(RETENTION_FIRST_DELAY_S):

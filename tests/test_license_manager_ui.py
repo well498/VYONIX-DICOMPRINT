@@ -64,6 +64,49 @@ class LicenseManagerUiTest(TempDirTestCase):
         self.assertIn(F.PRODUCT_ID, [p["product_id"] for p in lm.products()])
         w.close()
 
+    def test_commercial_page_actions(self):
+        from license_manager.ui import commercial_page as CP
+        from license_manager.ui.main import MainWindow
+
+        def fail(parent, exc, title=None):
+            raise AssertionError(str(exc))
+        orig = CP.error
+        CP.error = fail
+        self.addCleanup(setattr, CP, "error", orig)
+        CP.info = lambda *a, **k: None
+        from tests.licensing_support import Client, Computer, make_manager
+        lm, admin, keys, cid = make_manager(self.tmp / "lm")
+        self.addCleanup(lm.close)
+        client = Client(Computer(), self.tmp / "c", keys)
+        self.addCleanup(client.close)
+        info = lm.import_request(admin, client.svc.request_code())
+        lic = lm.issue(admin, info.request_id, cid, ltype="monthly", edition="Profissional", price_cents=49900)
+        w = MainWindow(lm, admin)
+        idx = w.page_index("Gestão Comercial")
+        w.go(idx)
+        page = w.pages[idx][1]
+        self.assertEqual(page.t.rowCount(), 1)
+        self.assertEqual(page.t.item(0, 4).text(), "R$ 499,00")
+        self.assertEqual(page.kpi["active"].text(), "1")
+        page.t.selectRow(0)
+        page.show_detail()
+        self.assertGreaterEqual(page.tab_tables["history"].rowCount(), 1)
+        for name in CP.ACTION_TITLES:
+            CP.ActionDialog(page, page.rows[0], name)
+        dlg = CP.ActionDialog(page, page.rows[0], "payment")
+        dlg.w["reference"].setText("BOLETO-0001")
+        dlg._ok()
+        r = page.backend.action(page.rows[0]["id"], "payment", dlg.data)
+        self.assertFalse(r["duplicate"])
+        self.assertGreater(lm.commercial.subscription(lic["license_id"])["paid_until"], lic["expires_at"])
+        pol = CP.PolicyDialog(page)
+        pol.sp["grace_days"].setValue(10)
+        pol._ok()
+        self.assertEqual(lm.commercial.settings()["grace_days"], "10")
+        CP.ConnectDialog(page)
+        page.refresh()
+        w.close()
+
 
 if __name__ == "__main__":
     unittest.main()

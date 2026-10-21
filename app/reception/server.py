@@ -286,8 +286,9 @@ def _handler_for(srv: ReceptionServer):
                 return self._json(200, {**user.public(), "csrf": srv.session(self._cookie())[1]})
             if path == "/api/meta":
                 rules = [{"id": d.id, "name": d.name} for d in srv.devices.list()]
+                notice = srv.exams.license_reason() if srv.exams.license_reason else None
                 return self._json(200, {"print_states": PRINT_STATES, "pickup_states": PICKUP_STATES,
-                                        "rules": rules, "roles": ROLES})
+                                        "rules": rules, "roles": ROLES, "license_notice": notice})
             if path == "/api/exams":
                 user.require("reception")
                 res = srv.exams.search(q=q.get("q", ""), modality=q.get("modality") or None,

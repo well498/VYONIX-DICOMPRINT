@@ -3,7 +3,12 @@
 Senhas: ``hashlib.scrypt`` (OpenSSL) com sal aleatório; bloqueio temporário após tentativas
 erradas. Papéis:
 
-* ``admin`` — tudo, inclusive chaves de emissão, usuários, revogação, backup e restauração;
+* ``admin`` (administrador comercial) — tudo, inclusive chaves de emissão, usuários, revogação,
+  políticas comerciais, backup e restauração;
+* ``financial`` (operador financeiro) — Gestão Comercial: pagamentos, cobranças, carência, suspensão
+  e reativação (as ações configuradas exigem a confirmação de um administrador comercial);
+* ``support`` (suporte técnico) — reativação por troca de hardware/reinstalação, revalidação e
+  autorizações offline; sem ações financeiras;
 * ``issuer`` (emissor) — clientes, solicitações, emissão, renovação, reativação e revalidação;
 * ``viewer`` (consulta) — somente leitura.
 """
@@ -17,12 +22,13 @@ import secrets
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
-ROLES = {"admin": "Administrador", "issuer": "Emissor", "viewer": "Consulta"}
+ROLES = {"admin": "Administrador comercial", "financial": "Operador financeiro", "support": "Suporte técnico",
+         "issuer": "Emissor", "viewer": "Consulta"}
 PERMS = {
-    "view": {"admin", "issuer", "viewer"},
-    "customers": {"admin", "issuer"},
-    "issue": {"admin", "issuer"},
-    "revalidate": {"admin", "issuer"},
+    "view": {"admin", "financial", "support", "issuer", "viewer"},
+    "customers": {"admin", "issuer", "financial"},
+    "issue": {"admin", "issuer", "support"},
+    "revalidate": {"admin", "issuer", "support"},
     "revoke": {"admin"},
     "products": {"admin"},
     "keys": {"admin"},

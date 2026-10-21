@@ -45,7 +45,14 @@ DOCS = [
 # Pacote administrativo (NÃO vai ao cliente).
 LM_DOCS = [
     ("Manual_License_Manager", "Manual do VYONIX License Manager"),
+    ("Manual_Licenciamento_Comercial", "Licenciamento Comercial por Assinatura"),
     ("Licenciamento_e_Ativacao", "Licenciamento e Ativação"),
+]
+# Servidor central de licenças (NÃO vai ao cliente).
+LS_DOCS = [
+    ("Manual_License_Server", "Manual do VYONIX License Server"),
+    ("Manual_Licenciamento_Comercial", "Licenciamento Comercial por Assinatura"),
+    ("Integracao_Banco_Inter", "Integração com o Banco Inter"),
 ]
 
 # Matriz dos 35 testes obrigatórios (prompt definitivo, seção 20): testes automatizados (padrões nos
@@ -115,6 +122,41 @@ RECEPTION_TESTS = [
     (22, "Recuperação após reinicialização", [r"r22_|recovery_after_crash"], []),
     (23, "Atualização sem perda de configuração", [r"r23_"], ["INS-07", "LIC-06"]),
     (24, "Validação de licença", [r"r24_|t14_"], ["LIC-04", "LIC-05"]),
+]
+
+
+# Licenciamento comercial por assinatura (prompt consolidado, seção 22).
+COMMERCIAL_TESTS = [
+    (1, "Licença mensal ativa", [r"c01_"], ["LM-01"]),
+    (2, "Aviso antes do vencimento", [r"c02_"], []),
+    (3, "Pagamento em atraso", [r"c03_"], []),
+    (4, "Carência", [r"c04_"], []),
+    (5, "Suspensão programada", [r"c05_"], []),
+    (6, "Suspensão efetiva", [r"c06_"], []),
+    (7, "Reativação online", [r"c07_"], ["LS-01"]),
+    (8, "Reativação offline", [r"c08_"], ["LM-01"]),
+    (9, "Falta de internet", [r"c09_"], []),
+    (10, "Servidor de licenças indisponível", [r"c10_"], []),
+    (11, "Pagamento confirmado", [r"c11_"], ["LM-01"]),
+    (12, "Boleto emitido, mas não pago", [r"c12_"], []),
+    (13, "Notificação bancária duplicada", [r"c13_"], []),
+    (14, "Tentativa de reutilizar autorização antiga", [r"c14_"], ["LS-01"]),
+    (15, "Licença adulterada", [r"c15_"], ["LIC-05"]),
+    (16, "Alteração do relógio", [r"c16_"], []),
+    (17, "Reinstalação", [r"c17_"], ["LIC-07"]),
+    (18, "Atualização oficial", [r"c18_|database_upgrade"], ["INS-07", "LIC-06"]),
+    (19, "Alteração legítima de hardware", [r"c19_"], []),
+    (20, "Cópia da instalação para outro computador", [r"c20_"], []),
+    (21, "Preservação de imagens", [r"c21_"], []),
+    (22, "Exportação de dados durante suspensão", [r"c22_"], []),
+    (23, "Trabalhos em andamento no momento da suspensão", [r"c23_"], []),
+    (24, "Recuperação após reinicialização", [r"c24_"], []),
+    (25, "Compatibilidade com as regras DICOM", [r"c25_"], ["SRV-02"]),
+    (26, "Impressão automática", [r"c26_"], []),
+    (27, "Impressão sob demanda", [r"c27_"], []),
+    (28, "Controle de retirada", [r"c28_"], ["RCP-01"]),
+    (29, "Auditoria administrativa", [r"c29_"], ["LM-01"]),
+    (30, "Segurança das APIs", [r"c30_"], ["LS-01", "LS-02", "RCP-01"]),
 ]
 
 
@@ -244,9 +286,15 @@ def validation_report(version: str, commit: str, build_date: str, installer: Pat
         lines.append(f"| {r['id']} | {r['area']} | {md_escape(r['name'])} | "
                      f"{'Aprovado' if r['ok'] else '**FALHOU**'} | {md_escape(r['detail'])} |")
     by_id = {r["id"]: r for r in v_results}
-    lines += matrix("## 3A. Matriz dos 24 testes da arquitetura DICOM simplificada e do VYONIX Reception",
+    lines += matrix("## 3A. Matriz dos 30 testes do licenciamento comercial por assinatura",
+                    "Prompt consolidado, seção 22. License Manager e License Server reais (HTTPS local com "
+                    "certificado fixado); relógio, hardware e TPM simulados nos testes 1–20; aplicativo completo "
+                    "(recepção DICOM, fila e Reception) nos testes 21–28. A API do Banco Inter é reproduzida "
+                    "localmente com TLS mútuo (tests/inter_fake.py): o adaptador não foi testado contra o banco real.",
+                    COMMERCIAL_TESTS, junit, by_id)
+    lines += matrix("## 3B. Matriz dos 24 testes da arquitetura DICOM simplificada e do VYONIX Reception",
                     "Prompt de desenvolvimento (regras DICOM sem IP, Reception), seção 20.", RECEPTION_TESTS, junit, by_id)
-    lines += matrix("## 3B. Matriz dos 35 testes do licenciamento (prompt definitivo)",
+    lines += matrix("## 3C. Matriz dos 35 testes do licenciamento (prompt definitivo)",
                     "Casos automatizados (pytest, com relógio, hardware e TPM simulados quando indicado) e "
                     "verificações com os executáveis reais no Windows.", REQUIRED_TESTS, junit, by_id)
     lines += [""] + perf_section(perf)
@@ -276,6 +324,12 @@ def validation_report(version: str, commit: str, build_date: str, installer: Pat
         "| Recepção e impressão DICOM com equipamentos reais | Verificadas apenas com equipamento simulado (pynetdicom). |",
         "| Impressão em papel em impressoras físicas | Não verificada: o CI usa a impressora Microsoft Print to PDF. |",
         "| Assinatura digital de código | Não aplicada nesta compilação. |",
+        "| API real do Banco Inter (sandbox ou produção) | Exige conta PJ, credenciais e certificado da aplicação; o "
+        "adaptador foi testado contra uma reprodução local da API com TLS mútuo. |",
+        "| License Server publicado na internet (DNS, certificado de autoridade pública, firewall) | Testado em "
+        "127.0.0.1 com certificado autoassinado fixado (LS-01/LS-02). |",
+        "| Chave de produção do License Server (vyx-srv-2026-01) | O pipeline não tem a chave privada; o servidor foi "
+        "testado com chaves geradas no teste. |",
     ]
     return "\n".join(lines) + "\n"
 
@@ -385,6 +439,68 @@ def build_lm_package(a, build_date: str, commit: str, report_pdf: Path) -> dict:
             "lm_zip_sha256": sha256(zip_path)}
 
 
+LS_README = """VYONIX License Server {ls_version} — SERVIDOR CENTRAL DE LICENÇAS (ADMINISTRATIVO)
+======================================================================
+
+NÃO DISTRIBUIR AOS CLIENTES. Validação online, assinaturas, cobrança e auditoria.
+
+Conteúdo
+  Programa\\VYONIX_License_Server.exe   (console; também roda do código-fonte: python -m license_server)
+  Documentacao\\Manual_License_Server.pdf
+  Documentacao\\Manual_Licenciamento_Comercial.pdf
+  Documentacao\\Integracao_Banco_Inter.pdf
+  Integridade\\SHA256SUMS.txt
+
+Primeiros passos (detalhes no manual)
+  VYONIX_License_Server.exe init --data D:\\VYONIX-LS --admin comercial --hostname licencas.suaempresa.com.br ^
+      --key-file vyx-srv-2026-01.private.pem --key-id vyx-srv-2026-01
+  set VYONIX_LS_KEY_PASSPHRASE=...   (ou signing_passphrase_file em server.json)
+  VYONIX_License_Server.exe serve --data D:\\VYONIX-LS
+
+A chave privada do servidor NÃO está no programa. A chave vyx-srv-2026-01 assina somente
+autorizações de uso (não emite licenças).
+
+SHA-256
+  VYONIX_License_Server.exe  {exe_sha}
+
+Compilação: {build_date} · commit {commit}
+"""
+
+
+def build_ls_package(a, build_date: str, commit: str) -> dict:
+    from license_server import __version__ as ls_version
+    name = f"VYONIX_LICENSE_SERVER_{ls_version}"
+    rel = a.out / name
+    if rel.exists():
+        shutil.rmtree(rel)
+    for sub in ("Programa", "Documentacao", "Integridade"):
+        (rel / sub).mkdir(parents=True)
+    exe = rel / "Programa" / a.ls_exe.name
+    shutil.copy2(a.ls_exe, exe)
+    tmp = a.out / "_docs_ls"
+    tmp.mkdir(parents=True, exist_ok=True)
+    for stem, title in LS_DOCS:
+        text = (ROOT / "docs" / "release" / f"{stem}.md").read_text(encoding="utf-8")
+        text = text.replace("{VERSION}", a.version).replace("{LS_VERSION}", ls_version).replace("{COMMIT}", commit)
+        (tmp / f"{stem}.md").write_text(text, encoding="utf-8")
+        convert(tmp / f"{stem}.md", rel / "Documentacao" / f"{stem}.pdf", title=title, version=ls_version)
+    shutil.rmtree(tmp, ignore_errors=True)
+    exe_sha = sha256(exe)
+    (rel / "LEIA-ME.txt").write_text(LS_README.format(ls_version=ls_version, exe_sha=exe_sha, build_date=build_date,
+                                                     commit=commit), encoding="utf-8-sig")
+    files = sorted(p for p in rel.rglob("*") if p.is_file() and p.parent.name != "Integridade")
+    (rel / "Integridade" / "SHA256SUMS.txt").write_text(
+        "".join(f"{sha256(p)} *{p.relative_to(rel).as_posix()}\n" for p in files), encoding="utf-8")
+    zip_path = a.out / f"{name}.zip"
+    zip_path.unlink(missing_ok=True)
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
+        for p in sorted(rel.rglob("*")):
+            if p.is_file():
+                z.write(p, f"{name}/{p.relative_to(rel).as_posix()}")
+    return {"ls_version": ls_version, "ls_exe": exe.name, "ls_exe_sha256": exe_sha, "ls_exe_size": exe.stat().st_size,
+            "ls_zip": zip_path.name, "ls_zip_sha256": sha256(zip_path)}
+
+
 def _phase() -> str:
     init = (Path(__file__).resolve().parent.parent / "app" / "__init__.py").read_text(encoding="utf-8")
     m = re.search(r'__phase__\s*=\s*"([^"]+)"', init)
@@ -406,6 +522,7 @@ def main() -> int:
     ap.add_argument("--perf", type=Path, help="JSON de tools/ci_profile.ps1 (opcional)")
     ap.add_argument("--lm-exe", type=Path, help="VYONIX_License_Manager.exe (pacote administrativo separado)")
     ap.add_argument("--lm-installer", type=Path, help="VYONIX_License_Manager_Setup.exe")
+    ap.add_argument("--ls-exe", type=Path, help="VYONIX_License_Server.exe (pacote administrativo separado)")
     a = ap.parse_args()
 
     build_date = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
@@ -464,7 +581,8 @@ def main() -> int:
 
     lm = build_lm_package(a, build_date, commit, rel / "Testes" / "Relatorio_de_Validacao.pdf") \
         if a.lm_exe and a.lm_exe.exists() else {}
-    summary = {"installer": installer.name, "installer_sha256": digest, **lm,
+    ls = build_ls_package(a, build_date, commit) if a.ls_exe and a.ls_exe.exists() else {}
+    summary = {"installer": installer.name, "installer_sha256": digest, **lm, **ls,
                "installer_size": installer.stat().st_size, "zip": zip_path.name,
                "zip_sha256": sha256(zip_path), "zip_size": zip_path.stat().st_size,
                "tests": junit["totals"], "validation_passed": sum(r["ok"] for r in validation["results"]),

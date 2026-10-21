@@ -75,6 +75,7 @@ class ExamService:
         self.jobs = jobs
         self.setting = settings_get
         self.printers = printers
+        self.license_reason = None          # Callable[[], str | None]: suspensão pela licença (texto neutro)
         self._lock = threading.Lock()
 
     # ------------------------------------------------------------------ registro
@@ -254,6 +255,9 @@ class ExamService:
         impressora/cópias escolhidas, sem alterar a regra)."""
         user.require("print_now" if now else "print")
         kind = "print_now" if now else "print"
+        why = self.license_reason() if self.license_reason else None
+        if why:
+            raise ValidationError(f"Impressão indisponível nesta instalação — {why}")
         with self._lock:
             done = self._replay(request_key)
             if done is not None:

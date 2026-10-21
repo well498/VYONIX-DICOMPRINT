@@ -15,7 +15,8 @@ param(
     [string] $DistExe = "dist\Vyonix\Vyonix.exe",
     [string] $OutDir = "dist\validation",
     [string] $LMExe = "",
-    [string] $LMInstaller = ""
+    [string] $LMInstaller = "",
+    [string] $LSExe = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -355,12 +356,62 @@ Invoke-Check "LM-02" "License Manager" "Instalação opcional (VYONIX_License_Ma
 }
 Invoke-Check "LM-03" "License Manager" "Produto comercial instalado não contém o License Manager nem chaves privadas" {
     $bad = Get-ChildItem $InstallDir -Recurse | Where-Object {
-        $_.Name -match 'license_manager|License_Manager|license_admin' -or $_.Extension -in '.pem', '.key', '.vykey' }
+        $_.Name -match 'license_manager|License_Manager|license_admin|license_server|License_Server' -or $_.Extension -in '.pem', '.key', '.vykey' }
     if ($bad) { throw "itens proibidos: $($bad.FullName -join ', ')" }
     $hits = Get-ChildItem $InstallDir -Recurse -File | Where-Object { $_.Length -lt 20MB } | Select-String -Pattern '-----BEGIN [A-Z ]*PRIVATE KEY-----' -SimpleMatch:$false -List -ErrorAction SilentlyContinue
     $real = @($hits | Where-Object { (Get-Content $_.Path -Raw -ErrorAction SilentlyContinue) -match '-----BEGIN [A-Z ]*PRIVATE KEY-----\r?\n[A-Za-z0-9+/=]{40,}' })
     if ($real.Count -gt 0) { throw "bloco de chave privada em: $($real.Path -join ', ')" }
     "$(@(Get-ChildItem $InstallDir -Recurse -File).Count) arquivos verificados"
+}
+Invoke-Check "LS-01" "License Server" "Autoteste: HTTPS real, autorização assinada com número de uso único; repetição e certificado divergente recusados" {
+    if (-not $LSExe) { throw "executável do License Server não informado" }
+    $rep = Join-Path $OutDir "ls-selftest.json"
+    $code = Run-Exe (Resolve-Path $LSExe).Path @("selftest", "--report", $rep) $clean 300
+    $r = Read-Report $rep
+    if ($code -ne 0 -or -not $r.ok -or -not $r.frozen) { throw "código $code; frozen=$($r.frozen); $($r.error)" }
+    "$(@($r.steps).Count) etapas: $($r.steps -join '; ')"
+}
+Invoke-Check "LS-02" "License Server" "Chave cifrada, configuração, servidor HTTPS em execução, /v1/health e API administrativa autenticada" {
+    if (-not $LSExe) { throw "executável do License Server não informado" }
+    $exe = (Resolve-Path $LSExe).Path
+    $dir = Join-Path $Work "license-server"
+    New-Item -ItemType Directory -Force -Path $dir | Out-Null
+    $pp = Join-Path $dir "frase.txt"; $pw = Join-Path $dir "senha.txt"; $key = Join-Path $dir "ci-teste.pem"
+    Set-Content $pp "Frase-Chave-CI-123" -NoNewline -Encoding ascii
+    Set-Content $pw "Admin-Servidor-CI-1" -NoNewline -Encoding ascii
+    $code = Run-Exe $exe @("genkey", "--out", $key, "--key-id", "ci-teste", "--password-file", $pp) $clean 120
+    if ($code -ne 0 -or -not (Test-Path $key)) { throw "genkey retornou $code" }
+    if ((Get-Content $key -Raw) -notmatch "BEGIN ENCRYPTED PRIVATE KEY") { throw "chave gravada sem cifra" }
+    $envs = $clean.Clone(); $envs["VYONIX_LS_KEY_PASSPHRASE"] = "Frase-Chave-CI-123"
+    $data = Join-Path $dir "dados"
+    $code = Run-Exe $exe @("init", "--data", $data, "--admin", "admin", "--hostname", "127.0.0.1", "--port", "18743",
+                           "--key-file", $key, "--key-id", "ci-teste", "--password-file", $pw) $envs 120
+    if ($code -ne 0) { throw "init retornou $code" }
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = $exe; $psi.Arguments = "serve --data `"$data`""; $psi.UseShellExecute = $false
+    foreach ($k in $envs.Keys) { $psi.EnvironmentVariables[$k] = $envs[$k] }
+    $proc = [System.Diagnostics.Process]::Start($psi)
+    try {
+        $health = $null
+        for ($i = 0; $i -lt 30 -and -not $health; $i++) {
+            try { $health = Invoke-RestMethod "https://127.0.0.1:18743/v1/health" -SkipCertificateCheck -TimeoutSec 5 }
+            catch { Start-Sleep 1 }
+        }
+        if (-not $health -or -not $health.ok) { throw "servidor não respondeu" }
+        $code = 0
+        try { Invoke-WebRequest "https://127.0.0.1:18743/v1/admin/subscriptions" -SkipCertificateCheck -UseBasicParsing -TimeoutSec 10 | Out-Null; $code = 200 }
+        catch { $code = [int]$_.Exception.Response.StatusCode }
+        if ($code -ne 401) { throw "API administrativa sem token respondeu $code" }
+        $login = Invoke-RestMethod "https://127.0.0.1:18743/v1/admin/login" -Method Post -SkipCertificateCheck -ContentType "application/json" `
+            -Body (@{ username = "admin"; password = "Admin-Servidor-CI-1" } | ConvertTo-Json)
+        $subs = Invoke-RestMethod "https://127.0.0.1:18743/v1/admin/subscriptions" -SkipCertificateCheck -Headers @{ Authorization = "Bearer $($login.token)" }
+        $plain = $false
+        try { Invoke-WebRequest "http://127.0.0.1:18743/v1/health" -UseBasicParsing -TimeoutSec 5 | Out-Null; $plain = $true } catch { }
+        if ($plain) { throw "respondeu sem TLS" }
+        "health $($health.app) $($health.version) (chave $($health.signing_key)); sem token: 401; login $($login.user.role); $(@($subs.items).Count) assinatura(s); HTTP sem TLS recusado"
+    } finally {
+        if (-not $proc.HasExited) { $proc.Kill() }
+    }
 }
 Invoke-Check "INS-07" "Instalador" "Atualização sobre instalação existente preserva dados e artes BMP" {
     Add-Type -AssemblyName System.Drawing

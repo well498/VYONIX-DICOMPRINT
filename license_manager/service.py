@@ -17,6 +17,7 @@ from typing import Any
 from vyonix_protocol import crypto
 from vyonix_protocol import formats as F
 from vyonix_protocol.codec import b64d, canonical
+from vyonix_commercial.engine import Actor, CommercialEngine, CommercialError
 
 from license_manager import __version__, backup as bk
 from license_manager.db import SCHEMA_VERSION, Database
@@ -58,6 +59,34 @@ class LicenseManager:
         self.clock = clock
         self._signer: tuple[float, str, Any] | None = None
         self._lock = threading.Lock()
+        self.commercial = CommercialEngine(lambda: self.db.conn(), lambda: self.db.tx(), audit=self._audit_hook,
+                                           clock=lambda: self.clock(), verify_admin=self.verify_admin, host="manager")
+
+    def _audit_hook(self, actor: str, action: str, target, details, c) -> None:
+        self._audit(actor, action, target, details, c)
+
+    @staticmethod
+    def actor(user: User) -> Actor:
+        return Actor(user.username, user.role)
+
+    def verify_admin(self, username: str, password: str) -> bool:
+        """Confirmação de um administrador comercial (ações comerciais sensíveis)."""
+        c = self.db.conn()
+        r = c.execute("SELECT * FROM users WHERE username = ?", ((username or "").strip(),)).fetchone()
+        if r is None or not r["active"] or r["role"] != "admin":
+            self._audit(username or "?", "confirm.failed", None, {"why": "não é administrador ativo"})
+            return False
+        if r["locked_until"] and datetime.fromisoformat(r["locked_until"]) > utcnow():
+            return False
+        if not check_password(password or "", r["pw_hash"]):
+            failed = r["failed"] + 1
+            locked = lock_until().isoformat() if failed >= MAX_FAILED else None
+            c.execute("UPDATE users SET failed = ?, locked_until = ? WHERE id = ?",
+                      (0 if locked else failed, locked, r["id"]))
+            self._audit(username, "confirm.failed", None, {"locked": bool(locked)})
+            return False
+        c.execute("UPDATE users SET failed = 0 WHERE id = ?", (r["id"],))
+        return True
 
     def close(self) -> None:
         self.lock_key()
@@ -489,7 +518,8 @@ class LicenseManager:
                max_devices: int | None, max_printers: int | None, features: list[str], notes: str | None,
                operation: str, request_id: str | None, reissue_of: str | None, reason_code: str | None,
                reason_text: str | None, demo_override: str | None = None,
-               expiry_base: datetime | None = None) -> dict:
+               expiry_base: datetime | None = None, validation: str = "offline", price_cents: int | None = None,
+               contract_allows_suspension: bool | None = None, auto_suspend: bool | None = None) -> dict:
         user.require("issue")
         if ltype not in F.LICENSE_TYPES:
             raise LMError("Tipo de licença inválido.")
@@ -531,6 +561,11 @@ class LicenseManager:
             "duration_hours": duration, "max_devices": max_devices, "max_printers": max_printers,
             "features": features, "request_id": request_id, "reissue_of": reissue_of,
         }
+        if ltype != "demo":
+            try:
+                payload["policy"] = self.commercial.policy_for_license(validation)
+            except CommercialError as exc:
+                raise LMError(str(exc)) from exc
         errors = F.validate_license_payload(payload)
         if errors:
             raise LMError("Dados da licença inválidos: " + "; ".join(errors))
@@ -556,13 +591,45 @@ class LicenseManager:
                         {"customer_id": customer_id, "type": ltype, "edition": edition, "hardware_id": hardware_id,
                          "installation_id": installation_id, "expires_at": payload["expires_at"], "key_id": key_id,
                          "features": features, "max_devices": max_devices, "max_printers": max_printers,
-                         "reissue_of": reissue_of, "reason": reason_code, "demo_override": demo_override}, c)
+                         "reissue_of": reissue_of, "reason": reason_code, "demo_override": demo_override,
+                         "policy": payload.get("policy")}, c)
+        if ltype != "demo":
+            try:
+                self.commercial.upsert_from_license(
+                    self.actor(user),
+                    {"license_id": lid, "type": ltype, "customer": cust["name"], "customer_document": cust["document"],
+                     "customer_ref": str(customer_id), "installation_id": installation_id, "hardware_id": hardware_id,
+                     "expires_at": payload["expires_at"], "policy": payload["policy"]},
+                    relink_from=reissue_of, price_cents=price_cents, auto_suspend=auto_suspend,
+                    contract_allows_suspension=contract_allows_suspension,
+                    extend_paid=operation in ("issue", "renew"))
+            except CommercialError as exc:
+                raise LMError(f"Licença {lid} emitida, mas a assinatura não foi registrada: {exc}") from exc
         return self.license(lid)
+
+    def license_policy(self, license_id: str) -> dict:
+        lic = self.license(license_id)
+        return F.license_policy(F.parse_signed(lic["document"], F.LICENSE_FORMAT).payload)
+
+    # ------------------------------------------------------------------ gestão comercial (offline)
+    def offline_authorization(self, user: User, license_id: str) -> dict:
+        """Arquivo de renovação/autorização (.vyauth) assinado com a chave do License Manager."""
+        user.require("view")
+        try:
+            sub = self.commercial.subscription(license_id)
+            payload = self.commercial.build_authorization(self.actor(user), sub["id"], channel="offline")
+        except CommercialError as exc:
+            raise LMError(str(exc)) from exc
+        _key, doc = self._sign_doc(F.AUTHORIZATION_FORMAT, payload)
+        self.commercial.record_authorization(self.actor(user), payload, doc)
+        return {"payload": payload, "document": doc}
 
     def issue(self, user: User, request_id: str, customer_id: int, *, ltype: str, edition: str,
               product_id: str = F.PRODUCT_ID, starts: datetime | None = None, custom_end: datetime | None = None,
               max_devices: int | None = None, max_printers: int | None = None, features: list[str] | None = None,
-              notes: str | None = None, demo_override: str | None = None) -> dict:
+              notes: str | None = None, demo_override: str | None = None, validation: str = "offline",
+              price_cents: int | None = None, contract_allows_suspension: bool | None = None,
+              auto_suspend: bool | None = None) -> dict:
         req = self.request_data(request_id)
         active = self.db.conn().execute(
             "SELECT license_id FROM licenses WHERE installation_id = ? AND hardware_id = ? AND status = 'active'",
@@ -576,7 +643,9 @@ class LicenseManager:
                            features=features if features is not None else list(F.FEATURES), notes=notes,
                            operation="demo" if ltype == "demo" else "issue", request_id=request_id,
                            reissue_of=active["license_id"] if active else None,
-                           reason_code=None, reason_text=None, demo_override=demo_override)
+                           reason_code=None, reason_text=None, demo_override=demo_override, validation=validation,
+                           price_cents=price_cents, contract_allows_suspension=contract_allows_suspension,
+                           auto_suspend=auto_suspend)
         if active:
             with self.db.tx() as c:
                 c.execute("UPDATE licenses SET status = 'superseded' WHERE license_id = ?", (active["license_id"],))
@@ -584,7 +653,8 @@ class LicenseManager:
 
     def renew(self, user: User, license_id: str, *, ltype: str, starts: datetime | None = None,
               custom_end: datetime | None = None, edition: str | None = None, max_devices: int | None = -1,
-              max_printers: int | None = -1, features: list[str] | None = None, notes: str | None = None) -> dict:
+              max_printers: int | None = -1, features: list[str] | None = None, notes: str | None = None,
+              validation: str | None = None) -> dict:
         old = self.license(license_id)
         if old["status"] in ("revoked", "replaced"):
             raise LMError("Licença revogada ou substituída não pode ser renovada.")
@@ -600,10 +670,18 @@ class LicenseManager:
                           max_printers=old["max_printers"] if max_printers == -1 else max_printers,
                           features=features if features is not None else old["features"], notes=notes,
                           operation="renew", request_id=None, reissue_of=license_id, reason_code="renewal",
-                          reason_text=None, expiry_base=base)
+                          reason_text=None, expiry_base=base,
+                          validation=validation or self._validation_of(old))
         with self.db.tx() as c:
             c.execute("UPDATE licenses SET status = 'superseded' WHERE license_id = ?", (license_id,))
         return new
+
+    def _validation_of(self, lic: dict) -> str:
+        try:
+            pol = F.parse_signed(lic["document"], F.LICENSE_FORMAT).payload.get("policy")
+        except F.FormatError:
+            pol = None
+        return (pol or {}).get("validation") or "offline"
 
     def reactivate(self, user: User, old_license_id: str, request_id: str, reason_code: str, reason_text: str, *,
                    ltype: str | None = None, starts: datetime | None = None, custom_end: datetime | None = None,
@@ -629,7 +707,8 @@ class LicenseManager:
                           max_devices=old["max_devices"], max_printers=old["max_printers"], features=old["features"],
                           notes=old["notes"], operation="reactivate", request_id=request_id, reissue_of=old_license_id,
                           reason_code=reason_code, reason_text=reason_text,
-                          demo_override="reativação" if ltype == "demo" else None)
+                          demo_override="reativação" if ltype == "demo" else None,
+                          validation=self._validation_of(old))
         with self.db.tx() as c:
             if old["status"] == "active":
                 c.execute("UPDATE licenses SET status = 'replaced' WHERE license_id = ?", (old_license_id,))

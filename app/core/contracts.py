@@ -297,6 +297,8 @@ class LicenseState(str, enum.Enum):
     INSTALLATION_MISMATCH = "installation_mismatch"
     REVOKED = "revoked"
     SUSPENDED = "suspended"          # integridade temporal ou de estado: revalidação administrativa
+    COMMERCIAL_SUSPENDED = "commercial_suspended"   # assinatura suspensa (decisão comercial, após carência)
+    AUTH_EXPIRED = "auth_expired"    # validação online sem contato além da tolerância (não é inadimplência)
 
     @property
     def label(self) -> str:
@@ -305,6 +307,7 @@ class LicenseState(str, enum.Enum):
             "demo_expired": "Demonstração encerrada", "expired": "Licença vencida", "invalid": "Licença inválida",
             "hardware_mismatch": "Licença de outro computador", "installation_mismatch": "Licença de outra instalação",
             "revoked": "Licença revogada", "suspended": "Funções suspensas",
+            "commercial_suspended": "Assinatura suspensa", "auth_expired": "Autorização local vencida",
         }[self.value]
 
 
@@ -324,10 +327,23 @@ class LicenseStatus:
     hardware_id: str | None = None
     max_devices: int | None = None
     max_printers: int | None = None
+    commercial: str | None = None            # estado comercial (vyonix_commercial.states)
+    connectivity: str | None = None          # situação técnica do contato com o License Server
+    restricted_since: datetime | None = None # início da restrição comercial (trabalhos anteriores concluem)
+    admin_notice: str | None = None          # detalhe comercial: somente para o administrador da clínica
+    user_notice: str | None = None           # aviso neutro para recepção/técnicos
+    validation: str | None = None            # offline | online
 
     @property
     def active(self) -> bool:
         return self.state in (LicenseState.VALID, LicenseState.DEMO)
+
+    @property
+    def commercial_label(self) -> str | None:
+        if not self.commercial:
+            return None
+        from vyonix_commercial.states import STATE_LABELS
+        return STATE_LABELS.get(self.commercial, self.commercial)
 
 
 @runtime_checkable

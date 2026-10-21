@@ -99,6 +99,24 @@ A avaliação visual não comprova qualidade diagnóstica. Calibração densitom
 | M-79 | Abrir o Reception de outro computador da rede e de fora da rede | Rede local: login; fora: recusado | | | | |
 | M-80 | Relatório por modalidade e por usuário; exportar CSV | Valores coerentes com o dia | | | | |
 
+## 8. Licenciamento comercial e License Server
+
+| Nº | Procedimento | Esperado | Resultado | Data | Responsável | Observações |
+|---|---|---|---|---|---|---|
+| M-81 | Instalar o License Server em servidor real com DNS e certificado; configurar o License Manager (endereço e impressão digital) | `health` responde; login no License Manager → Conectar ao License Server | | | | |
+| M-82 | Emitir licença mensal online, publicar no servidor e instalar na clínica | Licença ATIVA; "contato normal" na página Licença | | | | |
+| M-83 | Avançar o vencimento (cadastro de teste) até PRÓXIMA DO VENCIMENTO e EM ATRASO | Avisos ao administrador da clínica; recepção sem dados financeiros | | | | |
+| M-84 | Programar suspensão como operador financeiro (com confirmação do administrador) | Situação SUSPENSÃO PROGRAMADA na clínica; SUSPENSA na data | | | | |
+| M-85 | Durante a suspensão: equipamento envia exame; Reception tenta imprimir; exportar exames | Recepção recusada; impressão indisponível; exportação concluída | | | | |
+| M-86 | Registrar pagamento confirmado | REATIVADA na próxima consulta; filas e calibrações intactas | | | | |
+| M-87 | Desconectar a internet da clínica por mais que a validade da autorização | Funciona dentro da tolerância; após ela "Autorização local vencida"; reconectar libera | | | | |
+| M-88 | Licença offline: suspensão + arquivo `.vyauth`; depois pagamento + novo arquivo | Suspensa ao importar; reativada ao importar o novo | | | | |
+| M-89 | Importar de novo um `.vyauth` antigo | Recusado | | | | |
+| M-90 | Banco Inter sandbox: emitir cobrança pelo servidor | Código da cobrança no histórico | | | | |
+| M-91 | Sandbox: pagar e aguardar o aviso | Pagamento confirmado após consulta; assinatura estendida | | | | |
+| M-92 | Reenviar o mesmo aviso | Ignorado (repetido) | | | | |
+| M-93 | Aviso com segredo errado na URL | 404; registro na auditoria | | | | |
+
 ## Conclusão
 
 | Item | Preenchimento |

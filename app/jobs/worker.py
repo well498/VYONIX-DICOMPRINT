@@ -209,7 +209,7 @@ class PrintWorker:
                 worked = False
                 try:
                     self.collector.flush()
-                    job = None if self.suspended() else self._claim()
+                    job = self._next_job()
                     if job is not None:
                         worked = True
                         self.process(job)
@@ -231,12 +231,25 @@ class PrintWorker:
             return None
         return self.license.suspension_reason() or "impressão não incluída na licença"
 
-    def _claim(self) -> Job | None:
+    def _next_job(self) -> Job | None:
+        """Próximo trabalho. Com a assinatura suspensa ou vencida, os trabalhos aceitos **antes** da
+        restrição são concluídos normalmente; os posteriores aguardam na fila (nada é apagado)."""
+        if self.suspended() is None:
+            return self._claim()
+        cutoff = self.license.drain_cutoff() if self.license is not None else None
+        return self._claim(before=to_iso(cutoff)) if cutoff is not None else None
+
+    def _claim(self, before: str | None = None) -> Job | None:
         now = utc_now_iso()
-        r = self.db.connection().execute(
-            """SELECT id FROM jobs WHERE state IN ('received','validating')
-                  OR (state = 'failed' AND next_attempt_at IS NOT NULL AND next_attempt_at <= ?)
-               ORDER BY priority DESC, id LIMIT 1""", (now,)).fetchone()
+        sql = """SELECT id FROM jobs WHERE (state IN ('received','validating')
+                  OR (state = 'failed' AND next_attempt_at IS NOT NULL AND next_attempt_at <= ?))"""
+        args: list = [now]
+        if before is not None:                 # aceito antes da restrição: o trabalho ou as suas imagens
+            sql += """ AND (created_at < ? OR EXISTS (SELECT 1 FROM job_items ji JOIN instances i
+                                                      ON i.id = ji.instance_id
+                                                      WHERE ji.job_id = jobs.id AND i.received_at < ?))"""
+            args += [before, before]
+        r = self.db.connection().execute(sql + " ORDER BY priority DESC, id LIMIT 1", args).fetchone()
         return self.jobs.get_job(r["id"]) if r else None
 
     # ---------------------------------------------------------------- processamento

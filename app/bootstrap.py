@@ -55,6 +55,7 @@ from app.licensing.license import LicenseService
 from app.services.dashboard_service import DashboardService
 from app.services.imaging_service import ImagingService
 from app.services.retention import RetentionService
+from app.services.export import ExamExporter
 from app.services.runtime import CoreRuntime
 from app.services.settings_service import SettingsService
 from app.utils.logging_setup import (get_logger, install_exception_hooks, set_log_level,
@@ -96,6 +97,7 @@ class AppContext:
     users: Any
     exams: Any
     reception: Any
+    exporter: Any
     schema_version: int
     applied_migrations: list[int] = field(default_factory=list)
     _closed: bool = False
@@ -202,6 +204,7 @@ def bootstrap(*, data_dir: str | os.PathLike[str] | None = None, role: str = "ui
         users = UserService(db, events)
         exams = ExamService(db, events, jobs, get, printers=printers)
         exams.storage_root = str(paths.machine_root)
+        exams.license_reason = license_service.suspension_reason
         store.listeners.append(exams.on_stored)
         jobs.after_create.append(exams.link_job)
         worker = PrintWorker(db=db, events=events, jobs=jobs, printers=printers, imaging=imaging,
@@ -220,7 +223,7 @@ def bootstrap(*, data_dir: str | os.PathLike[str] | None = None, role: str = "ui
                                     static_dir=asset_path("reception"), tls_dir=paths.machine_root / "reception" / "tls")
         runtime = CoreRuntime(storage_scp=storage_scp, retention=retention, settings_get=get,
                               worker=worker, printers=printers, print_scp=print_scp, role=role,
-                              backups=backups, reception=reception)
+                              backups=backups, reception=reception, license=license_service)
         access = AdminAccess(db, events, lock_minutes=lambda: int(get("security.lock_minutes")))
 
         def technical_user(username: str, password: str) -> bool:
@@ -238,7 +241,7 @@ def bootstrap(*, data_dir: str | os.PathLike[str] | None = None, role: str = "ui
             imaging=imaging, profiles=profiles, printers=printers, jobs=jobs, worker=worker,
             print_scp=print_scp, rules=rules, license=license_service,
             device_settings=device_settings, templates=templates, calibration=calibration, backups=backups,
-            users=users, exams=exams, reception=reception,
+            users=users, exams=exams, reception=reception, exporter=ExamExporter(db, events),
             schema_version=schema, applied_migrations=applied,
         )
         settings.subscribe(runtime.on_settings_changed)

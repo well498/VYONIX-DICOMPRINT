@@ -22,7 +22,7 @@ Somente licenças assinadas por uma chave cuja parte pública está embutida no 
 
 ## 3. Segurança
 
-- **Usuários e papéis:** *Administrador* (tudo), *Emissor* (clientes, solicitações, emissão, renovação, reativação, revalidação) e *Consulta* (somente leitura). Senhas guardadas com scrypt; bloqueio de 15 minutos após 5 tentativas erradas; senha provisória obriga a troca; a sessão é bloqueada após 15 minutos sem uso.
+- **Usuários e papéis:** *Administrador comercial* (tudo), *Operador financeiro* (Gestão Comercial: pagamentos, carência, suspensão e reativação), *Suporte técnico* (reativação por troca de hardware, revalidação, autorizações offline), *Emissor* (clientes, solicitações, emissão, renovação, reativação, revalidação) e *Consulta* (somente leitura). Senhas guardadas com scrypt; bloqueio de 15 minutos após 5 tentativas erradas; senha provisória obriga a troca; a sessão é bloqueada após 15 minutos sem uso.
 - **Chave privada:** Ed25519, guardada **somente cifrada** (PKCS#8 com a frase-senha) no banco. Para emitir, a chave é desbloqueada com a frase-senha e fica na memória por 15 minutos (**Bloquear agora** encerra antes). Nenhuma chave é embutida no executável (verificado no autoteste e no pipeline de compilação).
 - **Backup protegido da chave:** Segurança → **Backup protegido da chave…** grava o PEM cifrado; guarde a frase-senha separada do arquivo, fora deste computador.
 - **Auditoria:** todas as operações (acessos, emissões, reativações, revogações, chaves, usuários, backups) ficam registradas em cadeia — cada registro contém o resumo do anterior. **Histórico e auditoria → Verificar integridade** aponta registros alterados fora do aplicativo.
@@ -38,6 +38,10 @@ Somente licenças assinadas por uma chave cuja parte pública está embutida no 
 Tipos: **DEMO — 5 dias** (120 h a partir da ativação no computador, a ativar em até 30 dias; bloqueada para computadores que já receberam DEMO, salvo justificativa registrada), **Mensal**, **Trimestral**, **Semestral**, **Anual** (vencem às 23:59:59, horário de Brasília, da véspera do mesmo dia no mês final), **Permanente** (sem vencimento comercial; continua vinculada ao hardware, à instalação e à assinatura) e **Personalizada** (data escolhida).
 
 Uma instalação com licença comercial ativa não recebe outra "nova": use **Renovar** (mesma instalação) ou **Reativar** (outra instalação ou computador).
+
+## 4A. Gestão Comercial
+
+A página **Gestão Comercial** mostra cada assinatura (cliente, CNPJ, instalação, plano, mensalidade, vencimento, último pagamento confirmado, dias de atraso, situação, último contato) com histórico, notificações, suspensões, reativações, pagamentos, cobranças e autorizações. Ações: registrar pagamento confirmado, comprovante (não quita), conceder carência, programar/cancelar suspensão, suspender conforme a política, reativar, exportar autorização offline (`.vyauth`), renovar, reemitir, plano e valor, publicar licença no License Server e auditoria. Na emissão, escolha **Validação: Offline/Online** e o valor. As regras completas estão em *Licenciamento Comercial por Assinatura*.
 
 ## 5. Renovação
 
@@ -83,4 +87,4 @@ Cadastre apenas os dados necessários ao contrato (nome/razão social, CNPJ/CPF,
 
 ## 12. Linha de comando
 
-`VYONIX_License_Manager.exe --self-test --report resultado.json [--request solicitacao.vyreq]` executa, em uma pasta temporária, o autoteste completo (configuração, chave cifrada, emissão, adulteração, renovação, reativação, revogação, DEMO, backup e restauração, auditoria). `--version` informa a versão. `--data-dir PASTA` usa uma pasta de dados explícita.
+`VYONIX_License_Manager.exe --self-test --report resultado.json [--request solicitacao.vyreq]` executa, em uma pasta temporária, o autoteste completo (configuração, chave cifrada, emissão, adulteração, renovação, reativação, revogação, gestão comercial com pagamento, duplicidade e autorização offline, DEMO, backup e restauração, auditoria). `--version` informa a versão. `--data-dir PASTA` usa uma pasta de dados explícita.

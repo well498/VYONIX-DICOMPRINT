@@ -74,7 +74,8 @@ a = Analysis(
     hiddenimports=[f"{QT_BINDING}.QtSvg"] + CODEC_HIDDEN + WIN32_HIDDEN,
     hookspath=[],
     runtime_hooks=[],
-    excludes=["tkinter", "pytest", "tests", "license_admin", "license_manager", "unittest.mock",
+    excludes=["tkinter", "pytest", "tests", "license_admin", "license_manager", "license_server",
+              "vyonix_commercial.engine", "vyonix_commercial.billing", "vyonix_commercial.schema", "unittest.mock",
               OTHER_BINDING, "shiboken6" if QT_BINDING == "PySide2" else "shiboken2"] + PIL_EXCLUDES
              + (SLIM_EXCLUDES if SLIM else []),
     noarchive=False,
@@ -85,8 +86,9 @@ for entry in list(a.datas):
     if "license_admin" in entry[0] or "license_manager" in entry[0] or entry[0].lower().endswith((".pem", ".key")):
         raise SystemExit(f"Arquivo proibido no pacote: {entry[0]}")
 for name, *_ in a.pure:
-    if name.split(".")[0] in ("license_manager", "license_admin"):
-        raise SystemExit(f"Módulo proibido no pacote comercial: {name}")
+    if name.split(".")[0] in ("license_manager", "license_admin", "license_server") \
+            or name.startswith(("vyonix_commercial.billing", "vyonix_commercial.engine")):
+        raise SystemExit(f"Módulo proibido no pacote comercial (emissão, servidor ou cobrança): {name}")
 
 if SLIM:
     removed = []
@@ -140,8 +142,9 @@ s = Analysis(
     hiddenimports=CODEC_HIDDEN + WIN32_HIDDEN + SERVICE_HIDDEN,
     hookspath=[],
     runtime_hooks=[],
-    excludes=["tkinter", "pytest", "tests", "license_admin", "license_manager", "unittest.mock", "PySide6", "PySide2", "shiboken6",
-              "shiboken2", "app.ui"] + PIL_EXCLUDES,
+    excludes=["tkinter", "pytest", "tests", "license_admin", "license_manager", "license_server",
+              "vyonix_commercial.engine", "vyonix_commercial.billing", "vyonix_commercial.schema", "unittest.mock",
+              "PySide6", "PySide2", "shiboken6", "shiboken2", "app.ui"] + PIL_EXCLUDES,
     noarchive=False,
 )
 for entry in list(s.datas):

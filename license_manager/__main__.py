@@ -140,6 +140,26 @@ def self_test(request_file: str | None, data_dir: str | None) -> dict:
             return f"renovada {r['license_id']}, reativada {n['license_id']}, lista de revogação nº {rl['seq']}"
         check("renovação, reativação e revogação", renew_reactivate)
 
+        def commercial():
+            e, a = lm.commercial, lm.actor(state["admin"])
+            info4 = lm.import_request(state["admin"], synthetic("d"))
+            lic = lm.issue(state["admin"], info4.request_id, state["cid"], ltype="monthly", edition="Profissional",
+                           price_cents=49900)
+            sub = e.subscription(lic["license_id"])
+            r = e.confirm_payment(a, sub["id"], reference="AUTOTESTE-PG-1", source="autoteste", amount_cents=49900)
+            if r["duplicate"] or e.confirm_payment(a, sub["id"], reference="AUTOTESTE-PG-1",
+                                                   source="autoteste")["duplicate"] is not True:
+                raise RuntimeError("pagamento repetido não foi identificado")
+            auth = lm.offline_authorization(state["admin"], lic["license_id"])
+            d = F.parse_signed(auth["document"], F.AUTHORIZATION_FORMAT)
+            if not crypto.verify_ed25519(state["key"]["public_hex"], d.signed, d.signature):
+                raise RuntimeError("autorização offline com assinatura inválida")
+            if d.payload["commercial"]["paid_until"] != r["subscription"]["paid_until"]:
+                raise RuntimeError("autorização não reflete o pagamento")
+            return (f"assinatura {sub['plan_name']} {r['subscription']['state_label']}, pago até "
+                    f"{r['subscription']['paid_until']}; autorização offline {d.payload['authorization_id']}")
+        check("gestão comercial: pagamento, duplicidade e autorização offline", commercial)
+
         def demo():
             info3 = lm.import_request(state["admin"], synthetic("c"))
             d = lm.issue(state["admin"], info3.request_id, state["cid"], ltype="demo", edition="Profissional")

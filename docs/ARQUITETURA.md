@@ -312,3 +312,28 @@ Status em 20/10/2026. "Automatizado" = coberto por teste que passou no ambiente 
 | F1-11 | README com instalação, execução e testes | `README.md` | ✅ |
 
 A Fase 1 só é considerada encerrada quando F1-09 e F1-02 forem confirmados em Windows 10 ou 11.
+
+## 11. Licenciamento comercial por assinatura (revisão 4)
+
+```text
+ VYONIX DICOM Print (clínica)                 Fornecedor
+ ┌──────────────────────────────┐   HTTPS    ┌─────────────────────────────┐
+ │ app/licensing                │──────────► │ license_server (API TLS)    │
+ │  license.py  (verificação)   │ /v1/       │  core.py  sessões, nonces,  │
+ │  subscription.py (autoriz.)  │ authorize  │           auditoria         │
+ │  online.py   (consulta)      │ ◄───────── │  http.py  rotas, agendador  │
+ │ vyonix_commercial.states     │ autorização│ vyonix_commercial.engine    │◄── Banco Inter (opcional,
+ └──────────────────────────────┘  assinada  │ vyonix_commercial.billing   │    TLS mútuo + consulta)
+             ▲  arquivo .vyauth              └──────────────▲──────────────┘
+             │                                              │ API admin
+ ┌───────────┴──────────────────────────────────────────────┴──────────────┐
+ │ license_manager: emissão (.vylic), Gestão Comercial local/remota,        │
+ │ autorizações offline assinadas com a chave do License Manager            │
+ └──────────────────────────────────────────────────────────────────────────┘
+```
+
+- **Estado comercial** calculado por uma única função pura (`vyonix_commercial.states.evaluate`) sobre os dados da assinatura: no servidor e no License Manager a partir do banco; no VYONIX a partir da autorização assinada (ou da própria licença), com o horário confiável do Time Integrity.
+- **Chaves com escopo** (`app/licensing/keys.py`): `vyx-2026-01` (License Manager) assina licenças, autorizações, revalidações e revogações; `vyx-srv-2026-01` (License Server) só autorizações.
+- **Suspensão controlada:** `LicenseService.drain_cutoff()` informa o instante da restrição; o processador da fila conclui os trabalhos aceitos antes dele (criados ou com imagens recebidas antes) e mantém os demais na fila.
+- **Migração 0007:** `license_authorizations` e `license_state_history` (VYONIX); License Manager esquema 2 (perfis comerciais e tabelas `com_*`); License Server com banco próprio.
+- O pacote comercial exclui `license_manager`, `license_server`, `vyonix_commercial.engine` e `vyonix_commercial.billing` (verificado no `Vyonix.spec`).

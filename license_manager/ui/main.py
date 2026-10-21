@@ -19,6 +19,7 @@ from license_manager.security import ROLES
 from license_manager.service import LicenseManager, LMError
 from license_manager.ui.common import (STYLE, Page, ask_secret, btn, confirm, error, fill, info, row, selected,
                                        table, when)
+from license_manager.ui.commercial_page import CommercialPage
 from license_manager.ui.dialogs import (CustomerDialog, IssueDialog, LoginDialog, ReactivateDialog, RenewDialog,
                                         SetupDialog, import_request_text, request_summary)
 
@@ -762,7 +763,8 @@ class MainWindow(QMainWindow):
         self.stack = QStackedWidget()
         self.pages = [("Painel", DashboardPage(self)), ("Clientes", CustomersPage(self)),
                       ("Produtos", ProductsPage(self)), ("Solicitações e emissão", IssuePage(self)),
-                      ("Licenças", LicensesPage(self)), ("Revalidação", RevalidationPage(self)),
+                      ("Licenças", LicensesPage(self)), ("Gestão Comercial", CommercialPage(self)),
+                      ("Revalidação", RevalidationPage(self)),
                       ("Histórico e auditoria", AuditPage(self)), ("Backup e restauração", BackupPage(self)),
                       ("Segurança", SecurityPage(self))]
         self.nav = []
@@ -800,6 +802,9 @@ class MainWindow(QMainWindow):
             self.pages[i][1].refresh()
         except Exception as exc:  # noqa: BLE001
             error(self, exc)
+
+    def page_index(self, label: str) -> int:
+        return next(i for i, (lbl, _p) in enumerate(self.pages) if lbl == label)
 
     def refresh_all(self) -> None:
         self.go(self.stack.currentIndex())

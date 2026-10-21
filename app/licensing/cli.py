@@ -4,8 +4,10 @@
   chave do TPM (se houver TPM e ela ainda não existir) e define o Installation ID conforme a
   instalação seja nova ou atualização.
 * ``--installation uninstall`` — executado pelo desinstalador: encerra a ativação local.
-* ``--license status|request|install|demo|diagnostic|revalidation|revocation`` — mesmas ações da
-  página Licença (nenhuma ação de emissão).
+* ``--license status|request|install|demo|diagnostic|revalidation|revocation|authorization|online|
+  export`` — mesmas ações da página Licença (nenhuma ação de emissão): ``authorization`` importa o
+  arquivo de renovação (.vyauth), ``online`` consulta o License Server agora e ``export`` copia os
+  exames armazenados para a pasta ``--file`` (disponível mesmo com a assinatura suspensa).
 """
 
 from __future__ import annotations
@@ -21,7 +23,8 @@ def add_arguments(p) -> None:
     g.add_argument("--fresh", action="store_true", help="com --installation install: instalação nova")
     g.add_argument("--upgrade", action="store_true", help="com --installation install: atualização")
     p.add_argument("--license", dest="license_action",
-                   choices=["status", "request", "install", "demo", "diagnostic", "revalidation", "revocation"],
+                   choices=["status", "request", "install", "demo", "diagnostic", "revalidation", "revocation",
+                            "authorization", "online", "export"],
                    help="licenciamento: situação, solicitação, instalação de licença, demonstração, diagnóstico")
     p.add_argument("--file", help="arquivo de entrada/saída para --license")
 
@@ -62,13 +65,14 @@ def run(args) -> int:
             act = args.license_action
             out = Path(args.file) if args.file else None
             try:
-                _license_action(lic, act, out, report)
+                _license_action(lic, act, out, report, ctx)
             except (VyonixError, OSError, ValueError) as exc:
                 report["ok"] = False
                 report["error"] = str(exc)
             v = lic.verdict(refresh=True)
             prof = lic.profile()
             report["status"] = {"state": v.status.state.value, "message": v.status.message, "active": v.status.active,
+                                "commercial": v.status.commercial, "connectivity": v.status.connectivity,
                                 "enforced": lic.enforced, "license_id": v.status.license_id,
                                 "kind": v.status.kind, "remaining_s": v.status.remaining_s}
             report["hardware_id"] = prof.hardware_id
@@ -82,9 +86,9 @@ def run(args) -> int:
     return _done(args, report, 0 if report.get("ok") else 1)
 
 
-def _license_action(lic, act: str, out: Path | None, report: dict) -> None:
+def _license_action(lic, act: str, out: Path | None, report: dict, ctx=None) -> None:
     from app.core.errors import VyonixError
-    if act in ("install", "revalidation", "revocation") and not (out and out.is_file()):
+    if act in ("install", "revalidation", "revocation", "authorization") and not (out and out.is_file()):
         raise VyonixError("Informe o arquivo com --file.")
     if act == "request":
         text = lic.request_file()
@@ -106,6 +110,18 @@ def _license_action(lic, act: str, out: Path | None, report: dict) -> None:
         report.update(ok=True, message=lic.apply_revalidation(out.read_text(encoding="utf-8"), actor="cli"))
     elif act == "revocation":
         report.update(ok=True, message=lic.apply_revocation(out.read_text(encoding="utf-8"), actor="cli"))
+    elif act == "authorization":
+        st = lic.import_authorization(out.read_text(encoding="utf-8"), actor="cli")
+        report.update(ok=True, state=st.state.value, commercial=st.commercial)
+    elif act == "online":
+        r = lic.check_online(actor="cli")
+        report.update(ok=r.result == "ok", result=r.result, message=r.message)
+    elif act == "export":
+        if not out or not out.is_dir():
+            raise VyonixError("Informe a pasta de destino com --file.")
+        res = ctx.exporter.export(out, actor="cli")
+        report.update(ok=True, folder=str(res.folder), studies=res.studies, files=res.files,
+                      missing=len(res.missing), mismatched=len(res.mismatched))
     else:
         report["ok"] = True
 

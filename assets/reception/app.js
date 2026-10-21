@@ -56,6 +56,7 @@
     fillSelect($("f-print"), meta.print_states); fillSelect($("f-pickup"), meta.pickup_states);
     const rs = $("f-rule"); while (rs.options.length > 1) rs.remove(1);
     meta.rules.forEach((r) => rs.append(el("option", {value: r.id}, r.name)));
+    const ln = $("license-notice"); ln.textContent = meta.license_notice || ""; ln.classList.toggle("hidden", !meta.license_notice);
     if (d.must_change) toast("Sua senha é provisória: altere-a em “Senha”.");
     search(); alerts();
     clearInterval(timer); timer = setInterval(() => { if (!document.hidden) { search(true); alerts(); } }, 15000);

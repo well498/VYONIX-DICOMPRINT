@@ -4,8 +4,9 @@
 
 Plataforma de gerenciamento de impressão de imagens médicas DICOM para Windows 10 e 11 (64 bits).
 
-> **Versão 1.0.0 (revisão 3) para homologação — 8 fases, prompt atualizado, prompt definitivo (licenciamento,
-> TPM, DEMO, Time Integrity, License Manager) e arquitetura DICOM simplificada com o painel VYONIX Reception.**
+> **Versão 1.0.0 (revisão 4) para homologação — 8 fases, prompt atualizado, prompt definitivo (licenciamento,
+> TPM, DEMO, Time Integrity, License Manager), arquitetura DICOM simplificada com o painel VYONIX Reception e
+> licenciamento comercial por assinatura com o VYONIX License Server.**
 > Este software **não está validado para uso clínico**. A declaração de conformidade DICOM incluída é de homologação
 > e foi verificada com equipamento simulado (pynetdicom), não com equipamentos reais.
 
@@ -24,11 +25,16 @@ Plataforma de gerenciamento de impressão de imagens médicas DICOM para Windows
 | VYONIX License Manager (portátil + instalador opcional), banco próprio | ✅ | autoteste dos dois modos com a solicitação real |
 | Regras DICOM por porta + Called AE (sem IP obrigatório), várias portas | ✅ | C-STORE/C-ECHO reais em testes; serviço instalado |
 | VYONIX Reception (HTTPS, perfis, impressão sob demanda, duplicidade, retirada, relatórios) | ✅ | API testada; painel servido pelo serviço instalado |
+| Assinatura comercial: estados, carência, suspensão controlada, reativação, autorizações assinadas | ✅ | 30 testes obrigatórios (c01–c30) |
+| VYONIX License Server (API HTTPS, admin, tolerância, revogação online) e Gestão Comercial no License Manager | ✅ | autoteste do executável, servidor HTTPS em execução |
+| Banco Inter (cobrança, consulta, conciliação) | ⚠️ preparado | testado contra reprodução local da API; sandbox do Inter pendente |
 
-Três artefatos: `VYONIX_DICOM_Print_Setup_v1.0.0_x64.exe` (clientes), `VYONIX_License_Manager.exe` e
-`VYONIX_License_Manager_Setup.exe` (somente administrador). O código compartilhado entre os dois aplicativos é só
-o protocolo [`vyonix_protocol/`](vyonix_protocol). Detalhes: `docs/release/Licenciamento_e_Ativacao.md` e
-`docs/release/Manual_License_Manager.md`.
+Quatro artefatos: `VYONIX_DICOM_Print_Setup_v1.0.0_x64.exe` (clientes), `VYONIX_License_Manager.exe`,
+`VYONIX_License_Manager_Setup.exe` e `VYONIX_License_Server.exe` (somente fornecedor). Código compartilhado:
+o protocolo [`vyonix_protocol/`](vyonix_protocol) e a gestão comercial [`vyonix_commercial/`](vyonix_commercial)
+(o VYONIX instalado usa apenas o cálculo de estados). Detalhes: `docs/release/Licenciamento_e_Ativacao.md`,
+`docs/release/Manual_Licenciamento_Comercial.md`, `docs/release/Manual_License_Server.md`,
+`docs/release/Integracao_Banco_Inter.md` e `docs/release/Manual_License_Manager.md`.
 
 Não verificado: equipamentos DICOM reais, impressão em papel em impressoras físicas, Windows 10/11 limpos
 (o CI usa Windows Server 2022), assinatura digital do instalador.
@@ -117,6 +123,10 @@ app/
   jobs/        máquina de estados dos trabalhos
   ui/          PySide6 — única camada que importa Qt
   dicom/ imaging/ printing/ rules/ devices/ licensing/ service/   (fases 2–8)
+license_manager/   VYONIX License Manager (emissão e Gestão Comercial; não vai às clínicas)
+license_server/    VYONIX License Server (validação online; não vai às clínicas)
+vyonix_protocol/   formatos e assinatura de licenças/autorizações (compartilhado)
+vyonix_commercial/ estados comerciais, assinaturas, pagamentos e cobrança (compartilhado)
 assets/        logotipo e ícone VYONIX (SVG originais)
 docs/          arquitetura
 tests/         testes automatizados

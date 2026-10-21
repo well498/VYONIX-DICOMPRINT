@@ -202,6 +202,12 @@ class ValidityBox(QGroupBox):
             self.features[f] = cb
             fl.addWidget(cb)
         self.notes = QLineEdit(d.get("notes") or "")
+        self.validation = QComboBox()
+        for k, label in F.VALIDATION_MODES.items():
+            self.validation.addItem(label, k)
+        self.validation.setCurrentIndex(max(0, self.validation.findData(d.get("validation") or "offline")))
+        self.price = QLineEdit("")
+        self.price.setPlaceholderText("valor da mensalidade/período em R$ (opcional: padrão do plano)")
         sr = QHBoxLayout()
         sr.addWidget(self.start_auto)
         sr.addWidget(self.start)
@@ -214,6 +220,8 @@ class ValidityBox(QGroupBox):
         form.addRow("Impressoras autorizadas", self.printers)
         form.addRow("Recursos liberados", fl)
         form.addRow("Observações (internas)", self.notes)
+        form.addRow("Validação da assinatura", self.validation)
+        form.addRow("Valor (R$)", self.price)
         for sig in (self.type.currentIndexChanged, self.start_auto.toggled, self.start.dateChanged, self.end.dateChanged):
             sig.connect(lambda *_: self._update())
         self._update()
@@ -242,7 +250,18 @@ class ValidityBox(QGroupBox):
                 "custom_end": _qdate_end(self.end) if t == "custom" else None,
                 "max_devices": self.devices.value() or None, "max_printers": self.printers.value() or None,
                 "features": [f for f, cb in self.features.items() if cb.isChecked()],
-                "notes": self.notes.text().strip() or None}
+                "notes": self.notes.text().strip() or None, "validation": self.validation.currentData(),
+                "price_cents": _cents(self.price.text())}
+
+
+def _cents(text: str) -> int | None:
+    t = (text or "").strip().replace("R$", "").replace(" ", "")
+    if not t:
+        return None
+    try:
+        return int(round(float(t.replace(".", "").replace(",", ".")) * 100))
+    except ValueError:
+        raise LMError("Valor inválido (use, por exemplo, 499,00).") from None
 
 
 def request_summary(info_obj) -> str:
@@ -325,8 +344,8 @@ class IssueDialog(QDialog):
         from license_manager.ui.main import ensure_unlocked
         if not ensure_unlocked(self, self.lm, self.user):
             return
-        v = self.validity.values()
         try:
+            v = self.validity.values()
             self.result_license = self.lm.issue(self.user, self.req.request_id, cid, product_id=F.PRODUCT_ID,
                                                 demo_override=self.demo_reason.text().strip() or None, **v)
         except LMError as exc:

@@ -53,6 +53,10 @@ def main() -> None:
     (ROOT / "build" / "version_info_lm.txt").write_text(
         TEMPLATE.format(nv=lnv, brand=brand.BRAND, product=APP_NAME, version=lm_version,
                         internal="VYONIX_License_Manager", original="VYONIX_License_Manager.exe"), encoding="utf-8")
+    from license_server import APP_NAME as LS_NAME, __version__ as ls_version
+    (ROOT / "build" / "version_info_ls.txt").write_text(
+        TEMPLATE.format(nv=numeric_version(ls_version), brand=brand.BRAND, product=LS_NAME, version=ls_version,
+                        internal="VYONIX_License_Server", original="VYONIX_License_Server.exe"), encoding="utf-8")
     print(f"APP_VERSION={__version__}")
     print("FILE_VERSION=" + ".".join(map(str, nv)))
     print(f"LM_VERSION={lm_version}")

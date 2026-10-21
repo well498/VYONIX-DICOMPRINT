@@ -4,15 +4,27 @@
 
 ## Natureza desta versão
 
-Versão **{VERSION} para homologação** (revisão 3): as 8 fases do plano, o *prompt mestre atualizado* (equipamentos independentes, calibração visual, teste 3 × 3, BMP) o *prompt mestre definitivo* (licenciamento por computador e instalação, TPM, DEMO de 5 dias, VYONIX Time Integrity e o aplicativo administrativo **VYONIX License Manager**) e o *prompt de desenvolvimento* (Regras DICOM por AE Title de destino e porta, sem IP obrigatório, e o painel **VYONIX Reception**). A lista detalhada do que foi implementado e do que está pendente está em *Funcionalidades*.
+Versão **{VERSION} para homologação** (revisão 4): as 8 fases do plano, o *prompt mestre atualizado* (equipamentos independentes, calibração visual, teste 3 × 3, BMP) o *prompt mestre definitivo* (licenciamento por computador e instalação, TPM, DEMO de 5 dias, VYONIX Time Integrity e o aplicativo administrativo **VYONIX License Manager**) o *prompt de desenvolvimento* (Regras DICOM por AE Title de destino e porta, sem IP obrigatório, e o painel **VYONIX Reception**) e o *prompt consolidado* (licenciamento comercial por assinatura, **VYONIX License Server** e integração preparada com o Banco Inter). A lista detalhada do que foi implementado e do que está pendente está em *Funcionalidades*.
 
-São **três artefatos independentes**: o instalador comercial `VYONIX_DICOM_Print_Setup_v1.0.0_x64.exe` (para os clientes) e, somente para o administrador, `VYONIX_License_Manager.exe` (portátil) e `VYONIX_License_Manager_Setup.exe` (instalação opcional). O License Manager não faz parte do instalador comercial.
+São **quatro artefatos independentes**: o instalador comercial `VYONIX_DICOM_Print_Setup_v1.0.0_x64.exe` (para os clientes) e, somente para o fornecedor, `VYONIX_License_Manager.exe` (portátil), `VYONIX_License_Manager_Setup.exe` (instalação opcional) e `VYONIX_License_Server.exe` (servidor central de licenças). O License Manager e o License Server não fazem parte do instalador comercial.
 
 **Não validada para uso clínico.** A declaração de conformidade DICOM incluída é de homologação.
 
 ## Requisito mínimo
 
 Windows 10 64 bits (versão 1809 ou posterior) ou Windows 11. O executável usa Python 3.12 e Qt 6.
+
+## Novidades da revisão 4 (licenciamento comercial por assinatura)
+
+- **Estados comerciais:** ATIVA, PRÓXIMA DO VENCIMENTO, EM ATRASO, SUSPENSÃO PROGRAMADA, SUSPENSA, EXPIRADA e REATIVADA, com histórico completo das transições no License Manager, no License Server e no VYONIX. Estado financeiro separado do estado técnico de conectividade.
+- **Avisos e carência configuráveis** (padrão: 5 dias antes, 7 dias de carência), prorrogação por perfis autorizados e ações que exigem confirmação de um administrador comercial; política assinada na licença.
+- **Suspensão controlada:** só após inadimplência confirmada, avisos, fim da carência, contrato que a preveja e confirmação dos requisitos operacionais. Suspende apenas novas operações licenciadas; trabalhos aceitos são concluídos; imagens, filas, calibrações, configurações e histórico preservados; exportação dos exames sempre disponível (nova função *Exportar exames armazenados*). Licença permanente nunca é suspensa por mensalidade.
+- **Autorizações de uso assinadas** (online com validade limitada e número de uso único; offline em arquivo `.vyauth`), sequência crescente (autorização antiga recusada), escopo de chave (a chave do servidor só assina autorizações).
+- **Reativação** automática online, administrativa e offline, registrando data, origem e responsável.
+- **VYONIX License Server:** API HTTPS (TLS 1.2+) para as instalações e para administração (usuários e perfis, auditoria encadeada, limites de taxa), tolerância a internet/servidor indisponíveis (nenhuma suspensão por falha de rede), revogação online, autoteste de ponta a ponta.
+- **License Manager — Gestão Comercial:** cliente, CNPJ, instalação, plano, mensalidade, vencimento, último pagamento, dias de atraso, situação, histórico, notificações, suspensões e reativações; emitir, renovar, reemitir, conceder carência, programar suspensão, suspender, reativar, exportar autorização offline, publicar no servidor, auditoria. Novos perfis: Operador financeiro e Suporte técnico.
+- **Banco Inter (opcional):** camada de cobrança com emissão de boleto/Pix, consulta autenticada, conciliação e avisos validados por consulta; boleto emitido, comprovante ou promessa não quitam; avisos repetidos ignorados. Credenciais somente no servidor.
+- Perfis da clínica renomeados: *Administrador da clínica* e *Técnico da clínica*; detalhes comerciais visíveis somente ao administrador.
 
 ## Novidades da revisão 3 (arquitetura DICOM simplificada e VYONIX Reception)
 

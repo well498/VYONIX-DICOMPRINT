@@ -26,7 +26,7 @@ from typing import Any
 from app.core.errors import ValidationError
 from app.utils.timeutil import from_iso, to_iso, utc_now, utc_now_iso
 
-ROLES = {"admin": "Administrador", "technician": "Técnico", "supervisor": "Supervisor da recepção",
+ROLES = {"admin": "Administrador da clínica", "technician": "Técnico da clínica", "supervisor": "Supervisor da recepção",
          "receptionist": "Recepcionista"}
 PERMS = {
     "reception": {"admin", "technician", "supervisor", "receptionist"},

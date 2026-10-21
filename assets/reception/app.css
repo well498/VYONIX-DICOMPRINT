@@ -55,3 +55,5 @@ td { padding:7px; border-top:1px solid var(--line); vertical-align:top; }
 .saved { font-weight:600; color:var(--ok); } .row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:10px; }
 .warnbox { background:#fff3d6; border:1px solid #e8b45c; padding:8px 10px; border-radius:6px; margin:8px 0; }
 @media (max-width: 1100px) { main { flex-direction:column; } .detail { width:100%; flex:1 1 auto; max-height:none; } }
+
+.license-notice { margin:8px 16px 0; padding:10px 14px; border-radius:6px; background:#fde3e1; color:#7a1b12; font-weight:600; }

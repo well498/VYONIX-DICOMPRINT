@@ -91,3 +91,30 @@ Legenda: **Implementado** (código e testes automatizados) · **Parcial** (imple
 | Testes com TPM físico, troca real de disco/placa-mãe e equipamentos/impressoras reais | **Pendente** | Roteiro entregue (*Roteiro de Testes Manuais*, seções 6 e 7) |
 | Certificado HTTPS de autoridade reconhecida para o Reception | Opcional | Substituir `cert.pem`/`key.pem` pelo certificado da instituição |
 | Chave de emissão | Atenção | A chave `vyx-2026-01` foi gerada no ambiente de desenvolvimento e entregue cifrada ao administrador. Recomenda-se gerar uma chave nova no License Manager do fornecedor e fazer a rotação em uma atualização. |
+
+## Licenciamento comercial por assinatura (prompt consolidado)
+
+| Seção | Requisito | Situação | Observação |
+|---|---|---|---|
+| 1 | Componentes Server, Print Engine, Reception, License Client, License Manager, License Server | Implementado | License Client integrado ao VYONIX; License Server em executável próprio |
+| 2–7 | Regras DICOM, C-STORE/Print SCP, calibração, BMP, automática/sob demanda, Reception | Implementado | Revisões anteriores, preservadas (testes c21–c28) |
+| 8 | Modalidades demonstração, mensal, trimestral, semestral, anual, personalizada, permanente | Implementado | Permanente não suspensa por mensalidade/manutenção |
+| 8 | Licença com ID, cliente, produto/edição, Hardware ID, Installation ID, recursos, limites, datas, política, assinatura | Implementado | Política comercial assinada na licença |
+| 9 | Sete estados comerciais com histórico de transições | Implementado | LM, servidor e VYONIX (mesmo cálculo) |
+| 9 | Estado financeiro separado da conectividade | Implementado | |
+| 10 | Avisos, carência, quando suspender, perfis de prorrogação, ações com confirmação administrativa | Implementado | Padrões 5 e 7 dias |
+| 10 | Mensagens ao administrador sem expor finanças aos demais usuários | Implementado | Recepção/técnicos: aviso neutro |
+| 11 | Suspensão controlada com todas as salvaguardas; trabalhos aceitos concluídos; exportação | Implementado | |
+| 12 | Reativação online, administrativa e offline, com data, origem e responsável | Implementado | |
+| 13 | License Server: clientes/contratos/planos/vencimentos/financeiro/autorizações/suspensões/reativações/histórico/auditoria/cobrança | Implementado | Cadastro de clientes no License Manager; servidor guarda cliente e CNPJ por assinatura |
+| 13 | API autenticada com TLS; proteção contra repetição, adulteração e autorizações vencidas | Implementado | Certificado fixado pela impressão digital na licença |
+| 14 | Offline: validade definida, arquivos de renovação, importação, integridade, registros; limites documentados | Implementado | |
+| 15 | Tolerância a servidor/internet indisponíveis, distinção das seis situações | Implementado | "Autorização local vencida" após a tolerância |
+| 16 | License Manager portátil com Gestão Comercial e ações listadas | Implementado | Administra também o servidor (API) |
+| 17 | Integração Banco Inter preparada (cobrança, consulta, aviso, conciliação, renovação automática) | Parcial | Testada contra reprodução local da API; homologação no sandbox do Inter pendente (credenciais) |
+| 18 | Ed25519, chave privada só no ambiente administrativo, rotação, replay, versões | Implementado | Chave do servidor `vyx-srv-2026-01` com escopo restrito |
+| 19 | Hardware ID/Installation ID, recuperação autorizada | Implementado | Revisão 2 |
+| 20 | DEMO de 120 h | Implementado | Revisão 2 |
+| 21 | Perfis comerciais e clínicos separados; auditoria; LGPD | Implementado | |
+| 22 | 30 testes obrigatórios | Implementado | `tests/test_commercial.py` (c01–c30) e verificações LS-01/LS-02 no Windows |
+| 23 | Distribuição: instalador comercial, License Manager (portátil e instalador), License Server, documentação | Implementado | License Server como executável de console; serviço do sistema configurado pelo administrador (Agendador de Tarefas/systemd) |

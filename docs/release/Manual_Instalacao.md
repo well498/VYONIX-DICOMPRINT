@@ -92,7 +92,9 @@ O desinstalador para e remove o serviço Windows, **encerra a ativação local**
 
 Na primeira abertura aparece a tela de ativação (demonstração de 5 dias, licença comercial, exportação da solicitação e Hardware ID). Até a ativação, a recepção DICOM e a impressão ficam suspensas. O instalador cria a chave do VYONIX no TPM 2.0, quando o computador tiver TPM habilitado. Veja *Licenciamento e Ativação*.
 
-O **VYONIX License Manager** (emissão de licenças) é um programa administrativo separado e **não faz parte deste instalador**.
+O **VYONIX License Manager** (emissão de licenças) e o **VYONIX License Server** (validação online, do fornecedor) são programas administrativos separados e **não fazem parte deste instalador**.
+
+Licenças com **validação online** precisam de saída HTTPS do computador VYONIX para o endereço do License Server informado pelo fornecedor (porta indicada na licença, padrão 8743). Com proxy, informe-o em *Configurações → Licença — validação online*. Sem internet, o VYONIX continua funcionando durante a tolerância do contrato.
 
 ## 6. Verificação após a instalação
 

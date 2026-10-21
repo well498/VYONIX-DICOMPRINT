@@ -83,6 +83,7 @@ GROUPS: tuple[tuple[str, str], ...] = (
     ("print_identity", "Identidade da Impressão (cabeçalho e rodapé BMP)"),
     ("retention", "Retenção de dados"),
     ("security", "Segurança"),
+    ("licensing", "Licença — validação online"),
     ("ui", "Interface"),
     ("diagnostics", "Diagnóstico"),
 )
@@ -159,6 +160,18 @@ DEFINITIONS: tuple[SettingDef, ...] = (
                24, validator=v.int_range(1, 720, "Horas"), minimum=1, maximum=720),
     SettingDef("reception.min_free_gb", "Alerta de espaço livre em disco (GB)", "reception", "int", 2,
                validator=v.int_range(1, 1000, "GB"), minimum=1, maximum=1000),
+
+    SettingDef("licensing.online_check_hours", "Consultar o License Server a cada (horas)", "licensing", "int", 6,
+               validator=v.int_range(1, 24, "Horas"), minimum=1, maximum=24,
+               help="Somente licenças com validação online. Falha de conexão não suspende: há tolerância."),
+    SettingDef("licensing.server_url_override", "Endereço alternativo do License Server", "licensing", "str", "",
+               validator=v.free_text(300, "Endereço"),
+               help="Vazio: o endereço gravado na licença. As respostas continuam exigindo a assinatura oficial."),
+    SettingDef("licensing.server_ca_file", "Autoridade certificadora do License Server (arquivo .pem)", "licensing",
+               "str", "", validator=v.free_text(400, "Arquivo"),
+               help="Somente para servidor com certificado de autoridade própria e sem impressão digital na licença."),
+    SettingDef("licensing.proxy", "Proxy HTTPS (host:porta)", "licensing", "str", "",
+               validator=v.free_text(200, "Proxy"), help="Vazio: conexão direta."),
 
     SettingDef("jobs.max_attempts", "Tentativas automáticas", "jobs", "int", 3,
                validator=v.int_range(1, 10, "Tentativas automáticas"), minimum=1, maximum=10),

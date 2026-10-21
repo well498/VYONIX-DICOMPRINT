@@ -408,7 +408,7 @@ class TimeTest(Base):
 
     def test_t27_rollback_does_not_extend_validity(self):
         self.activate(ltype="monthly")
-        self.pc.clock.advance(days=29, hours=20)
+        self.pc.clock.advance(days=36, hours=20)                     # vencimento + carência de 7 dias
         self.client.svc.status(refresh=True)
         self.pc.clock.shift_wall(hours=-20)                          # dentro da tolerância: não bloqueia...
         st = self.client.svc.status(refresh=True)
@@ -478,11 +478,18 @@ class ValidityTest(Base):
                          "2026-12-31 23:59")
         self.pc.clock.advance(days=80)
         st = self.client.svc.status(refresh=True)
-        self.assertEqual(st.state, LicenseState.VALID)
-        self.assertIsNotNone(st.warning)                             # aviso de vencimento
-        self.pc.clock.advance(days=12)
+        self.assertEqual((st.state, st.commercial), (LicenseState.VALID, "active"))
+        self.pc.clock.advance(days=8)                                # aviso 5 dias antes (política padrão)
         st = self.client.svc.status(refresh=True)
-        self.assertEqual(st.state, LicenseState.EXPIRED)
+        self.assertEqual((st.state, st.commercial), (LicenseState.VALID, "due_soon"))
+        self.assertIsNotNone(st.warning)                             # aviso de vencimento
+        self.pc.clock.advance(days=5)                                # vencida: carência de 7 dias
+        st = self.client.svc.status(refresh=True)
+        self.assertEqual((st.state, st.commercial), (LicenseState.VALID, "overdue"))
+        self.assertTrue(self.client.svc.allows("storage"))
+        self.pc.clock.advance(days=7)
+        st = self.client.svc.status(refresh=True)
+        self.assertEqual((st.state, st.commercial), (LicenseState.EXPIRED, "expired"))
         self.assertFalse(self.client.svc.allows("storage"))
         renewed = self.lm.renew(self.admin, lic["license_id"], ltype="annual")
         self.assertEqual(self.client.svc.install(renewed["document"], actor="t").state, LicenseState.VALID)
