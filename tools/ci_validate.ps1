@@ -29,6 +29,8 @@ $OutDir = (Resolve-Path $OutDir).Path
 $Installer = (Resolve-Path $Installer).Path
 $DistExe = (Resolve-Path $DistExe).Path
 $Work = Join-Path $OutDir "work"
+# Versão de esquema esperada = número de migrações distribuídas (app\database\migrations\m0NNN_*.py).
+$ExpectedSchema = @(Get-ChildItem (Join-Path $PSScriptRoot "..\app\database\migrations") -Filter "m0*.py").Count
 New-Item -ItemType Directory -Force -Path $Work | Out-Null
 
 $results = New-Object System.Collections.Generic.List[object]
@@ -131,7 +133,7 @@ Invoke-Check "EXE-04" "Executável" "--check: diretórios, banco, migração e l
     $rep = Join-Path $OutDir "check-dist.json"
     $code = Run-Exe $DistExe @("--check", "--data-dir", (Join-Path $Work "dist-data"), "--report", $rep)
     $r = Read-Report $rep
-    if ($code -ne 0 -or -not $r.ok -or $r.schema_version -ne 1) { throw "código $code" }
+    if ($code -ne 0 -or -not $r.ok -or $r.schema_version -ne $ExpectedSchema) { throw "código $code; esquema v$($r.schema_version), esperado v$ExpectedSchema" }
     if (-not (Test-Path $r.database)) { throw "banco não criado" }
     if (-not (Test-Path $r.log_file)) { throw "log não criado" }
     "esquema v$($r.schema_version); banco e log criados"
