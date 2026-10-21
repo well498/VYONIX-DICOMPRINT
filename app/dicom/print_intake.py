@@ -109,8 +109,8 @@ class PrintIntake:
         priority = {"HIGH": 10, "MED": 0, "LOW": -10}.get(str(fs.get("PrintPriority", "MED")).upper(), 0)
         job_id, _ = self.jobs.create(
             source_type="dicom_print", items=items, idempotency_key=f"dicom_print:{film.film_box_uid}",
-            device_id=device_id, source_ae=peer.calling_ae, modality=modality, overrides=overrides,
-            override_label="Pedido DICOM Print", priority=priority,
+            device_id=device_id, source_ae=peer.calling_ae, modality=modality, dicom=overrides,
+            priority=priority,
             rule_facts={"film_size": film_size or None, "display_format": f"{film.cols},{film.rows}"},
             reason="; ".join(notes) if notes else None)
         log.info("Filme recebido por DICOM Print", extra={"job": job_id, "images": len(items),

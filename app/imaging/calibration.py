@@ -95,19 +95,17 @@ def apply(img, profile: CalibrationProfile):
 def test_pattern(width_px: int = 1600, height_px: int = 1200, dpi: int = 150, *, title: str = "VYONIX"):
     """Padrão de teste em tons de cinza (uint8), com régua em mm calculada pelo DPI.
 
-    Contém: escala de 21 degraus (0–100% a cada 5%), gradiente contínuo, retalhos de baixo
-    contraste nos extremos (0/2/5% e 95/98/100%), barras de resolução, régua de 10 cm nos dois
-    eixos (para conferir a escala física) e mira central.
+    Contém: escala de 21 degraus identificados (0–100% a cada 5%), gradiente contínuo, retalhos de
+    baixo contraste nos extremos (0/2/5% e 95/98/100%), barras de resolução, elementos geométricos
+    (círculo, quadrado, triângulo), régua de 10 cm nos dois eixos e mira central.
     """
     import numpy as np
     from PIL import Image, ImageDraw, ImageFont
 
     img = Image.new("L", (width_px, height_px), 255)
     d = ImageDraw.Draw(img)
-    try:
-        font = ImageFont.load_default(size=max(12, height_px // 60))
-    except TypeError:  # Pillow antigo
-        font = ImageFont.load_default()
+    from app.utils.fonts import print_font
+    font = print_font(max(12, height_px // 60))
     m = width_px // 40
     mm = dpi / 25.4
 
@@ -136,6 +134,16 @@ def test_pattern(width_px: int = 1600, height_px: int = 1200, dpi: int = 150, *,
             d.rectangle([x, btop, x + px - 1, btop + h // 2], fill=0 if k % 2 == 0 else 255)
             x += px
         x += m
+    # Elementos geométricos (círculo, quadrado e triângulo) para conferir proporção e nitidez de bordas
+    gsize = h // 2
+    gx = max(x + m, width_px // 2)
+    if gx + 3 * (gsize + m) < width_px - 2 * m:
+        d.ellipse([gx, btop, gx + gsize, btop + gsize], outline=0, width=max(2, gsize // 25))
+        gx += gsize + m
+        d.rectangle([gx, btop, gx + gsize, btop + gsize], outline=0, width=max(2, gsize // 25))
+        d.rectangle([gx + gsize // 4, btop + gsize // 4, gx + 3 * gsize // 4, btop + 3 * gsize // 4], fill=128)
+        gx += gsize + m
+        d.polygon([(gx + gsize // 2, btop), (gx, btop + gsize), (gx + gsize, btop + gsize)], outline=0, fill=64)
     # Réguas de 10 cm (marcas a cada 1 cm e 1 mm)
     rx0, ry = m, height_px - m * 2
     length = int(100 * mm)

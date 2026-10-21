@@ -98,8 +98,10 @@ def group_key(items: Iterable[str], prefix: str) -> str:
 
 class JobService:
     def __init__(self, db: Database, events: EventRepository, settings_get: Callable[[str], Any],
-                 profiles: ProfileService, printer_id: Callable[[str], int | None], rules=None) -> None:
+                 profiles: ProfileService, printer_id: Callable[[str], int | None], rules=None,
+                 device_settings=None) -> None:
         self.rules = rules
+        self.device_settings = device_settings
         self.db = db
         self.events = events
         self.get = settings_get
@@ -163,7 +165,8 @@ class JobService:
                printer: str | None = None, overrides: dict[str, Any] | None = None,
                override_label: str = "Escolha manual", parent_job_id: int | None = None, priority: int = 0,
                actor: str = "system", hold: bool | None = None, resolved: resolver.Resolved | None = None,
-               reason: str | None = None, rule_facts: dict[str, Any] | None = None) -> tuple[int, bool]:
+               reason: str | None = None, rule_facts: dict[str, Any] | None = None,
+               dicom: dict[str, Any] | None = None) -> tuple[int, bool]:
         """Cria o trabalho. Retorna (id, criado). Se a chave já existe, devolve o trabalho existente."""
         if source_type not in SOURCE_LABELS:
             raise ValidationError("Origem de trabalho inválida.")
@@ -175,21 +178,17 @@ class JobService:
         if existing:
             return int(existing["id"]), False
 
-        dev_profile = dev_printer = None
-        if device_id:
-            d = conn.execute("""SELECT d.print_profile_id, p.name AS printer_name FROM devices d
-                                LEFT JOIN printers p ON p.id = d.printer_id WHERE d.id = ?""", (device_id,)).fetchone()
-            if d:
-                dev_profile, dev_printer = d["print_profile_id"], d["printer_name"]
         ev = None
         if resolved is None:
             ev = self.evaluate_rules(source_type=source_type, source_ae=source_ae, device_id=device_id,
                                      modality=modality, items=items, extra=rule_facts)
-            resolved = resolver.resolve(self.get, self.profiles, device_id=device_id, device_profile_id=dev_profile,
-                                        modality=modality, printer=printer, overrides=overrides,
-                                        override_label=override_label, rules=ev, device_printer=dev_printer)
-            if ev is not None and ev.explanation:
-                resolved.origins["_rules"] = "\n".join(ev.explanation)
+            resolved = self.resolve_for(device_id=device_id, modality=modality, printer=printer, overrides=overrides,
+                                        override_label=override_label, rules=ev, dicom=dicom)
+        if (hold is None and source_type in ("storage", "dicom_print")
+                and resolved.values.get("auto_print") is False):
+            hold = True
+            reason = "; ".join(x for x in (reason, "Impressão manual: libere o trabalho para imprimir "
+                                                   f"({resolved.origins.get('auto_print')})") if x)
         rule_id = ev.matched_ids[0] if ev is not None and ev.matched_ids else None
         if ev is not None and ev.hold and hold is None:
             hold = True
@@ -222,6 +221,29 @@ class JobService:
                             device_id=device_id, job_id=job_id, actor=actor)
         self._notify(job_id)
         return job_id, True
+
+    def resolve_for(self, *, device_id: int | None, modality: str | None, printer: str | None = None,
+                    overrides: dict[str, Any] | None = None, override_label: str = "Escolha manual", rules=None,
+                    dicom: dict[str, Any] | None = None) -> resolver.Resolved:
+        """Resolve as configurações com toda a hierarquia (usada na criação, no reprocessamento e na
+        pré-visualização)."""
+        conn = self.db.connection()
+        dev_profile = dev_printer = dev_name = None
+        if device_id:
+            d = conn.execute("""SELECT d.name, d.print_profile_id, p.name AS printer_name FROM devices d
+                                LEFT JOIN printers p ON p.id = d.printer_id WHERE d.id = ?""", (device_id,)).fetchone()
+            if d:
+                dev_profile, dev_printer, dev_name = d["print_profile_id"], d["printer_name"], d["name"]
+        dev_settings = self.device_settings.get(device_id) if (self.device_settings and device_id) else None
+        res = resolver.resolve(self.get, self.profiles, device_id=device_id, device_profile_id=dev_profile,
+                               modality=modality, printer=printer, overrides=overrides, override_label=override_label,
+                               rules=rules, device_printer=dev_printer, device_settings=dev_settings,
+                               dicom=dicom, device_name=dev_name)
+        if rules is not None and rules.explanation:
+            res.origins["_rules"] = "\n".join(rules.explanation)
+        if dicom:
+            res.origins["_dicom"] = json.dumps(dicom, ensure_ascii=False)
+        return res
 
     def evaluate_rules(self, *, source_type: str, source_ae: str | None, device_id: int | None,
                        modality: str | None, items, extra: dict[str, Any] | None = None):
@@ -309,20 +331,11 @@ class JobService:
         job = self.get_job(job_id)
         if job.state not in (JobState.FAILED, JobState.HELD):
             raise ValidationError("Só é possível reprocessar trabalhos com falha ou retidos.")
-        dev_profile = None
-        if job.device_id:
-            r = self.db.connection().execute("SELECT print_profile_id FROM devices WHERE id = ?",
-                                             (job.device_id,)).fetchone()
-            dev_profile = r["print_profile_id"] if r else None
         items = [(it["instance_id"], it["frame_index"]) for it in self.items(job_id) if it["instance_id"]]
         ev = self.evaluate_rules(source_type=job.source_type, source_ae=job.source_ae, device_id=job.device_id,
                                  modality=job.modality, items=items)
-        dicom = {k: v for k, v in job.settings.items() if job.origins.get(k) == "Pedido DICOM Print"}
-        res = resolver.resolve(self.get, self.profiles, device_id=job.device_id, device_profile_id=dev_profile,
-                               modality=job.modality, rules=ev, overrides=dicom or None,
-                               override_label="Pedido DICOM Print")
-        if ev is not None and ev.explanation:
-            res.origins["_rules"] = "\n".join(ev.explanation)
+        dicom = json.loads(job.origins["_dicom"]) if job.origins.get("_dicom") else None
+        res = self.resolve_for(device_id=job.device_id, modality=job.modality, rules=ev, dicom=dicom)
         self._act(job_id, JobState.VALIDATING, actor, "Reprocessado com as configurações atuais", "job.reprocess",
                   f"Trabalho #{job_id} reprocessado com as configurações atuais.", attempts=0, next_attempt_at=None,
                   settings_json=json.dumps(res.values, ensure_ascii=False),
@@ -353,8 +366,15 @@ class JobService:
                         job_id=new_id, actor=actor)
         return new_id
 
-    def test_page(self, *, printer: str, actor: str, overrides: dict[str, Any] | None = None) -> int:
+    def test_page(self, *, printer: str, actor: str, overrides: dict[str, Any] | None = None,
+                  device_id: int | None = None) -> int:
+        """Página de teste (ou folha de calibração 3 × 3, com ``overrides['sheet']``). Com ``device_id``, usa as
+        configurações daquele equipamento (calibração, cabeçalho/rodapé) — nunca as de outro."""
         ov = {"printer": printer, "layout": "1x1", **(overrides or {})}
+        modality = None
+        if device_id:
+            r = self.db.connection().execute("SELECT modality FROM devices WHERE id = ?", (device_id,)).fetchone()
+            modality = r["modality"] if r else None
         job_id, _ = self.create(source_type="test_page", items=[], printer=printer, overrides=ov, actor=actor,
-                                hold=False, override_label="Página de teste")
+                                hold=False, override_label="Página de teste", device_id=device_id, modality=modality)
         return job_id

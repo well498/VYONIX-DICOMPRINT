@@ -65,6 +65,27 @@ class DeviceRepository:
             "SELECT * FROM devices WHERE active = 1 AND ae_title = ?", (ae_title.strip(),)).fetchone()
         return Device.from_row(row) if row else None
 
+    def find_by_ae(self, ae_title: str) -> list[Device]:
+        rows = self.db.connection().execute(
+            "SELECT * FROM devices WHERE active = 1 AND ae_title = ? ORDER BY id", (ae_title.strip(),)).fetchall()
+        return [Device.from_row(r) for r in rows]
+
+    def match(self, ae_title: str, address: str | None) -> tuple[Device | None, str | None]:
+        """Identifica a origem por AE Title + IP. Retorna (equipamento, motivo do conflito)."""
+        cands = self.find_by_ae(ae_title)
+        if not cands:
+            return None, None
+        exact = [d for d in cands if d.ip_address and d.ip_address == address]
+        if len(exact) == 1:
+            return exact[0], None
+        if len(cands) == 1:
+            return cands[0], None
+        no_ip = [d for d in cands if not d.ip_address]
+        if len(no_ip) == 1:
+            return no_ip[0], None
+        return None, (f"conflito: o AE Title '{ae_title}' pertence a {len(cands)} equipamentos e nenhum está "
+                      f"cadastrado com o IP {address}")
+
     def authorized_ae_titles(self) -> list[str]:
         return [r[0] for r in self.db.connection().execute(
             "SELECT ae_title FROM devices WHERE active = 1 AND authorized = 1")]

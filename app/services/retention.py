@@ -90,6 +90,16 @@ class RetentionService:
                         outputs += 1
                 except OSError:
                     continue
+        if self.output_dir is not None:      # imagens copiadas para calibração (mesmo prazo das imagens)
+            cal_dir = self.output_dir.parent / "calibration_sources"
+            if cal_dir.exists():
+                limit = (now - timedelta(days=int(self.get("retention.images_days")))).timestamp()
+                for f in cal_dir.iterdir():
+                    try:
+                        if f.is_file() and f.stat().st_mtime < limit and overwrite_and_delete(f):
+                            outputs += 1
+                    except OSError:
+                        continue
         events_removed = self.events.purge_older_than(int(self.get("retention.events_days")))
         if removed or events_removed or outputs:
             self.events.add(level="INFO", category=Category.SYSTEM, action="retention.purge",

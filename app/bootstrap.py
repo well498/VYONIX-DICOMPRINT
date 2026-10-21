@@ -41,6 +41,10 @@ from app.printing.backends import windows as win_backend
 from app.printing.backends.pdf import PdfFileBackend
 from app.printing.profiles import ProfileService
 from app.printing.service import PrinterService
+from app.printing.templates import TemplateStore
+from app.printing.calibration_rounds import CalibrationService
+from app.devices.settings import DeviceSettingsService
+from app.services.backup import BackupService
 from app.rules.engine import RuleService
 from app.licensing.license import LicenseService
 from app.services.dashboard_service import DashboardService
@@ -80,6 +84,10 @@ class AppContext:
     print_scp: PrintSCP
     rules: RuleService
     license: LicenseService
+    device_settings: DeviceSettingsService
+    templates: TemplateStore
+    calibration: CalibrationService
+    backups: BackupService
     schema_version: int
     applied_migrations: list[int] = field(default_factory=list)
     _closed: bool = False
@@ -169,11 +177,18 @@ def bootstrap(*, data_dir: str | os.PathLike[str] | None = None, role: str = "ui
                 return False
 
         rules = RuleService(db, events, profile_exists, allowed=lambda: license_service.allows("rules"))
-        jobs = JobService(db, events, get, profiles, printers.printer_id, rules=rules)
+        device_settings = DeviceSettingsService(db, events, profile_exists)
+        templates = TemplateStore(paths.machine_root)
+        templates.ensure()
+        jobs = JobService(db, events, get, profiles, printers.printer_id, rules=rules,
+                          device_settings=device_settings)
+        calibration = CalibrationService(db, events, jobs, paths.machine_root)
+        backups = BackupService(db, events, paths.backups_dir)
         collector = AutoPrintCollector(db, jobs, get)
         storage_scp.sink = collector
         worker = PrintWorker(db=db, events=events, jobs=jobs, printers=printers, imaging=imaging,
-                             collector=collector, settings_get=get, license=license_service)
+                             collector=collector, settings_get=get, license=license_service,
+                             templates=templates)
         def device_modality(device_id: int) -> str | None:
             d = devices.repo.get(device_id)
             return d.modality if d else None
@@ -183,7 +198,8 @@ def bootstrap(*, data_dir: str | os.PathLike[str] | None = None, role: str = "ui
                              printer_status=lambda: _printer_status(printers, worker),
                              licensed=lambda: license_service.allows("print_scp"))
         runtime = CoreRuntime(storage_scp=storage_scp, retention=retention, settings_get=get,
-                              worker=worker, printers=printers, print_scp=print_scp, role=role)
+                              worker=worker, printers=printers, print_scp=print_scp, role=role,
+                              backups=backups)
         access = AdminAccess(db, events, lock_minutes=lambda: int(get("security.lock_minutes")))
         ctx = AppContext(
             role=role, paths=paths, log_file=log_file, db=db, events=events, settings=settings,
@@ -195,6 +211,7 @@ def bootstrap(*, data_dir: str | os.PathLike[str] | None = None, role: str = "ui
             access=access, runtime=runtime,
             imaging=imaging, profiles=profiles, printers=printers, jobs=jobs, worker=worker,
             print_scp=print_scp, rules=rules, license=license_service,
+            device_settings=device_settings, templates=templates, calibration=calibration, backups=backups,
             schema_version=schema, applied_migrations=applied,
         )
         settings.subscribe(runtime.on_settings_changed)

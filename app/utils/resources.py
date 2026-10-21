@@ -10,6 +10,11 @@ import sys
 from pathlib import Path
 
 
+def resource_root() -> Path:
+    bundle = getattr(sys, "_MEIPASS", None)
+    return Path(bundle) if bundle else Path(__file__).resolve().parents[2]
+
+
 def assets_dir() -> Path:
     bundle = getattr(sys, "_MEIPASS", None)
     if bundle:

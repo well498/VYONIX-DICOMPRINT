@@ -19,6 +19,7 @@ Ciclo de um trabalho::
 from __future__ import annotations
 
 import threading
+from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any, Callable
 
@@ -43,6 +44,19 @@ MAX_FRAMES_PER_INSTANCE = 16
 SPOOL_POLL_S = 10
 SPOOL_WATCH_HOURS = 24
 ACTOR = "processador"
+
+
+@dataclass
+class Prepared:
+    pages: Callable[[], Any]
+    pages_total: int
+    paper: str
+    width_mm: float
+    height_mm: float
+    orientation: str
+    dpi: int
+    warnings: list[str]
+    compositor: Any = None
 
 
 class PermanentError(Exception):
@@ -132,8 +146,9 @@ def _instance_number(path: str) -> int:
 class PrintWorker:
     def __init__(self, *, db: Database, events: EventRepository, jobs: JobService, printers: PrinterService,
                  imaging, collector: AutoPrintCollector, settings_get: Callable[[str], Any],
-                 license=None) -> None:
+                 license=None, templates=None) -> None:
         self.license = license
+        self.templates = templates
         self.db = db
         self.events = events
         self.jobs = jobs
@@ -236,7 +251,7 @@ class PrintWorker:
             resolved = Resolved(dict(job.settings), dict(job.origins), job.profile_id)
             printer = self.printers.resolve(resolved.values.get("printer") or None)
             backend = self.printers.backend_for(printer)
-            spec = resolved.spec().validate()
+            resolved.spec().validate()
             items = self.jobs.items(jid)
             if job.source_type != "test_page":
                 missing = [it for it in items if not it["file_path"]]
@@ -249,27 +264,8 @@ class PrintWorker:
         if not self.jobs.transition(jid, JobState.PROCESSING, actor=ACTOR, expect=JobState.VALIDATING):
             return
         try:
-            first_aspect = None
-            if items:
-                info = self.imaging.info(items[0]["file_path"])
-                first_aspect = info.columns / info.rows if info.rows else None
-            comp = Compositor(spec, first_aspect)
-            keep = bool(resolved.values.get("keep_positions"))
-            if job.source_type == "test_page":
-                count = 1
-            elif keep:   # posições fixas (DICOM Print): células vazias continuam vazias
-                last = max(int(it["position"]) for it in items) + 1
-                count = -(-last // comp.cells) * comp.cells
-            else:
-                count = len(items)
-            annotations = self._annotations(job, resolved, items)
-            get_image = self._image_source(job, items, comp, keep)
-            # Valida o primeiro quadro já aqui (decodificação), para falhar antes do spooler.
-            first = 0 if not keep else (int(items[0]["position"]) if items else 0)
-            if count:
-                get_image(first)
-            pages_total = comp.page_count(count)
-        except (DecodeError, OSError, ValidationError) as exc:
+            prep = self.prepare(job, resolved, items, printer=printer, backend=backend)
+        except (DecodeError, OSError, ValidationError, PermanentError) as exc:
             self._fail(job, f"Não foi possível preparar as imagens: {exc}", permanent=True)
             return
         except Exception as exc:  # noqa: BLE001
@@ -280,35 +276,138 @@ class PrintWorker:
         doc = f"VYONIX-{jid}" + (f"-{job.modality}" if job.modality else "")   # sem dados do paciente
         pid = self.printers.printer_id(printer)
         if not self.jobs.transition(jid, JobState.WAITING_PRINT, actor=ACTOR, expect=JobState.PROCESSING,
-                                    page_count=pages_total, document_name=doc, printer_id=pid):
+                                    page_count=prep.pages_total, document_name=doc, printer_id=pid):
             return
         # Marca o envio ANTES de chamar o spooler: se o processo cair durante o envio, a
         # recuperação retém o trabalho em vez de imprimir de novo.
         self.jobs.update_fields(jid, submitted_at=utc_now_iso())
-        geom = PageGeometry.build(spec.paper, comp.orientation, spec.custom_mm)
-        request = SpoolRequest(printer=printer, document_name=doc,
-                               pages=lambda: comp.iter_pages(count, get_image, annotations), page_count=pages_total,
-                               copies=int(job.copies), paper=spec.paper, width_mm=geom.width_mm,
-                               height_mm=geom.height_mm, orientation=comp.orientation, dpi=spec.dpi)
+        request = SpoolRequest(printer=printer, document_name=doc, pages=prep.pages, page_count=prep.pages_total,
+                               copies=int(job.copies), paper=prep.paper, width_mm=prep.width_mm,
+                               height_mm=prep.height_mm, orientation=prep.orientation, dpi=prep.dpi)
         result = backend.submit(request)
         if not result.accepted:
             self.jobs.update_fields(jid, submitted_at=None)
             job = self.jobs.get_job(jid)
             self._fail(job, result.error or "O spooler recusou o trabalho.", permanent=False)
             return
+        notes = "; ".join(x for x in (result.detail, *prep.warnings) if x) or None
         self.jobs.transition(jid, JobState.SPOOLED, actor=ACTOR, expect=JobState.WAITING_PRINT,
-                             reason=result.detail or None, spool_job_id=result.spool_job_id,
+                             reason=notes, spool_job_id=result.spool_job_id,
                              output_path=result.output_path, spool_status="enviado")
         self.events.add(level="INFO", category=Category.SPOOLER, action="job.spooled",
-                        message=f"Trabalho #{jid}: {pages_total} página(s) enviada(s) para “{printer}”"
+                        message=f"Trabalho #{jid}: {prep.pages_total} página(s) enviada(s) para \u201c{printer}\u201d"
                                 + (f" (spooler nº {result.spool_job_id})" if result.spool_job_id else "") + ".",
                         device_id=job.device_id, job_id=jid, actor="system",
                         details={"detail": result.detail, "copies": job.copies})
+        for w in prep.warnings:
+            self.events.add(level="WARNING", category=Category.PROCESSING, action="job.warning",
+                            message=f"Trabalho #{jid}: {w}", device_id=job.device_id, job_id=jid, actor="system")
         if result.confirmed:
             self.jobs.transition(jid, JobState.COMPLETED, actor=ACTOR, expect=JobState.SPOOLED,
-                                 reason=f"Saída confirmada: {result.detail}", spool_status="concluído")
+                                 reason="Saída confirmada: " + "; ".join(x for x in (result.detail, *prep.warnings) if x),
+                                 spool_status="concluído")
         elif result.error:
             self.jobs.update_fields(jid, state_reason=result.error)
+
+    # ---------------------------------------------------------------- preparação (impressão e pré-visualização)
+    def prepare(self, job: Job, resolved: Resolved, items: list[dict], *, printer: str | None = None,
+                backend=None) -> "Prepared":
+        """Monta a fábrica de páginas exatamente como será impressa. Usada também pela pré-visualização,
+        para que tela e papel nunca divirjam."""
+        from dataclasses import replace as dc_replace
+        warnings: list[str] = []
+        values = resolved.values
+        spec = resolved.spec()
+        spec = dc_replace(spec, identity_max_height_mm=float(self.get("print_identity.max_height_mm") or 0),
+                          min_effective_dpi=int(self.get("printing.min_effective_dpi") or 0))
+        if values.get("sheet"):
+            return self._prepare_sheet(job, resolved, printer)
+        header_img = footer_img = None
+        if self.templates is not None:
+            if spec.header_image:
+                header_img, w = self.templates.load("header")
+                warnings += [w] if w else []
+            if spec.footer_image:
+                footer_img, w = self.templates.load("footer")
+                warnings += [w] if w else []
+        first_aspect = None
+        if items:
+            size = self.imaging.size_of(items[0]["file_path"])
+            first_aspect = size[0] / size[1] if size and size[1] else None
+        comp = Compositor(spec, first_aspect, header_img=header_img, footer_img=footer_img)
+        # Área não imprimível da impressora (quando o driver informa): margens nunca menores que ela.
+        if backend is not None and printer and hasattr(backend, "printable_margins_mm"):
+            try:
+                hw = backend.printable_margins_mm(printer, spec.paper, comp.geom.width_mm, comp.geom.height_mm,
+                                                  comp.orientation)
+            except Exception as exc:  # noqa: BLE001
+                hw = None
+                log.info("Área imprimível não informada: %s", exc)
+            if hw:
+                spec = dc_replace(spec, hardware_margins_mm=tuple(hw), orientation=comp.orientation)
+                comp = Compositor(spec, first_aspect, header_img=header_img, footer_img=footer_img)
+        keep = bool(values.get("keep_positions"))
+        if job.source_type == "test_page":
+            count = 1
+        elif keep:   # posições fixas (DICOM Print): células vazias continuam vazias
+            last = max(int(it["position"]) for it in items) + 1
+            count = -(-last // comp.cells) * comp.cells
+        else:
+            count = len(items)
+        annotations = self._annotations(job, resolved, items)
+        get_image = self._image_source(job, items, comp, keep, resolved.tone())
+        first = 0 if not keep else (int(items[0]["position"]) if items else 0)
+        if count:
+            get_image(first)       # decodifica já aqui, para falhar antes do spooler
+        geom = PageGeometry.build(spec.paper, comp.orientation, spec.custom_mm)
+        prep = Prepared(pages=lambda: comp.iter_pages(count, get_image, annotations), pages_total=comp.page_count(count),
+                        paper=spec.paper, width_mm=geom.width_mm, height_mm=geom.height_mm,
+                        orientation=comp.orientation, dpi=spec.dpi, warnings=warnings, compositor=comp)
+        return prep
+
+    def _prepare_sheet(self, job: Job, resolved: Resolved, printer: str | None) -> "Prepared":
+        from app.imaging import tone as tone_mod
+        from app.imaging.calibration import CalibrationProfile
+        from app.printing import calibration_sheet as cs
+        from app.printing.calibration_rounds import CalibrationService
+        sheet = resolved.values["sheet"]
+        matrix = cs.build_matrix(tone_mod.ToneControls.from_values(sheet["center"]), sheet["mode"], float(sheet["step"]))
+        source = CalibrationService.resolve_source(sheet["source"])
+        paper = resolved.values["paper"]
+        orientation = resolved.values.get("orientation") or "landscape"
+        orientation = orientation if orientation in ("portrait", "landscape") else "landscape"
+        dpi = min(int(resolved.values.get("dpi") or 200), 300)
+        cal = CalibrationProfile.from_json(resolved.values.get("calibration"))
+        info = cs.sheet_info(device=sheet.get("device"), modality=sheet.get("modality"), printer=printer, paper=paper)
+
+        def render(params, max_side):
+            return self.imaging.render(source, params, max_side=max_side)
+        render(matrix.cells[0].tone.to_params(), 64)      # valida a fonte antes do spooler
+        geom = PageGeometry.build(paper, orientation)
+        return Prepared(pages=lambda: iter([cs.compose(matrix, render, paper=paper, orientation=orientation, dpi=dpi,
+                                                       info=info, calibration=cal)]),
+                        pages_total=1, paper=paper, width_mm=geom.width_mm, height_mm=geom.height_mm,
+                        orientation=orientation, dpi=dpi, warnings=list(matrix.notes), compositor=None)
+
+    def preview(self, job_id: int, max_pages: int = 4) -> tuple[list, list[str]]:
+        """Páginas do trabalho como serão impressas (sem enviar ao spooler)."""
+        job = self.jobs.get_job(job_id)
+        resolved = Resolved(dict(job.settings), dict(job.origins), job.profile_id)
+        printer = None
+        backend = None
+        try:
+            printer = self.printers.resolve(resolved.values.get("printer") or None)
+            backend = self.printers.backend_for(printer)
+        except Exception:  # noqa: BLE001 - pré-visualização sem impressora: sem margens físicas
+            pass
+        prep = self.prepare(job, resolved, self.jobs.items(job_id), printer=printer, backend=backend)
+        pages = []
+        for page in prep.pages():
+            pages.append(page)
+            if len(pages) >= max_pages:
+                break
+        warnings = list(prep.warnings) + (list(prep.compositor.warnings) if prep.compositor else [])
+        return pages, warnings
 
     def _fail(self, job: Job, message: str, *, permanent: bool) -> None:
         current = self.jobs.get_job(job.id)
@@ -327,13 +426,17 @@ class PrintWorker:
 
     # ---------------------------------------------------------------- imagens e anotações
     def _image_source(self, job: Job, items: list[dict], comp: Compositor,
-                      keep_positions: bool = False) -> Callable[[int], RenderedImage | None]:
+                      keep_positions: bool = False, tone=None) -> Callable[[int], RenderedImage | None]:
         if job.source_type == "test_page":
             x, y, w, h = comp.cell_rects_mm()[0]
             wpx, hpx = round(w * comp.px_per_mm), round(h * comp.px_per_mm)
 
             def pattern(_i: int) -> RenderedImage:
                 px = calibration.test_pattern(wpx, hpx, dpi=comp.spec.dpi, title="VYONIX — página de teste")
+                if tone is not None and not tone.is_neutral():
+                    from app.imaging.pipeline import adjust, to_uint8
+                    v, _ = adjust(px.astype("float32") / 255.0, tone.to_params())
+                    px = to_uint8(v)
                 return RenderedImage(pixels=px, photometric="MONOCHROME2", pixel_spacing_mm=None,
                                      applied={"source": "padrão de teste"})
             return pattern
@@ -344,8 +447,10 @@ class PrintWorker:
             it = by_pos.get(i) if keep_positions else items[i]
             if it is None:
                 return None
-            return self.imaging.render(it["file_path"], PresentationParams(frame_index=int(it["frame_index"])),
-                                       max_side=None)
+            params = PresentationParams(frame_index=int(it["frame_index"]))
+            if tone is not None:
+                params = tone.to_params(params)     # brilho/contraste/gama do equipamento, em ponto flutuante
+            return self.imaging.render(it["file_path"], params, max_side=None)
         return render
 
     def _annotations(self, job: Job, resolved: Resolved, items: list[dict]) -> PageAnnotations:

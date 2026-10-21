@@ -24,8 +24,9 @@ SCP_RESTART_KEYS = {"dicom.storage.ae_title", "dicom.storage.bind_address", "dic
 
 class CoreRuntime:
     def __init__(self, *, storage_scp, retention, settings_get: Callable[[str], Any], worker=None,
-                 printers=None, print_scp=None, role: str = "ui") -> None:
+                 printers=None, print_scp=None, role: str = "ui", backups=None) -> None:
         self.role = role
+        self.backups = backups
         self.storage_scp = storage_scp
         self.print_scp = print_scp
         self.worker = worker
@@ -119,6 +120,11 @@ class CoreRuntime:
         while True:
             try:
                 self.retention.purge()
+                if self.backups is not None:
+                    try:
+                        self.backups.daily()
+                    except Exception:  # noqa: BLE001
+                        log.exception("Falha no backup automático")
             except Exception:  # noqa: BLE001
                 log.exception("Falha na retenção")
             finally:

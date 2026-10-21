@@ -73,6 +73,7 @@ GROUPS: tuple[tuple[str, str], ...] = (
     ("dicom_print", "DICOM — Impressão (Print SCP)"),
     ("jobs", "Fila de impressão"),
     ("printing", "Impressão — padrões"),
+    ("print_identity", "Identidade da Impressão (cabeçalho e rodapé BMP)"),
     ("retention", "Retenção de dados"),
     ("security", "Segurança"),
     ("ui", "Interface"),
@@ -114,6 +115,13 @@ DEFINITIONS: tuple[SettingDef, ...] = (
                     "Usa o mesmo cadastro e autorização de equipamentos da recepção."),
     SettingDef("dicom.print.color", "Aceitar impressão colorida", "dicom_print", "bool", True,
                help="Oferece a Basic Color Print Management Meta SOP Class além da escala de cinza."),
+    SettingDef("dicom.print.policy", "Prioridade do pedido DICOM Print (padrão)", "dicom_print", "choice",
+               "device_first",
+               choices=(("device_first", "Configuração do equipamento prevalece"),
+                        ("dicom_first", "Pedido DICOM Print prevalece"),
+                        ("ignore_dicom", "Ignorar parâmetros do pedido")),
+               help="Vale para equipamentos sem política própria. Afeta layout, orientação e cópias pedidos "
+                    "pelo equipamento via DICOM Print."),
     SettingDef("dicom.print.honor_density", "Aplicar densidades do filme ao papel", "dicom_print", "bool",
                False, help="Desligado: fundo e bordas pretos pedidos para filme não são impressos no papel "
                            "(evita páginas inteiras pretas). Ligado: Empty Image Density BLACK/WHITE é aplicada."),
@@ -169,6 +177,20 @@ DEFINITIONS: tuple[SettingDef, ...] = (
                False, help="Desativado por padrão (LGPD). Quando ativo, os dados são lidos do arquivo "
                            "DICOM apenas no momento da impressão e não são gravados no banco nem nos logs."),
     SettingDef("printing.page_numbers", "Numerar páginas", "printing", "bool", True),
+    SettingDef("printing.min_effective_dpi", "Alertar resolução efetiva abaixo de (dpi)", "printing", "int", 100,
+               validator=v.int_range(30, 600, "Resolução mínima"), minimum=30, maximum=600,
+               help="Resolução da imagem de origem no tamanho impresso. Abaixo deste valor o trabalho registra "
+                    "um alerta (a imagem é ampliada além da sua resolução)."),
+
+    SettingDef("print_identity.header_enabled", "Imprimir cabeçalho BMP (padrão)", "print_identity", "bool",
+               False, help="Pode ser ligado ou desligado em cada equipamento."),
+    SettingDef("print_identity.footer_enabled", "Imprimir rodapé BMP (padrão)", "print_identity", "bool",
+               False, help="Pode ser ligado ou desligado em cada equipamento."),
+    SettingDef("print_identity.gap_mm", "Espaço entre cabeçalho/rodapé e imagens (mm)", "print_identity", "int",
+               3, validator=v.int_range(0, 30, "Espaço"), minimum=0, maximum=30),
+    SettingDef("print_identity.max_height_mm", "Altura máxima do cabeçalho/rodapé (mm, 0 = sem limite)",
+               "print_identity", "int", 0, validator=v.int_range(0, 60, "Altura máxima"), minimum=0, maximum=60,
+               help="A arte mantém a proporção 3000:206; limitar a altura reduz também a largura."),
 
     SettingDef("retention.images_days", "Reter imagens recebidas (dias)", "retention", "int", 30,
                validator=v.int_range(1, 3650, "Retenção de imagens"), minimum=1, maximum=3650,

@@ -29,6 +29,7 @@ log = get_logger("printing.windows")
 DC_PAPERS, DC_PAPERNAMES, DC_ENUMRESOLUTIONS, DC_COPIES, DC_COLORDEVICE = 2, 16, 13, 18, 32
 PHYSICALWIDTH, PHYSICALHEIGHT, PHYSICALOFFSETX, PHYSICALOFFSETY = 110, 111, 112, 113
 LOGPIXELSX, LOGPIXELSY = 88, 90
+HORZRES, VERTRES = 8, 10
 DM_ORIENTATION, DM_PAPERSIZE, DM_PAPERLENGTH, DM_PAPERWIDTH = 0x1, 0x2, 0x4, 0x8
 DM_COPIES, DM_COLLATE = 0x100, 0x8000
 DM_IN_BUFFER, DM_OUT_BUFFER = 8, 2
@@ -221,6 +222,46 @@ class WindowsPrinterBackend:
             if hprinter is not None:
                 win32print.ClosePrinter(hprinter)
             _ = win32con  # importado para garantir que o PyInstaller inclua o módulo
+
+    def printable_margins_mm(self, printer: str, paper: str, width_mm: float, height_mm: float,
+                             orientation: str) -> tuple[float, float, float, float] | None:
+        """Área não imprimível (topo, direita, base, esquerda) em mm para o papel e a orientação pedidos."""
+        import win32gui
+        import win32print
+        import win32ui
+        h = win32print.OpenPrinter(printer)
+        try:
+            info = win32print.GetPrinter(h, 2)
+            devmode = info.get("pDevMode")
+            if devmode is None:
+                return None
+            code = DMPAPER.get(paper)
+            if code:
+                devmode.PaperSize = code
+                devmode.Fields |= DM_PAPERSIZE
+            else:
+                devmode.PaperSize = 0
+                devmode.PaperWidth = round(min(width_mm, height_mm) * 10)
+                devmode.PaperLength = round(max(width_mm, height_mm) * 10)
+                devmode.Fields |= DM_PAPERWIDTH | DM_PAPERLENGTH
+            devmode.Orientation = 2 if orientation == "landscape" else 1
+            devmode.Fields |= DM_ORIENTATION
+            win32print.DocumentProperties(0, h, printer, devmode, devmode, DM_IN_BUFFER | DM_OUT_BUFFER)
+        finally:
+            win32print.ClosePrinter(h)
+        hdc = win32gui.CreateDC("WINSPOOL", printer, devmode)
+        dc = win32ui.CreateDCFromHandle(hdc)
+        try:
+            dpi_x, dpi_y = dc.GetDeviceCaps(LOGPIXELSX), dc.GetDeviceCaps(LOGPIXELSY)
+            pw, ph = dc.GetDeviceCaps(PHYSICALWIDTH), dc.GetDeviceCaps(PHYSICALHEIGHT)
+            ox, oy = dc.GetDeviceCaps(PHYSICALOFFSETX), dc.GetDeviceCaps(PHYSICALOFFSETY)
+            hres, vres = dc.GetDeviceCaps(HORZRES), dc.GetDeviceCaps(VERTRES)
+        finally:
+            dc.DeleteDC()
+        if not dpi_x or not dpi_y:
+            return None
+        mm = lambda px, dpi: round(px / dpi * 25.4, 1)  # noqa: E731
+        return (mm(oy, dpi_y), mm(max(0, pw - hres - ox), dpi_x), mm(max(0, ph - vres - oy), dpi_y), mm(ox, dpi_x))
 
     def job_status(self, printer: str, spool_job_id: int) -> SpoolStatus:
         import pywintypes

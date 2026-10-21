@@ -55,7 +55,9 @@ class AssociationPolicy:
                             diagnostic=DIAG_CALLED_AE)
         if calling == SELFTEST_AE and (address in LOOPBACK or address in local_addresses):
             return Decision(True, "Autoteste local")
-        device: Device | None = self.devices.get_by_ae(calling)
+        device, conflict = self.devices.match(calling, address)
+        if conflict:
+            return Decision(False, conflict.capitalize(), diagnostic=DIAG_CALLING_AE)
         if device is None:
             if accept_unknown:
                 return Decision(True, "Equipamento não cadastrado aceito (opção habilitada)")

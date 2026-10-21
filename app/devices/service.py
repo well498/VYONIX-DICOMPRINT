@@ -99,9 +99,14 @@ class DeviceService:
             clean[key] = int(value) if value not in (None, "") else None
 
         if "ae_title" in clean and "ae_title" not in errors:
-            other = self.repo.get_by_ae(clean["ae_title"])
-            if other and other.id != device_id:
-                errors["ae_title"] = f"AE Title já usado por \"{other.name}\"."
+            ip = clean.get("ip_address")
+            for other in self.repo.find_by_ae(clean["ae_title"]):
+                if other.id == device_id:
+                    continue
+                if not ip or not other.ip_address or other.ip_address == ip:
+                    errors["ae_title"] = (f"AE Title já usado por \"{other.name}\". Para dois equipamentos com o "
+                                          "mesmo AE Title, informe IPs diferentes nos dois cadastros.")
+                    break
         if errors:
             raise SettingsValidationError(errors)
         return clean
@@ -117,6 +122,11 @@ class DeviceService:
             from app.core.errors import ValidationError
             raise ValidationError(f"A licença permite {limit} equipamento(s) autorizado(s). Bloqueie outro "
                                   "equipamento ou amplie a licença.")
+
+    def _match_import(self, item) -> Device | None:
+        cands = self.repo.find_by_ae(str(item.get("ae_title", "")))
+        ip = item.get("ip_address") or None
+        return next((d for d in cands if (d.ip_address or None) == ip), cands[0] if len(cands) == 1 else None)
 
     def create(self, data: Mapping[str, Any], *, actor: str, authorized: bool = False) -> Device:
         clean = self.validate(data)
@@ -231,7 +241,7 @@ class DeviceService:
         # Valida tudo antes de gravar qualquer coisa.
         for i, item in enumerate(items):
             try:
-                existing = self.repo.get_by_ae(str(item.get("ae_title", "")))
+                existing = self._match_import(item)
                 self.validate(item, device_id=existing.id if existing else None)
             except SettingsValidationError as exc:
                 errors[f"item {i + 1}"] = "; ".join(f"{k}: {m}" for k, m in exc.errors.items())
@@ -239,7 +249,7 @@ class DeviceService:
             raise SettingsValidationError(errors)
         with self.db.transaction():
             for item in items:
-                existing = self.repo.get_by_ae(str(item["ae_title"]))
+                existing = self._match_import(item)
                 data = {k: item.get(k) for k in EDITABLE if k in item}
                 if existing:
                     self.update(existing.id, data, actor=actor)

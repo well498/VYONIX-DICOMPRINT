@@ -46,6 +46,15 @@ class LayoutSpec:
     exam_info: bool = True
     page_numbers: bool = True
     calibration: CalibrationProfile = field(default_factory=CalibrationProfile)
+    # Identidade da impressão (BMP universal 3000 × 206): ativação por equipamento, artes compartilhadas
+    header_image: bool = False
+    footer_image: bool = False
+    header_gap_mm: float = 3.0
+    footer_gap_mm: float = 3.0
+    identity_max_height_mm: float = 0.0       # 0 = sem limite
+    extra_margin_mm: float = 0.0
+    hardware_margins_mm: tuple[float, float, float, float] | None = None   # área não imprimível da impressora
+    min_effective_dpi: int = 0                 # alerta de resolução de origem insuficiente (0 = desligado)
 
     def validate(self) -> "LayoutSpec":
         parse_layout(self.layout)
@@ -70,16 +79,21 @@ class PageAnnotations:
 
 
 def _font(px: int):
-    from PIL import ImageFont
-    try:
-        return ImageFont.load_default(size=max(8, px))
-    except TypeError:
-        return ImageFont.load_default()
+    from app.utils.fonts import print_font
+    return print_font(px)
+
+
+IDENTITY_RATIO = 206 / 3000
 
 
 class Compositor:
-    def __init__(self, spec: LayoutSpec, image_aspect: float | None = None) -> None:
+    def __init__(self, spec: LayoutSpec, image_aspect: float | None = None, *, header_img=None,
+                 footer_img=None) -> None:
+        """``header_img``/``footer_img``: imagens PIL 3000 × 206 (já validadas) ou None."""
         self.spec = spec.validate()
+        self.header_img = header_img if spec.header_image else None
+        self.footer_img = footer_img if spec.footer_image else None
+        self.warnings: list[str] = []
         self.rows, self.cols = parse_layout(spec.layout)
         orientation = resolve_orientation(spec.orientation, self.rows, self.cols, image_aspect)
         self.geom = PageGeometry.build(spec.paper, orientation, spec.custom_mm)
@@ -96,20 +110,51 @@ class Compositor:
         return max(1, math.ceil(images / self.cells))
 
     # -------------------------------------------------------------- geometria
+    def margins(self) -> tuple[float, float, float, float]:
+        """Margens efetivas: configuradas + adicionais, nunca menores que a área não imprimível."""
+        s = self.spec
+        m = [v + s.extra_margin_mm for v in s.margins_mm]
+        if s.hardware_margins_mm:
+            m = [max(a, b) for a, b in zip(m, s.hardware_margins_mm)]
+        return tuple(m)  # type: ignore[return-value]
+
+    def identity_box_mm(self) -> tuple[float, float]:
+        """(largura, altura) do cabeçalho/rodapé BMP no papel: largura útil, proporção 3000:206."""
+        top, right, bottom, left = self.margins()
+        w = self.geom.width_mm - left - right
+        h = w * IDENTITY_RATIO
+        cap = self.spec.identity_max_height_mm
+        if cap and h > cap:
+            h, w = cap, cap / IDENTITY_RATIO
+        return w, h
+
+    def _identity_bands_mm(self) -> tuple[float, float]:
+        _, h = self.identity_box_mm()
+        s = self.spec
+        top = h + s.header_gap_mm if self.header_img is not None else 0.0
+        bottom = h + s.footer_gap_mm if self.footer_img is not None else 0.0
+        return top, bottom
+
     def _bands_mm(self) -> tuple[float, float]:
         s = self.spec
         header = 8.0 if (s.header_text or s.logo_path or s.exam_info) else 0.0
         footer = 6.0 if (s.footer_text or s.page_numbers) else 0.0
         return header, footer
 
+    def image_area_mm(self) -> tuple[float, float, float, float]:
+        """Área útil das imagens (x, y, w, h) após margens, cabeçalho/rodapé BMP e faixas de texto."""
+        top, right, bottom, left = self.margins()
+        header, footer = self._bands_mm()
+        id_top, id_bottom = self._identity_bands_mm()
+        x0, y0 = left, top + id_top + header
+        w = self.geom.width_mm - left - right
+        h = self.geom.height_mm - top - bottom - header - footer - id_top - id_bottom
+        return x0, y0, w, h
+
     def cell_rects_mm(self) -> list[tuple[float, float, float, float]]:
         """Retângulos (x, y, w, h) em mm, na ordem de preenchimento."""
         s = self.spec
-        top, right, bottom, left = s.margins_mm
-        header, footer = self._bands_mm()
-        x0, y0 = left, top + header
-        w = self.geom.width_mm - left - right
-        h = self.geom.height_mm - top - bottom - header - footer
+        x0, y0, w, h = self.image_area_mm()
         cw = (w - s.spacing_mm * (self.cols - 1)) / self.cols
         ch = (h - s.spacing_mm * (self.rows - 1)) / self.rows
         if cw <= 5 or ch <= 5:
@@ -155,6 +200,7 @@ class Compositor:
                 tw, th = max(1, round(pil.width * scale)), max(1, round(pil.height * scale))
             else:
                 tw, th = cw, ch
+            self._check_resolution(index, img, pil.width, pil.height, tw, th)
             pil = pil.resize((tw, th), Image.Resampling.LANCZOS)
             ox = {"left": 0, "top-left": 0, "right": cw - tw}.get(s.align, (cw - tw) // 2)
             oy = {"top": 0, "top-left": 0, "bottom": ch - th}.get(s.align, (ch - th) // 2)
@@ -165,7 +211,18 @@ class Compositor:
                                outline=ink, width=bw)
 
         header, footer = self._bands_mm()
-        top, right, bottom, left = s.margins_mm
+        top, right, bottom, left = self.margins()
+        id_top, id_bottom = self._identity_bands_mm()
+        iw, ih = self.identity_box_mm()
+        for art, y_mm in ((self.header_img, top), (self.footer_img, self.geom.height_mm - bottom - ih)):
+            if art is None:
+                continue
+            x_mm = (self.geom.width_mm - iw) / 2           # centralizado horizontalmente
+            (ax0, ay0), (ax1, ay1) = self._to_px(x_mm, y_mm), self._to_px(x_mm + iw, y_mm + ih)
+            scaled = art.resize((max(1, ax1 - ax0), max(1, ay1 - ay0)), Image.Resampling.LANCZOS)
+            page.paste(scaled.convert(mode), (ax0, ay0))
+        top += id_top
+        bottom += id_bottom
         font = _font(round(3.2 * self.px_per_mm))
         if header:
             hx, hy = self._to_px(left, top)
@@ -194,6 +251,20 @@ class Compositor:
                 rx, _ = self._to_px(self.geom.width_mm - right, 0)
                 draw.text((rx - draw.textlength(label, font=font), fy), label, fill=ink, font=font)
         return ComposedPage(index=index, pixels=np.asarray(page), dpi=s.dpi)
+
+    def _check_resolution(self, page_index: int, img, src_w: int, src_h: int, dst_w: int, dst_h: int) -> None:
+        """Resolução efetiva da imagem de origem no tamanho impresso (não confundir com o dpi de saída)."""
+        limit = self.spec.min_effective_dpi
+        if not limit or not dst_w:
+            return
+        size_in = dst_w / self.spec.dpi
+        source_w = img.applied.get("source_width", src_w) if isinstance(img.applied, dict) else src_w
+        effective = source_w / size_in if size_in else 0
+        if effective < limit:
+            msg = (f"Página {page_index + 1}: imagem de {source_w} px impressa com {dst_w / self.px_per_mm:.0f} mm "
+                   f"de largura → {effective:.0f} dpi efetivos (abaixo de {limit} dpi); pode parecer borrada")
+            if msg not in self.warnings:
+                self.warnings.append(msg)
 
     def iter_pages(self, count: int, get_image: Callable[[int], RenderedImage | None],
                    annotations: PageAnnotations = PageAnnotations()) -> Iterator[ComposedPage]:

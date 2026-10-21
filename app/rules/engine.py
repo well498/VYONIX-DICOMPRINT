@@ -68,13 +68,25 @@ ACTIONS: dict[str, tuple[str, str]] = {
     "border": ("Borda", "bool"),
     "exam_info": ("Informações do exame", "bool"),
     "page_numbers": ("Numerar páginas", "bool"),
+    "spacing_mm": ("Espaçamento entre imagens (mm)", "device"),
+    "brightness": ("Brilho (−5 a +5)", "device"),
+    "contrast": ("Contraste (−5 a +5)", "device"),
+    "gamma": ("Gama (−5 a +5)", "device"),
+    "invert": ("Inverter escala de cinza", "bool"),
+    "header_enabled": ("Cabeçalho BMP", "bool"),
+    "footer_enabled": ("Rodapé BMP", "bool"),
+    "auto_print": ("Impressão automática (não = manual)", "bool"),
+    "dicom_policy": ("Prioridade do pedido DICOM Print", "device"),
+    "calibration_profile_id": ("Perfil de calibração associado", "device"),
     "profile_id": ("Aplicar perfil", "int"),
     "hold": ("Reter para liberação manual", "bool"),
     "priority": ("Prioridade na fila (−100 a 100)", "int"),
     "stop": ("Parar de avaliar as regras seguintes", "bool"),
 }
 SETTING_ACTIONS = {"printer", "paper", "orientation", "layout", "copies", "dpi", "margin_mm", "header_text",
-                   "footer_text", "border", "exam_info", "page_numbers"}
+                   "footer_text", "border", "exam_info", "page_numbers", "spacing_mm", "brightness", "contrast",
+                   "gamma", "invert", "header_enabled", "footer_enabled", "auto_print", "dicom_policy",
+                   "calibration_profile_id"}
 
 
 @dataclass
@@ -87,16 +99,19 @@ class Rule:
     active: bool = True
     description: str | None = None
     updated_at: str | None = None
+    device_id: int | None = None          # regra do equipamento (None = regra geral)
 
     @classmethod
     def from_row(cls, r) -> "Rule":
         return cls(id=r["id"], name=r["name"], description=r["description"],
                    conditions=json.loads(r["conditions_json"]), actions=json.loads(r["actions_json"]),
-                   priority=r["priority"], active=bool(r["active"]), updated_at=r["updated_at"])
+                   priority=r["priority"], active=bool(r["active"]), updated_at=r["updated_at"],
+                   device_id=r["device_id"] if "device_id" in r.keys() else None)
 
     def to_export(self) -> dict[str, Any]:
         return {"name": self.name, "description": self.description, "priority": self.priority,
-                "active": self.active, "conditions": self.conditions, "actions": self.actions}
+                "active": self.active, "conditions": self.conditions, "actions": self.actions,
+                "device_id": self.device_id}
 
 
 @dataclass
@@ -180,8 +195,12 @@ def check_condition(cond: dict[str, Any], facts: dict[str, Any]) -> tuple[bool, 
 
 
 def evaluate(rules: list[Rule], facts: dict[str, Any]) -> Evaluation:
+    """Regras do próprio equipamento primeiro (maior prioridade), depois as gerais; em cada grupo,
+    número de prioridade menor primeiro. Regras de outros equipamentos nunca se aplicam."""
     ev = Evaluation()
-    for rule in sorted((r for r in rules if r.active), key=lambda r: (r.priority, r.id or 0)):
+    dev = facts.get("device_id")
+    applicable = [r for r in rules if r.active and (r.device_id is None or r.device_id == dev)]
+    for rule in sorted(applicable, key=lambda r: (0 if r.device_id is not None else 1, r.priority, r.id or 0)):
         results = [check_condition(c, facts) for c in rule.conditions]
         ok = all(r[0] for r in results)
         detail = "; ".join(r[1] for r in results) or "sem condições (vale para todos)"
@@ -189,9 +208,10 @@ def evaluate(rules: list[Rule], facts: dict[str, Any]) -> Evaluation:
             ev.explanation.append(f"✗ Regra “{rule.name}” (prioridade {rule.priority}) não se aplica — {detail}")
             continue
         ev.matched.append(rule.name)
+        scope = "do equipamento " if rule.device_id is not None else ""
         if rule.id is not None:
             ev.matched_ids.append(rule.id)
-        src = f"Regra “{rule.name}”"
+        src = f"Regra {scope}“{rule.name}”"
         applied, skipped = [], []
         for key, val in rule.actions.items():
             if key in ("stop",):
@@ -293,6 +313,13 @@ def validate_rule(rule: Rule, profile_exists: Callable[[int], bool] | None = Non
             errors["actions"] = f"Ação desconhecida: {key}."
             continue
         kind = ACTIONS[key][1]
+        if kind == "device" or key in ("invert", "header_enabled", "footer_enabled", "auto_print"):
+            from app.devices.settings import validate_values
+            try:
+                validate_values({key: val}, profile_exists)
+            except SettingsValidationError as exc:
+                errors[f"action:{key}"] = "; ".join(exc.errors.values())
+            continue
         try:
             if kind == "paper" and val not in PAPER_SIZES:
                 raise ValueError("papel inválido")
@@ -328,9 +355,19 @@ class RuleService:
         self.history = ChangeHistoryRepository(db)
         self.profile_exists = profile_exists
 
-    def list(self, include_inactive: bool = True) -> list[Rule]:
-        sql = "SELECT * FROM rules" + ("" if include_inactive else " WHERE active = 1") + " ORDER BY priority, id"
-        return [Rule.from_row(r) for r in self.db.connection().execute(sql)]
+    def list(self, include_inactive: bool = True, device_id: int | None | str = "all") -> list[Rule]:
+        """``device_id``: "all" (todas), None (só gerais) ou o id do equipamento (só as dele)."""
+        where, params = [], []
+        if not include_inactive:
+            where.append("active = 1")
+        if device_id is None:
+            where.append("device_id IS NULL")
+        elif device_id != "all":
+            where.append("device_id = ?")
+            params.append(int(device_id))
+        sql = "SELECT * FROM rules" + (" WHERE " + " AND ".join(where) if where else "") + \
+            " ORDER BY device_id IS NOT NULL DESC, device_id, priority, id"
+        return [Rule.from_row(r) for r in self.db.connection().execute(sql, params)]
 
     def get(self, rule_id: int) -> Rule:
         r = self.db.connection().execute("SELECT * FROM rules WHERE id = ?", (rule_id,)).fetchone()
@@ -352,18 +389,21 @@ class RuleService:
         if dup:
             raise SettingsValidationError({"name": "Já existe uma regra com este nome."})
         now = utc_now_iso()
+        if rule.device_id is not None and conn.execute("SELECT 1 FROM devices WHERE id = ?",
+                                                       (rule.device_id,)).fetchone() is None:
+            raise SettingsValidationError({"device": "Equipamento da regra não encontrado."})
         values = (rule.name, rule.description, json.dumps(rule.conditions, ensure_ascii=False),
-                  json.dumps(rule.actions, ensure_ascii=False), int(rule.priority), int(rule.active))
+                  json.dumps(rule.actions, ensure_ascii=False), int(rule.priority), int(rule.active), rule.device_id)
         with self.db.transaction():
             if rule.id is None:
                 cur = conn.execute("""INSERT INTO rules(name, description, conditions_json, actions_json, priority,
-                                         active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                                         active, device_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                                    (*values, now, now))
                 rid, old = int(cur.lastrowid), None
             else:
                 old = self.get(rule.id)
                 conn.execute("""UPDATE rules SET name=?, description=?, conditions_json=?, actions_json=?, priority=?,
-                                active=?, updated_at=? WHERE id = ?""", (*values, now, rule.id))
+                                active=?, device_id=?, updated_at=? WHERE id = ?""", (*values, now, rule.id))
                 rid = rule.id
             self.history.record(entity_type="rule", entity_id=str(rid), field="rule",
                                 old_value=old.to_export() if old else None, new_value=rule.to_export(), actor=actor)
@@ -387,9 +427,47 @@ class RuleService:
             self.events.add(level="WARNING", category=Category.RULES, action="rule.delete",
                             message=f"Regra “{rule.name}” excluída.", actor=actor)
 
+    def duplicate(self, rule_id: int, *, actor: str, device_id: int | None | str = "same") -> Rule:
+        """Cópia independente (inativa até ser revisada), opcionalmente para outro equipamento."""
+        src = self.get(rule_id)
+        base = f"{src.name} (cópia)"
+        name, n = base, 2
+        names = {r.name for r in self.list()}
+        while name in names:
+            name, n = f"{base} {n}", n + 1
+        copy = Rule(id=None, name=name, description=src.description, conditions=json.loads(json.dumps(src.conditions)),
+                    actions=json.loads(json.dumps(src.actions)), priority=src.priority, active=False,
+                    device_id=src.device_id if device_id == "same" else device_id)
+        return self.save(copy, actor=actor)
+
+    def versions(self, rule_id: int) -> list[dict[str, Any]]:
+        """Versões anteriores registradas no histórico de alterações."""
+        out = []
+        for h in self.history.list(entity_type="rule", entity_id=str(rule_id)):
+            if h.old_value:
+                try:
+                    out.append({"id": h.id, "changed_at": h.changed_at, "changed_by": h.changed_by,
+                                "rule": json.loads(h.old_value) if isinstance(h.old_value, str) else h.old_value})
+                except ValueError:
+                    continue
+        return out
+
+    def restore_version(self, rule_id: int, history_id: int, *, actor: str) -> Rule:
+        v = next((x for x in self.versions(rule_id) if x["id"] == history_id), None)
+        if v is None:
+            raise ValidationError("Versão não encontrada no histórico desta regra.")
+        old = v["rule"]
+        rule = self.get(rule_id)
+        restored = Rule(id=rule.id, name=old.get("name", rule.name), description=old.get("description"),
+                        conditions=list(old.get("conditions") or []), actions=dict(old.get("actions") or {}),
+                        priority=int(old.get("priority", rule.priority)), active=bool(old.get("active", True)),
+                        device_id=old.get("device_id", rule.device_id))
+        return self.save(restored, actor=actor)
+
     def move(self, rule_id: int, delta: int, *, actor: str) -> None:
-        """Troca a prioridade com a regra vizinha (delta −1 = sobe, +1 = desce)."""
-        rules = self.list()
+        """Troca a prioridade com a regra vizinha do mesmo escopo (delta −1 = sobe, +1 = desce)."""
+        me = self.get(rule_id)
+        rules = self.list(device_id=me.device_id)
         idx = next(i for i, r in enumerate(rules) if r.id == rule_id)
         j = idx + delta
         if not 0 <= j < len(rules):
@@ -416,7 +494,12 @@ class RuleService:
         items = data.get("rules") or []
         rules = [Rule(id=None, name=i.get("name", ""), description=i.get("description"),
                       conditions=list(i.get("conditions") or []), actions=dict(i.get("actions") or {}),
-                      priority=int(i.get("priority", 100)), active=bool(i.get("active", True))) for i in items]
+                      priority=int(i.get("priority", 100)), active=bool(i.get("active", True)),
+                      device_id=i.get("device_id")) for i in items]
+        known_devices = {r[0] for r in self.db.connection().execute("SELECT id FROM devices")}
+        for r in rules:   # regra de equipamento inexistente nesta instalação vira regra geral inativa
+            if r.device_id is not None and r.device_id not in known_devices:
+                r.device_id, r.active = None, False
         for r in rules:   # valida tudo antes de gravar
             validate_rule(r, self.profile_exists)
         existing = {r.name: r.id for r in self.list()}

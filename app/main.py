@@ -82,6 +82,40 @@ def _service_check(args) -> int:
     return EXIT_OK if report["ok"] else EXIT_STARTUP_ERROR
 
 
+def _backup_cli(args) -> int:
+    from app.core.errors import VyonixError
+    from app.database.migrations import MIGRATIONS
+    from app.service.ipc import IpcClient
+    from app.services import backup as bk
+    from app.utils.paths import resolve_paths
+    paths = resolve_paths(args.data_dir)
+    report: dict = {"ok": False}
+    try:
+        if args.restore_backup:
+            if IpcClient(paths.machine_root, timeout=3).available():
+                raise VyonixError("O serviço Windows do VYONIX está em execução. Pare-o (sc stop VyonixDicomPrint) e "
+                                  "feche a janela do VYONIX antes de restaurar.")
+            lock = paths.user_root / "vyonix-ui.lock"
+            previous = bk.restore(Path(args.restore_backup), paths.database_file, paths.backups_dir,
+                                  max_schema=MIGRATIONS[-1].version)
+            report.update(ok=True, restored_from=str(args.restore_backup), previous_saved_as=str(previous),
+                          warning="Feche outras janelas do VYONIX antes; depois inicie o serviço (sc start "
+                                  "VyonixDicomPrint)." if lock.exists() else "")
+        else:
+            from app.bootstrap import bootstrap
+            ctx = bootstrap(data_dir=args.data_dir, role="check")
+            try:
+                target = ctx.backups.create(actor="cli", label="manual")
+            finally:
+                ctx.close()
+            report.update(ok=True, backup=str(target))
+    except (VyonixError, OSError) as exc:
+        report["error"] = str(exc)
+    _emit(json.dumps(report, ensure_ascii=False, indent=2))
+    _write_report(args.report, report)
+    return EXIT_OK if report["ok"] else EXIT_STARTUP_ERROR
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="Vyonix", description=f"{brand.PRODUCT_NAME} — {brand.SLOGAN}")
     p.add_argument("--version", action="store_true", help="mostra a versão e sai")
@@ -93,6 +127,9 @@ def build_parser() -> argparse.ArgumentParser:
                    help="inicia só com o ícone na bandeja (usado ao entrar no Windows)")
     p.add_argument("--service-check", action="store_true",
                    help="verifica o serviço Windows: canal de controle, estado e C-ECHO dos servidores")
+    p.add_argument("--backup-now", action="store_true", help="cria um backup do banco de dados e sai")
+    p.add_argument("--restore-backup", metavar="ARQUIVO",
+                   help="restaura o banco a partir de um backup (pare o serviço Windows antes; requer administrador)")
     p.add_argument("--report", help="grava o resultado de --check/--smoke-test neste arquivo JSON")
     p.add_argument("--data-dir", help="pasta isolada para dados (desenvolvimento e testes)")
     p.add_argument("--log-level", choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
@@ -120,6 +157,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.service_check:
         return _service_check(args)
+    if args.backup_now or args.restore_backup:
+        return _backup_cli(args)
 
     if args.check:
         try:
