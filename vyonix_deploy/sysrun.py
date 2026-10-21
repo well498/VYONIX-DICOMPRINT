@@ -74,13 +74,16 @@ def powershell(script: str, args: dict | None = None, *, timeout: float = 180, a
     body = PS_PRELUDE + (f"& {{ {script} }} | ConvertTo-Json -Depth 8 -Compress" if as_json else script)
     enc = base64.b64encode(body.encode("utf-16-le")).decode()
     env = dict(os.environ)
+    # Com o PowerShell 7 no PATH (pwsh), o PSModulePath herdado aponta para módulos incompatíveis com o
+    # Windows PowerShell 5.1 (ex.: Get-Acl falha ao carregar). O powershell.exe recalcula o padrão.
+    env.pop("PSModulePath", None)
     env["VYX_PS_ARGS"] = json.dumps(args or {})
     exe = os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), "System32", "WindowsPowerShell", "v1.0",
                        "powershell.exe")
     r = run([exe, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", enc],
             timeout=timeout, env=env)
     if check and not r.ok:
-        raise DeployError("PowerShell: " + (r.err or r.out).strip()[:800])
+        raise DeployError("PowerShell: " + clixml_text(r.err or r.out).strip()[:800])
     if not as_json:
         return r
     txt = r.out.strip()
@@ -97,3 +100,13 @@ def as_list(v: Any) -> list:
     if v is None:
         return []
     return v if isinstance(v, list) else [v]
+
+
+def clixml_text(s: str) -> str:
+    """Erros do PowerShell chegam serializados (CLIXML) quando a saída é redirecionada."""
+    if "#< CLIXML" not in s:
+        return s
+    import re
+    parts = re.findall(r'<S S="Error">(.*?)</S>', s, re.S)
+    txt = "".join(parts).replace("_x000D__x000A_", "\n").replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&")
+    return "\n".join(line.rstrip() for line in txt.splitlines() if line.strip())

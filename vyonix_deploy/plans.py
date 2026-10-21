@@ -17,7 +17,8 @@ KINDS = {"install": "Nova instalação", "repair": "Reparo", "update": "Atualiza
          "reconfigure": "Reconfigurar servidor", "restore": "Restaurar backup"}
 
 REQUIRED_FILES = ["VyonixPlatform.exe", "vyonix-deploy.exe", "VERSION.txt", r"pgsql\bin\initdb.exe",
-                  r"pgsql\bin\pg_ctl.exe", r"pgsql\bin\postgres.exe", r"pgsql\bin\pg_dump.exe", r"web\index.html"]
+                  r"pgsql\bin\pg_ctl.exe", r"pgsql\bin\postgres.exe", r"pgsql\bin\pg_dump.exe",
+                  r"_internal\web\index.html"]
 
 
 def platform_version() -> str:
