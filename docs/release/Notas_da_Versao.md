@@ -58,7 +58,7 @@ Windows 10 64 bits (versão 1809 ou posterior) ou Windows 11. O executável usa 
 - Logs JSON rotativos, com mascaramento de dados de pacientes.
 - Configurações validadas, auditadas, exportáveis e importáveis.
 - Histórico de eventos com filtros e exportação CSV; histórico de alterações administrativas.
-- Interface com os 12 itens de menu, todos implementados; temas claro e escuro.
+- Interface com os 13 itens de menu, todos implementados; temas claro e escuro.
 - Máquina de estados dos trabalhos de impressão (base da fila da Fase 4).
 - Modos de verificação automatizada: `--check` e `--smoke-test`.
 - **Servidor DICOM (Storage SCP):** C-ECHO e C-STORE para 24 classes de imagem (CT, MR, CR, DX, US, MG, XA, RF, NM, PT, captura secundária), sintaxes não comprimidas, associações simultâneas com limite configurável (padrão 10).

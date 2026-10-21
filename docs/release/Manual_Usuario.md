@@ -9,7 +9,7 @@
 A janela do VYONIX tem três áreas:
 
 - **Cabeçalho** com a marca VYONIX e o slogan *Precisão em cada imagem.*
-- **Menu lateral** com 12 itens.
+- **Menu lateral** com 13 itens.
 - **Área de conteúdo**, que mostra a página selecionada.
 
 A barra inferior mostra a pasta de dados em uso e o aviso de que a versão não é destinada a uso clínico. Apenas uma janela do VYONIX pode ficar aberta por usuário. Em telas menores que 1320 × 880 (por exemplo, 1366 × 768), a janela abre maximizada.
@@ -19,19 +19,20 @@ A barra inferior mostra a pasta de dados em uso e o aviso de que a versão não 
 | Item | Situação nesta versão |
 |---|---|
 | Dashboard | Disponível |
-| Equipamentos DICOM | Disponível |
+| Regras DICOM | Disponível (destinos por AE Title + porta) |
 | Servidor DICOM | Disponível (recepção e impressão DICOM) |
 | Impressoras | Disponível |
 | Trabalhos de impressão | Disponível |
-| Regras automáticas | Disponível |
+| Regras avançadas | Disponível (condições) |
 | Calibração | Disponível |
 | Perfis de impressão | Disponível |
+| VYONIX Reception | Disponível (endereço do painel e usuários) |
 | Histórico | Disponível |
 | Configurações | Disponível |
 | Licença | Disponível |
 | Sobre o VYONIX | Disponível |
 
-As páginas não implementadas mostram o escopo planejado e não executam nenhuma operação.
+Todas as páginas estão implementadas.
 
 ## 3. Dashboard
 
