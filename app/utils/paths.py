@@ -29,6 +29,14 @@ DB_FILENAME = "vyonix.db"
 class AppPaths:
     machine_root: Path
     user_root: Path
+    isolated: bool = False          # --data-dir / VYONIX_HOME: nada fora da pasta indicada
+
+    @property
+    def licensing_state_dir(self) -> Path:
+        """Cofre do licenciamento: fora da pasta de dados que a desinstalação pode apagar."""
+        if self.isolated:
+            return self.machine_root / "licensing-state"
+        return self.machine_root.parent / "Licensing"
 
     # --- máquina -----------------------------------------------------------
     @property
@@ -101,7 +109,7 @@ def resolve_paths(
     home = override if override is not None else env.get(ENV_HOME)
     if home:
         root = Path(home).expanduser().resolve()
-        return AppPaths(machine_root=root / "machine", user_root=root / "user")
+        return AppPaths(machine_root=root / "machine", user_root=root / "user", isolated=True)
 
     if platform == "win32":
         program_data = env.get("PROGRAMDATA") or r"C:\ProgramData"

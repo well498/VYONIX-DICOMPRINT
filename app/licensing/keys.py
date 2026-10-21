@@ -1,10 +1,14 @@
-"""Chaves **públicas** aceitas para verificar licenças (a chave privada nunca está aqui).
+"""Chaves **públicas** de emissão aceitas pelo VYONIX DICOM Print (nenhuma chave privada aqui).
 
-``hml-2026`` é a chave de homologação. Antes da distribuição comercial, gere a chave de produção com
-``python -m license_admin keygen --key-id prod-1 --out <pasta segura>`` e acrescente a chave pública
-abaixo (manter a anterior permite que licenças antigas continuem válidas; removê-la as revoga).
+Rotação de chaves: o VYONIX License Manager gera uma nova chave (Segurança → Chaves de emissão) e
+exporta a linha pública no formato abaixo. A nova chave é acrescentada aqui e distribuída em uma
+**atualização oficial**; as licenças antigas continuam válidas enquanto a chave anterior constar
+da lista. Remover uma chave invalida todas as licenças assinadas por ela.
+
+A chave de homologação ``hml-2026`` (formato 1) foi retirada: suas licenças não são aceitas.
 """
 
 PUBLIC_KEYS: dict[str, str] = {
-    "hml-2026": "b64541ef476b3b75bdbfed2fc0d9c7a5cb4df6b7fda6fea04197387085a6de5a",
+    # vyx-2026-01 — impressão digital 44DE:3181:0922:95DC:C478:0FDC
+    "vyx-2026-01": "bfcfe838e8b1675d69df1d10f8fc314d81c0be64d73aeb70169cd9fffad0862a",
 }

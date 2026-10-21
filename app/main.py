@@ -135,6 +135,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--log-level", choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
                    help="sobrepõe o nível de log configurado nesta execução")
     p.add_argument("--console-log", action="store_true", help="também exibe logs no terminal")
+    from app.licensing.cli import add_arguments
+    add_arguments(p)
     return p
 
 
@@ -159,6 +161,9 @@ def main(argv: list[str] | None = None) -> int:
         return _service_check(args)
     if args.backup_now or args.restore_backup:
         return _backup_cli(args)
+    if args.installation or args.license_action:
+        from app.licensing.cli import run as license_cli
+        return license_cli(args)
 
     if args.check:
         try:

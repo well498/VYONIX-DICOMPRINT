@@ -1,2 +1,0 @@
-# Somente para a ferramenta de emissão (máquina do fornecedor). Não faz parte do aplicativo.
-cryptography>=42

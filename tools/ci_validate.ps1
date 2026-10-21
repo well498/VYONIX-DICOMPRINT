@@ -13,7 +13,9 @@ param(
     [Parameter(Mandatory = $true)] [string] $Installer,
     [Parameter(Mandatory = $true)] [string] $Version,
     [string] $DistExe = "dist\Vyonix\Vyonix.exe",
-    [string] $OutDir = "dist\validation"
+    [string] $OutDir = "dist\validation",
+    [string] $LMExe = "",
+    [string] $LMInstaller = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -23,6 +25,9 @@ $InstallDir = Join-Path $env:ProgramFiles "VYONIX\DICOM Print"
 $InstalledExe = Join-Path $InstallDir "Vyonix.exe"
 $DataDir = Join-Path $env:ProgramData "VYONIX\DICOM Print"
 $StartMenuLnk = Join-Path $env:ProgramData "Microsoft\Windows\Start Menu\Programs\VYONIX DICOM Print.lnk"
+$LicensingDir = Join-Path $env:ProgramData "VYONIX\Licensing"
+$LMUninstKey = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{5B7A1C3E-9D24-4E61-8F0B-2C7D9E1A4B66}_is1"
+$LMInstallDir = Join-Path $env:ProgramFiles "VYONIX\License Manager"
 
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 $OutDir = (Resolve-Path $OutDir).Path
@@ -78,6 +83,15 @@ function Smoke([string]$Exe, [string]$Label, [hashtable]$Env, [string[]]$Extra) 
     return "código 0; $(@($r.checks).Count) verificações OK; plataforma Qt '$($r.qt_platform)'; frozen=$($r.frozen)"
 }
 
+function Lic([string]$Label, [string[]]$Arguments) {
+    $rep = Join-Path $OutDir "license-$Label.json"
+    if (Test-Path $rep) { Remove-Item $rep }
+    $code = Run-Exe $InstalledExe (@("--report", $rep) + $Arguments) $clean
+    $r = Read-Report $rep
+    $r | Add-Member -NotePropertyName exit_code -NotePropertyValue $code -Force
+    return $r
+}
+
 function Wait-Until([scriptblock]$Cond, [int]$TimeoutSec = 180) {
     $sw = [Diagnostics.Stopwatch]::StartNew()
     while (-not (& $Cond)) {
@@ -118,7 +132,7 @@ Invoke-Check "EXE-01" "Executável" "Vyonix.exe gerado com metadados de versão"
 }
 Invoke-Check "EXE-02" "Executável" "Pacote sem ferramenta de licenças, chaves ou testes" {
     $bad = Get-ChildItem (Split-Path $DistExe) -Recurse | Where-Object {
-        $_.FullName -match 'license_admin|\\tests\\' -or $_.Extension -in '.pem', '.key' }
+        $_.FullName -match 'license_admin|license_manager|License_Manager|\\tests\\' -or $_.Extension -in '.pem', '.key' }
     if ($bad) { throw "itens proibidos: $($bad.FullName -join ', ')" }
     "nenhum item proibido"
 }
@@ -202,6 +216,56 @@ Invoke-Check "INS-05" "Instalador" "Programa instalado sem Python no PATH (--che
     $script:installationId = $r.installation_id
     "banco em $($r.database); ID $($r.installation_id)"
 }
+$script:lic = @{}
+Invoke-Check "LIC-01" "Licenciamento" "Instalação nova: Installation ID novo, Hardware ID, funções suspensas sem licença" {
+    $inst = Read-Report (Join-Path $LicensingDir "instalador.json")
+    if ($inst.mode -ne "fresh" -or -not $inst.ok) { throw "instalador.json: modo $($inst.mode)" }
+    $r = Lic "inicial" @("--license", "status")
+    if (-not $r.status.enforced) { throw "política comercial não ativa na versão $Version" }
+    if ($r.status.state -ne "not_activated" -or $r.status.active) { throw "estado $($r.status.state)" }
+    if ($r.installation_id -ne $inst.installation_id -or $r.installation_id -ne $script:installationId) { throw "IDs divergentes" }
+    if ($r.hardware_id -notmatch '^VYXH-[0-9A-Z]{5}(-[0-9A-Z]{5}){3}$') { throw "Hardware ID '$($r.hardware_id)'" }
+    $comps = ($r.components.PSObject.Properties | Where-Object { $_.Value } | ForEach-Object { $_.Name }) -join ", "
+    if (@($r.components.PSObject.Properties | Where-Object { $_.Value -and $_.Name -ne 'mac' }).Count -lt 2) { throw "menos de 2 componentes fortes: $comps" }
+    $script:lic.hw = $r.hardware_id; $script:lic.inst = $r.installation_id
+    $tpm = if ($r.tpm.available) { "TPM: chave $($r.tpm.alg) disponível" } else { "TPM: $($r.tpm.reason)" }
+    "$($r.installation_id); $($r.hardware_id); componentes: $comps; $tpm; estado $($r.status.state)"
+}
+Invoke-Check "LIC-02" "Licenciamento" "TPM 2.0: chave não exportável e prova de posse (quando disponível)" {
+    $tpm = Get-Tpm -ErrorAction SilentlyContinue
+    $r = Lic "tpm" @("--license", "status")
+    if ($tpm -and $tpm.TpmPresent -and $tpm.TpmReady) {
+        if (-not $r.tpm.available) { throw "TPM presente e pronto, mas a chave do VYONIX não está disponível: $($r.tpm.reason) $($r.tpm.detail)" }
+        if (-not $r.components.tpm) { throw "chave do TPM fora do Hardware ID" }
+        "TPM presente; chave $($r.tpm.alg) no Microsoft Platform Crypto Provider; componente no Hardware ID"
+    } else {
+        $why = if ($tpm) { "TpmPresent=$($tpm.TpmPresent) TpmReady=$($tpm.TpmReady)" } else { "Get-Tpm indisponível" }
+        if ($r.tpm.available) { throw "chave de TPM relatada sem TPM" }
+        "NÃO VERIFICÁVEL nesta máquina (sem TPM utilizável: $why); camada informada como indisponível: $($r.tpm.reason)"
+    }
+}
+Invoke-Check "LIC-03" "Licenciamento" "Solicitação de ativação exportada (VYXR2, sem identificadores legíveis)" {
+    $req = Join-Path $Work "solicitacao.vyreq"
+    $r = Lic "solicitacao" @("--license", "request", "--file", $req)
+    if (-not $r.ok -or -not (Test-Path $req)) { throw "solicitação não gerada" }
+    $doc = Get-Content $req -Raw | ConvertFrom-Json
+    if (-not $doc.code.StartsWith("VYXR2-")) { throw "código inválido" }
+    $serial = (Get-CimInstance Win32_BaseBoard).SerialNumber
+    $guid = (Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Cryptography").MachineGuid
+    $raw = Get-Content $req -Raw
+    foreach ($v in @($serial, $guid)) { if ($v -and $v.Length -gt 4 -and $raw.Contains($v)) { throw "identificador original exposto" } }
+    $script:lic.req = $req
+    "arquivo $([IO.Path]::GetFileName($req)); Hardware ID $($doc.summary.hardware_id)"
+}
+Invoke-Check "LIC-04" "Licenciamento" "DEMO de 5 dias (120 h) iniciada; funções liberadas; segunda DEMO recusada" {
+    $r = Lic "demo" @("--license", "demo")
+    if (-not $r.ok -or $r.status.state -ne "demo") { throw "estado $($r.status.state): $($r.error)" }
+    $h = [math]::Round($r.status.remaining_s / 3600, 2)
+    if ($h -lt 119.9 -or $h -gt 120.01) { throw "restam $h h" }
+    $r2 = Lic "demo-2" @("--license", "demo")
+    if ($r2.ok) { throw "segunda demonstração aceita" }
+    "restam $h h; segunda tentativa: $($r2.error)"
+}
 Invoke-Check "SRV-01" "Serviço" "Serviço Windows instalado, automático e em execução" {
     Wait-Until { (Get-Service VyonixDicomPrint -ErrorAction SilentlyContinue).Status -eq "Running" } 90
     $svc = Get-CimInstance Win32_Service -Filter "Name='VyonixDicomPrint'"
@@ -232,7 +296,66 @@ Invoke-Check "SRV-03" "Serviço" "Registro de inicialização da bandeja" {
 Invoke-Check "INS-06" "Interface" "Smoke test do programa instalado (Windows nativo, conectado ao serviço)" {
     Smoke $InstalledExe "installed-native" $clean @()
 }
-Invoke-Check "INS-07" "Instalador" "Atualização sobre instalação existente preserva dados" {
+Invoke-Check "LM-01" "License Manager" "Portátil: duplo clique sem Python/VYONIX, emite licença para a solicitação real" {
+    if (-not $LMExe) { throw "executável do License Manager não informado" }
+    $dir = Join-Path $Work "lm-portatil"
+    New-Item -ItemType Directory -Force -Path $dir | Out-Null
+    Copy-Item $LMExe $dir
+    $exe = Join-Path $dir "VYONIX_License_Manager.exe"
+    $rep = Join-Path $OutDir "lm-portable-selftest.json"
+    $code = Run-Exe $exe @("--self-test", "--request", $script:lic.req, "--report", $rep) $clean 300
+    $r = Read-Report $rep
+    $bad = @($r.checks | Where-Object { -not $_.ok } | ForEach-Object { "$($_.name): $($_.error)" })
+    if ($code -ne 0 -or -not $r.ok -or -not $r.frozen) { throw "código $code; frozen=$($r.frozen); $($bad -join '; ')" }
+    if (-not (Test-Path (Join-Path $dir "VYONIX_License_Manager_Dados"))) { throw "pasta de dados portátil não criada" }
+    $script:lic.lmfile = $r.license_file
+    $mode = ($r.checks | Where-Object { $_.name -like "modo*" }).detail
+    "$(@($r.checks).Count) verificações; $mode; $([math]::Round((Get-Item $exe).Length / 1MB, 1)) MB"
+}
+Invoke-Check "LIC-05" "Licenciamento" "Licença assinada por chave não oficial é recusada pelo VYONIX instalado" {
+    if (-not $script:lic.lmfile -or -not (Test-Path $script:lic.lmfile)) { throw "licença do autoteste ausente" }
+    $r = Lic "chave-nao-oficial" @("--license", "install", "--file", $script:lic.lmfile)
+    if ($r.ok -or $r.status.state -ne "demo") { throw "licença aceita ou estado alterado ($($r.status.state))" }
+    if ($r.error -notmatch "chave desconhecida") { throw "motivo inesperado: $($r.error)" }
+    "recusada: $($r.error.Substring(0, [Math]::Min(110, $r.error.Length)))…"
+}
+Invoke-Check "LM-02" "License Manager" "Instalação opcional (VYONIX_License_Manager_Setup.exe), autoteste e desinstalação" {
+    if (-not $LMInstaller) { throw "instalador do License Manager não informado" }
+    $code = Run-Exe (Resolve-Path $LMInstaller).Path @("/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/LOG=$(Join-Path $OutDir 'setup-lm.log')") @{} 300
+    if ($code -ne 0) { throw "instalador retornou $code" }
+    $exe = Join-Path $LMInstallDir "VYONIX_License_Manager.exe"
+    if (-not (Test-Path $exe) -or -not (Test-Path (Join-Path $LMInstallDir "installed.flag"))) { throw "arquivos ausentes" }
+    $rep = Join-Path $OutDir "lm-installed-selftest.json"
+    $code = Run-Exe $exe @("--self-test", "--report", $rep) $clean 300
+    $r = Read-Report $rep
+    $mode = ($r.checks | Where-Object { $_.name -like "modo*" }).detail
+    if ($code -ne 0 -or -not $r.ok -or $mode -notmatch "modo installed") { throw "código $code; $mode" }
+    if (Test-Path (Join-Path $InstallDir "VYONIX_License_Manager.exe")) { throw "License Manager dentro do produto comercial" }
+    $un = (Get-ItemProperty $LMUninstKey).UninstallString.Trim('"')
+    $code = Run-Exe $un @("/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART") @{} 300
+    Wait-Until { -not (Test-Path $LMUninstKey) } 120
+    "instalado em $LMInstallDir; $mode; desinstalado"
+}
+Invoke-Check "LM-03" "License Manager" "Produto comercial instalado não contém o License Manager nem chaves privadas" {
+    $bad = Get-ChildItem $InstallDir -Recurse | Where-Object {
+        $_.Name -match 'license_manager|License_Manager|license_admin' -or $_.Extension -in '.pem', '.key', '.vykey' }
+    if ($bad) { throw "itens proibidos: $($bad.FullName -join ', ')" }
+    $hits = Get-ChildItem $InstallDir -Recurse -File | Where-Object { $_.Length -lt 20MB } | Select-String -Pattern '-----BEGIN [A-Z ]*PRIVATE KEY-----' -SimpleMatch:$false -List -ErrorAction SilentlyContinue
+    $real = @($hits | Where-Object { (Get-Content $_.Path -Raw -ErrorAction SilentlyContinue) -match '-----BEGIN [A-Z ]*PRIVATE KEY-----\r?\n[A-Za-z0-9+/=]{40,}' })
+    if ($real.Count -gt 0) { throw "bloco de chave privada em: $($real.Path -join ', ')" }
+    "$(@(Get-ChildItem $InstallDir -Recurse -File).Count) arquivos verificados"
+}
+Invoke-Check "INS-07" "Instalador" "Atualização sobre instalação existente preserva dados e artes BMP" {
+    Add-Type -AssemblyName System.Drawing
+    $hdr = Join-Path $DataDir "print_templates\header.bmp"
+    $bmp = New-Object System.Drawing.Bitmap 3000, 206, ([System.Drawing.Imaging.PixelFormat]::Format24bppRgb)
+    $g = [System.Drawing.Graphics]::FromImage($bmp)
+    $g.Clear([System.Drawing.Color]::White)
+    $g.FillRectangle([System.Drawing.Brushes]::DarkBlue, 0, 0, 900, 206)
+    $g.Dispose()
+    $bmp.Save($hdr, [System.Drawing.Imaging.ImageFormat]::Bmp)
+    $bmp.Dispose()
+    $hashBefore = (Get-FileHash $hdr -Algorithm SHA256).Hash
     Install-Silent (Join-Path $OutDir "setup-2-upgrade.log")
     $rep = Join-Path $OutDir "check-after-upgrade.json"
     $code = Run-Exe $InstalledExe @("--check", "--report", $rep) $clean
@@ -241,23 +364,46 @@ Invoke-Check "INS-07" "Instalador" "Atualização sobre instalação existente p
     if ($r.installation_id -ne $script:installationId) { throw "ID mudou: $($r.installation_id)" }
     Wait-Until { (Get-Service VyonixDicomPrint -ErrorAction SilentlyContinue).Status -eq "Running" } 90
     if ((Get-Service VyonixDicomPrint).Status -ne "Running") { throw "serviço não voltou após a atualização" }
-    "ID da instalação mantido ($($r.installation_id)); serviço em execução após atualizar"
+    if ((Get-FileHash $hdr -Algorithm SHA256).Hash -ne $hashBefore) { throw "header.bmp personalizado foi substituído" }
+    "ID da instalação mantido ($($r.installation_id)); header.bmp personalizado preservado; serviço em execução após atualizar"
+}
+Invoke-Check "LIC-06" "Licenciamento" "Atualização oficial preserva Installation ID, ativação e DEMO" {
+    $inst = Read-Report (Join-Path $LicensingDir "instalador.json")
+    if ($inst.mode -ne "upgrade") { throw "instalador tratou como '$($inst.mode)'" }
+    $r = Lic "apos-atualizacao" @("--license", "status")
+    if ($r.installation_id -ne $script:lic.inst) { throw "Installation ID mudou" }
+    if ($r.status.state -ne "demo") { throw "estado $($r.status.state)" }
+    $script:lic.remaining = $r.status.remaining_s
+    "modo upgrade ($($inst.result)); ID $($r.installation_id); $($r.status.message)"
 }
 Invoke-Check "INS-08" "Instalador" "Desinstalação silenciosa remove programa e preserva dados" {
     Uninstall-Silent
+    $u = Read-Report (Join-Path $LicensingDir "desinstalador.json")
+    if (-not $u.ok -or $u.retired -ne $script:lic.inst) { throw "ativação não encerrada: $($u | ConvertTo-Json -Compress)" }
     if (Test-Path $StartMenuLnk) { throw "atalho permaneceu" }
     if ((Test-FirewallRule).exists) { throw "regra de firewall permaneceu" }
     if (Get-Service VyonixDicomPrint -ErrorAction SilentlyContinue) { throw "serviço permaneceu registrado" }
     if (-not (Test-Path "$DataDir\database\vyonix.db")) { throw "banco removido" }
     "programa, atalhos e registro removidos; banco preservado"
 }
-Invoke-Check "INS-09" "Instalador" "Reinstalação reutiliza os dados preservados" {
+Invoke-Check "INS-09" "Instalador" "Reinstalação reutiliza os dados preservados (cadastros e configurações)" {
     Install-Silent (Join-Path $OutDir "setup-3-reinstall.log")
     $rep = Join-Path $OutDir "check-after-reinstall.json"
     $code = Run-Exe $InstalledExe @("--check", "--report", $rep) $clean
     $r = Read-Report $rep
-    if ($code -ne 0 -or $r.installation_id -ne $script:installationId) { throw "código $code; ID $($r.installation_id)" }
-    "mesmo ID após reinstalar"
+    if ($code -ne 0 -or $r.database -notlike "$env:ProgramData*") { throw "código $code" }
+    "banco preservado reaberto ($($r.database))"
+}
+Invoke-Check "LIC-07" "Licenciamento" "Desinstalar e reinstalar: novo Installation ID, nova ativação exigida, DEMO não renovada" {
+    $inst = Read-Report (Join-Path $LicensingDir "instalador.json")
+    if ($inst.mode -ne "fresh") { throw "reinstalação tratada como '$($inst.mode)'" }
+    $r = Lic "apos-reinstalar" @("--license", "status")
+    if ($r.installation_id -eq $script:lic.inst) { throw "Installation ID reaproveitado" }
+    if ($r.hardware_id -ne $script:lic.hw) { throw "Hardware ID mudou ($($r.hardware_id))" }
+    $r2 = Lic "demo-apos-reinstalar" @("--license", "demo")
+    if ($r2.ok) { throw "nova demonstração concedida após reinstalar" }
+    if ($r.status.state -ne "demo" -or $r.status.remaining_s -gt $script:lic.remaining) { throw "contagem da DEMO reiniciada ($($r.status.remaining_s) s)" }
+    "novo ID $($r.installation_id) (anterior $($script:lic.inst)); mesmo Hardware ID; DEMO continua a contagem anterior; nova DEMO recusada"
 }
 Invoke-Check "INS-10" "Instalador" "Desinstalação final" {
     Uninstall-Silent

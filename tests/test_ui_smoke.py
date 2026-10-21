@@ -161,6 +161,35 @@ class UiSmokeTest(TempDirTestCase):
         finally:
             ctx.close()
 
+    def test_license_page_and_activation_screen_real_qt(self):
+        """Tela inicial de ativação (4 botões) e página Licença com o Qt real e a política ativa."""
+        from app.bootstrap import bootstrap
+        from app.ui.pages.license_page import ActivationDialog, LicensePage
+        from app.ui.workers import wait_all
+        os.environ["VYONIX_LICENSE_ENFORCE"] = "1"
+        try:
+            ctx = bootstrap(data_dir=self.tmp)
+        finally:
+            os.environ["VYONIX_LICENSE_ENFORCE"] = "0"
+        try:
+            self.assertTrue(ctx.license.enforced)
+            dlg = ActivationDialog(ctx)
+            texts = [b.text() for b in dlg.buttons.values()]
+            self.assertEqual(texts, ["Iniciar demonstração de 5 dias", "Ativar licença comercial",
+                                     "Exportar solicitação", "Visualizar Hardware ID"])
+            self.assertTrue(dlg.buttons["demo"].isEnabled())
+            ctx.license.start_demo(actor="teste")
+            page = LicensePage(ctx)
+            page.refresh()
+            wait_all(5000)
+            self.app.processEvents()
+            self.assertIn("Demonstração", page.state.text())
+            self.assertIn("VYXH-", page.ids.text())
+            dlg2 = ActivationDialog(ctx)
+            self.assertFalse(dlg2.buttons["demo"].isEnabled())
+        finally:
+            ctx.close()
+
     def test_tray_and_close_to_tray(self):
         from app.bootstrap import bootstrap
         from app.ui.application import _make_tray

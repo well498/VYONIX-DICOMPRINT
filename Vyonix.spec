@@ -6,7 +6,7 @@
 #   python -m PyInstaller --noconfirm --clean Vyonix.spec
 #
 # Resultado: dist/Vyonix/Vyonix.exe
-# A pasta license_admin/ (ferramenta de emissão e chave privada) NUNCA é incluída.
+# O VYONIX License Manager (license_manager/) e qualquer chave privada NUNCA são incluídos.
 
 import os
 import re
@@ -58,7 +58,8 @@ for dist in ("pylibjpeg", "pylibjpeg-openjpeg", "pyjpegls", "pydicom", "pynetdic
         pass
 
 # Impressão Windows (Fase 4): pywin32 é importado sob demanda pelo backend de impressão.
-WIN32_HIDDEN = (["win32print", "win32ui", "win32gui", "win32con", "pywintypes", "PIL.ImageWin"]
+WIN32_HIDDEN = (["win32print", "win32ui", "win32gui", "win32con", "pywintypes", "PIL.ImageWin",
+                 "win32crypt", "pythoncom", "win32com", "win32com.client"]
                 if sys.platform == "win32" else [])
 
 # Partes do Pillow que o VYONIX não usa (AVIF sozinho tem ~7,5 MB).
@@ -73,16 +74,19 @@ a = Analysis(
     hiddenimports=[f"{QT_BINDING}.QtSvg"] + CODEC_HIDDEN + WIN32_HIDDEN,
     hookspath=[],
     runtime_hooks=[],
-    excludes=["tkinter", "pytest", "tests", "license_admin", "unittest.mock",
+    excludes=["tkinter", "pytest", "tests", "license_admin", "license_manager", "unittest.mock",
               OTHER_BINDING, "shiboken6" if QT_BINDING == "PySide2" else "shiboken2"] + PIL_EXCLUDES
              + (SLIM_EXCLUDES if SLIM else []),
     noarchive=False,
 )
 
-# Defesa adicional: nada de license_admin ou de chaves no pacote.
+# Defesa adicional: nada do License Manager, de emissão de licenças ou de chaves no pacote.
 for entry in list(a.datas):
-    if "license_admin" in entry[0] or entry[0].lower().endswith((".pem", ".key")):
+    if "license_admin" in entry[0] or "license_manager" in entry[0] or entry[0].lower().endswith((".pem", ".key")):
         raise SystemExit(f"Arquivo proibido no pacote: {entry[0]}")
+for name, *_ in a.pure:
+    if name.split(".")[0] in ("license_manager", "license_admin"):
+        raise SystemExit(f"Módulo proibido no pacote comercial: {name}")
 
 if SLIM:
     removed = []
@@ -135,7 +139,7 @@ s = Analysis(
     hiddenimports=CODEC_HIDDEN + WIN32_HIDDEN + SERVICE_HIDDEN,
     hookspath=[],
     runtime_hooks=[],
-    excludes=["tkinter", "pytest", "tests", "license_admin", "unittest.mock", "PySide6", "PySide2", "shiboken6",
+    excludes=["tkinter", "pytest", "tests", "license_admin", "license_manager", "unittest.mock", "PySide6", "PySide2", "shiboken6",
               "shiboken2", "app.ui"] + PIL_EXCLUDES,
     noarchive=False,
 )

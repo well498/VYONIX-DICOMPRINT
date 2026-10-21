@@ -17,7 +17,20 @@ PAPER_SIZES: dict[str, tuple[float, float]] = {
     "Tabloid": (279.4, 431.8),
 }
 PAPER_LABELS = {"A4": "A4 (210 × 297 mm)", "A3": "A3 (297 × 420 mm)", "Letter": "Carta (216 × 279 mm)",
-                "Legal": "Ofício (216 × 356 mm)", "A5": "A5 (148 × 210 mm)", "Tabloid": "Tabloide (279 × 432 mm)"}
+                "Legal": "Ofício (216 × 356 mm)", "A5": "A5 (148 × 210 mm)", "Tabloid": "Tabloide (279 × 432 mm)",
+                "custom": "Personalizado (medidas em Configurações → Impressão)"}
+PAPER_CHOICES = tuple(PAPER_SIZES) + ("custom",)
+
+
+def parse_custom(text) -> tuple[float, float]:
+    """``"240x300"`` (mm, largura × altura) → (240.0, 300.0); entre 50 e 1200 mm."""
+    m = re.fullmatch(r"\s*(\d+(?:[.,]\d+)?)\s*[x×X]\s*(\d+(?:[.,]\d+)?)\s*(mm)?\s*", str(text or ""))
+    if not m:
+        raise ValidationError("Papel personalizado: use largura x altura em mm (ex.: 240x300).")
+    w, h = (float(g.replace(",", ".")) for g in m.groups()[:2])
+    if min(w, h) < 50 or max(w, h) > 1200:
+        raise ValidationError("Papel personalizado: largura e altura entre 50 e 1200 mm.")
+    return w, h
 
 # Film Size ID do DICOM Print (PS3.3 C.13.8) → milímetros.
 FILM_SIZES: dict[str, tuple[float, float]] = {

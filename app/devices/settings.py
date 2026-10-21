@@ -18,7 +18,7 @@ from app.database.connection import Database
 from app.database.repositories.events_repo import Category, EventRepository
 from app.database.repositories.settings_repo import ChangeHistoryRepository
 from app.imaging import tone
-from app.printing.paper import PAPER_SIZES, parse_layout
+from app.printing.paper import PAPER_CHOICES, parse_layout
 from app.utils.timeutil import utc_now_iso
 
 DICOM_POLICIES = {
@@ -68,7 +68,7 @@ def validate_values(values: dict[str, Any], profile_exists: Callable[[int], bool
         label, kind = FIELDS[key]
         try:
             if kind == "paper":
-                if val not in PAPER_SIZES:
+                if val not in PAPER_CHOICES:
                     raise ValueError("papel inválido")
             elif kind == "orientation":
                 if val not in ("auto", "portrait", "landscape"):

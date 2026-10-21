@@ -41,7 +41,8 @@ class StorageSCP:
 
     def __init__(self, *, db: Database, settings_get: Callable[[str], Any], devices: DeviceRepository,
                  store: InstanceStore, events: EventRepository,
-                 sink: InstanceSink | None = None) -> None:
+                 sink: InstanceSink | None = None, licensed: Callable[[], bool] | None = None) -> None:
+        self.licensed = licensed or (lambda: True)
         self.db = db
         self.get = settings_get
         self.devices = devices
@@ -134,6 +135,8 @@ class StorageSCP:
             detail = self._detail
             if self._state == ServiceState.RUNNING:
                 detail = f"{detail} · {len(self.registry)} associação(ões) ativa(s)"
+                if not self.licensed():
+                    detail += " · SUSPENSO pela licença (associações recusadas)"
             return ServiceStatus(NAME, self._state, detail, self._since)
 
     @property
@@ -155,6 +158,12 @@ class StorageSCP:
                 local_ae=self.get("dicom.storage.ae_title"),
                 accept_unknown=bool(self.get("dicom.storage.accept_unknown")),
                 local_addresses=frozenset({self._bound[0]} if self._bound else ()))
+            if decision.accepted and not self.licensed():
+                assoc.acse.send_reject(0x02, 0x01, 0x01)        # transitória: o equipamento reenvia depois
+                self.events.add(level="WARNING", category=Category.LICENSE, action="assoc.unlicensed",
+                                message=f"Recepção de {calling}@{address} recusada: funções suspensas pela licença.",
+                                device_id=decision.device_id, actor="system")
+                return
             if not decision.accepted:
                 assoc.acse.send_reject(0x01, 0x01, decision.diagnostic)
                 if decision.device_id:

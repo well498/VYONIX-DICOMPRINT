@@ -110,6 +110,9 @@ class CoreRuntime:
         if not self.worker.running:
             return ServiceStatus(name, ServiceState.STOPPED, "processador parado")
         detail = f"processando o trabalho #{self.worker.current_job}" if self.worker.current_job else "aguardando"
+        why = self.worker.suspended()
+        if why:
+            detail = "SUSPENSA pela licença: os trabalhos aguardam na fila"
         if self.printers is not None:
             detail += " · " + self.printers.status_summary()
         return ServiceStatus(name, ServiceState.RUNNING, detail)

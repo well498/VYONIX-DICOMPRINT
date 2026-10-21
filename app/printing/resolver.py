@@ -38,8 +38,12 @@ class Resolved:
     def spec(self) -> LayoutSpec:
         v = self.values
         m = float(v["margin_mm"])
+        custom = None
+        if v["paper"] == "custom":
+            from app.printing.paper import parse_custom
+            custom = parse_custom(v.get("paper_custom") or "210x330")
         return LayoutSpec(
-            paper=v["paper"], orientation=v["orientation"], layout=v["layout"],
+            paper=v["paper"], orientation=v["orientation"], layout=v["layout"], custom_mm=custom,
             margins_mm=tuple(float(x) for x in v.get("margins_mm") or (m, m, m, m)),
             spacing_mm=float(v["spacing_mm"]), border=bool(v["border"]), dpi=int(v["dpi"]),
             header_text=v["header_text"], footer_text=v["footer_text"], exam_info=bool(v["exam_info"]),
@@ -59,6 +63,7 @@ def defaults(get: Callable[[str], Any]) -> dict[str, Any]:
     return {
         "printer": get("printing.default_printer") or "",
         "paper": get("printing.paper"),
+        "paper_custom": get("printing.custom_paper"),
         "orientation": get("printing.orientation"),
         "layout": get("printing.layout"),
         "dpi": int(get("printing.dpi")),

@@ -31,9 +31,9 @@ TEMPLATE = """VSVersionInfo(
       StringStruct('CompanyName', '{brand}'),
       StringStruct('FileDescription', '{product}'),
       StringStruct('FileVersion', '{version}'),
-      StringStruct('InternalName', 'Vyonix'),
+      StringStruct('InternalName', '{internal}'),
       StringStruct('LegalCopyright', '{brand}'),
-      StringStruct('OriginalFilename', 'Vyonix.exe'),
+      StringStruct('OriginalFilename', '{original}'),
       StringStruct('ProductName', '{product}'),
       StringStruct('ProductVersion', '{version}')])]),
     VarFileInfo([VarStruct('Translation', [1046, 1200])])
@@ -47,9 +47,16 @@ def main() -> None:
     out = ROOT / "build" / "version_info.txt"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(TEMPLATE.format(nv=nv, brand=brand.BRAND, product=brand.PRODUCT_NAME,
-                                   version=__version__), encoding="utf-8")
+                                   version=__version__, internal="Vyonix", original="Vyonix.exe"), encoding="utf-8")
+    from license_manager import APP_NAME, __version__ as lm_version
+    lnv = numeric_version(lm_version)
+    (ROOT / "build" / "version_info_lm.txt").write_text(
+        TEMPLATE.format(nv=lnv, brand=brand.BRAND, product=APP_NAME, version=lm_version,
+                        internal="VYONIX_License_Manager", original="VYONIX_License_Manager.exe"), encoding="utf-8")
     print(f"APP_VERSION={__version__}")
     print("FILE_VERSION=" + ".".join(map(str, nv)))
+    print(f"LM_VERSION={lm_version}")
+    print("LM_FILE_VERSION=" + ".".join(map(str, lnv)))
 
 
 if __name__ == "__main__":

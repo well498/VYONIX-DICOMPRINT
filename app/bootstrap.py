@@ -46,6 +46,7 @@ from app.printing.calibration_rounds import CalibrationService
 from app.devices.settings import DeviceSettingsService
 from app.services.backup import BackupService
 from app.rules.engine import RuleService
+from app.licensing.factory import build_license_service
 from app.licensing.license import LicenseService
 from app.services.dashboard_service import DashboardService
 from app.services.imaging_service import ImagingService
@@ -154,11 +155,15 @@ def bootstrap(*, data_dir: str | os.PathLike[str] | None = None, role: str = "ui
             return scu.echo(device.ip_address, device.port, device.ae_title,
                             calling_ae=get("dicom.storage.ae_title"))
 
-        license_service = LicenseService(db, events, get)
+        license_service = build_license_service(
+            db, events, get, paths, role=role,
+            settings_set=lambda k, v: settings.repo.upsert(k, v, "system"))
+        if role != "installer":
+            license_service.installation_id()      # sincroniza o ID exibido com o cofre da instalação
         devices = DeviceService(db, events, echo=device_echo, device_limit=license_service.device_limit)
         store = InstanceStore(db, paths.storage_dir, paths.temp_dir)
         storage_scp = StorageSCP(db=db, settings_get=get, devices=devices.repo, store=store,
-                                 events=events)
+                                 events=events, licensed=lambda: license_service.allows("storage"))
         retention = RetentionService(db, events, get, paths.storage_dir, output_dir=paths.output_dir)
         imaging = ImagingService(db, PreviewCache(paths.cache_dir / "previews"))
         profiles = ProfileService(db, events)

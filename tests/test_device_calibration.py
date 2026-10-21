@@ -340,6 +340,21 @@ class PrintIdentityTest(TempDirTestCase):
         for name in ("header.bmp", "footer.bmp"):
             self.assertTrue(t.inspect(bundled / name).is_standard)
 
+    def test_custom_template_survives_update_startup(self):           # teste obrigatório 10
+        """Atualização: o programa novo inicia e chama ensure(); a arte do cliente não é substituída."""
+        import hashlib
+        from PIL import Image
+        from app.printing.templates import TemplateStore
+        art = Image.new("RGB", (3000, 206), (255, 255, 255))
+        art.paste((200, 0, 0), (0, 0, 1500, 206))
+        src = self.tmp / "arte.bmp"
+        art.save(src, "BMP")
+        self.store.install("header", src)
+        before = hashlib.sha256(self.store.path("header").read_bytes()).hexdigest()
+        TemplateStore(self.tmp / "machine").ensure()                 # nova versão abrindo a mesma pasta
+        after = hashlib.sha256(self.store.path("header").read_bytes()).hexdigest()
+        self.assertEqual(before, after)
+
     def test_custom_bmp_conversion_preserves_proportion(self):        # critérios 18, 19
         from PIL import Image
         from app.printing.templates import NeedsConversion

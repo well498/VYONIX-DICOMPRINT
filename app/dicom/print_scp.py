@@ -72,9 +72,6 @@ class PrintSCP:
             if not self.get("dicom.print.enabled"):
                 self._state, self._detail = ServiceState.STOPPED, "desativado em Configurações"
                 return
-            if not self.licensed():
-                self._state, self._detail = ServiceState.STOPPED, "não incluído na licença desta instalação"
-                return
             from pynetdicom import AE, evt
             ae_title = self.get("dicom.print.ae_title")
             address = self.get("dicom.storage.bind_address")
@@ -136,6 +133,8 @@ class PrintSCP:
             detail = self._detail
             if self._state == ServiceState.RUNNING:
                 detail += f" · {len(self._assocs)} associação(ões) ativa(s)"
+                if not self.licensed():
+                    detail += " · SUSPENSO pela licença (associações recusadas)"
             return ServiceStatus(NAME, self._state, detail, self._since)
 
     @property
@@ -153,6 +152,12 @@ class PrintSCP:
                 calling_ae=calling, called_ae=called, address=address, local_ae=self.get("dicom.print.ae_title"),
                 accept_unknown=bool(self.get("dicom.storage.accept_unknown")),
                 local_addresses=frozenset({self._bound[0]} if self._bound else ()))
+            if decision.accepted and not self.licensed():
+                assoc.acse.send_reject(0x02, 0x01, 0x01)        # transitória: o equipamento pode tentar depois
+                self.events.add(level="WARNING", category=Category.LICENSE, action="print_assoc.unlicensed",
+                                message=f"Impressão DICOM de {calling}@{address} recusada: funções suspensas pela "
+                                        "licença.", device_id=decision.device_id, actor="system")
+                return
             if not decision.accepted:
                 assoc.acse.send_reject(0x01, 0x01, decision.diagnostic)
                 self.events.add(level="WARNING", category=Category.SECURITY, action="print_assoc.reject",

@@ -32,6 +32,12 @@ EXPORT_FORMAT = "vyonix-settings"
 EXPORT_FORMAT_VERSION = 1
 
 
+def _custom_paper(value):
+    from app.printing.paper import parse_custom
+    w, h = parse_custom(value)
+    return f"{w:g}x{h:g}"
+
+
 @dataclass(frozen=True)
 class SettingDef:
     key: str
@@ -150,7 +156,11 @@ DEFINITIONS: tuple[SettingDef, ...] = (
 
     SettingDef("printing.paper", "Papel", "printing", "choice", "A4",
                choices=(("A4", "A4"), ("A3", "A3"), ("Letter", "Carta"), ("Legal", "Ofício"),
-                        ("A5", "A5"), ("Tabloid", "Tabloide"))),
+                        ("A5", "A5"), ("Tabloid", "Tabloide"), ("custom", "Personalizado"))),
+    SettingDef("printing.custom_paper", "Papel personalizado (mm)", "printing", "str", "210x330",
+               validator=lambda x: _custom_paper(x),
+               help="Largura x altura em milímetros (50 a 1200), usado quando o papel é “Personalizado”. "
+                    "O formato precisa ser aceito pelo driver da impressora."),
     SettingDef("printing.orientation", "Orientação", "printing", "choice", "auto",
                choices=(("auto", "Automática"), ("portrait", "Retrato"), ("landscape", "Paisagem"))),
     SettingDef("printing.layout", "Layout (linhas x colunas)", "printing", "choice", "1x1",

@@ -209,7 +209,7 @@ class PrintWorker:
                 worked = False
                 try:
                     self.collector.flush()
-                    job = self._claim()
+                    job = None if self.suspended() else self._claim()
                     if job is not None:
                         worked = True
                         self.process(job)
@@ -224,6 +224,12 @@ class PrintWorker:
                     self.jobs.wakeup.clear()
         finally:
             self.db.close_thread_connection()
+
+    def suspended(self) -> str | None:
+        """Motivo da suspensão da impressão pela licença (os trabalhos aguardam na fila)."""
+        if self.license is None or self.license.allows("printing"):
+            return None
+        return self.license.suspension_reason() or "impressão não incluída na licença"
 
     def _claim(self) -> Job | None:
         now = utc_now_iso()
@@ -251,6 +257,10 @@ class PrintWorker:
             resolved = Resolved(dict(job.settings), dict(job.origins), job.profile_id)
             printer = self.printers.resolve(resolved.values.get("printer") or None)
             backend = self.printers.backend_for(printer)
+            if self.license is not None:
+                ok, why = self.license.printer_allowed(printer)
+                if not ok:
+                    raise PermanentError(why)
             resolved.spec().validate()
             items = self.jobs.items(jid)
             if job.source_type != "test_page":
@@ -502,9 +512,9 @@ class PrintWorker:
         if job.device_name or job.source_ae:
             parts.append(job.device_name or job.source_ae)
         footer = f"Trabalho #{job.id}"
-        if self.license is not None and self.license.evaluation_mode():
-            from app.licensing.license import EVALUATION_MARK
-            footer = f"{EVALUATION_MARK} · {footer}"
+        mark = self.license.mark_text() if self.license is not None else None
+        if mark:
+            footer = f"{mark} · {footer}"
         if resolved.values.get("patient_info") and items:
             patient = _patient_text(items[0]["file_path"])
             if patient:

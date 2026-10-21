@@ -20,7 +20,8 @@ from app.ui.pages.profiles_page import ProfilesPage
 from app.ui.pages.rules_page import RulesPage
 from app.ui.pages.server_page import ServerPage
 from app.ui.pages.history_page import HistoryPage
-from app.ui.pages.info_pages import AboutPage, LicensePage
+from app.ui.pages.info_pages import AboutPage
+from app.ui.pages.license_page import LicensePage
 from app.ui.pages.settings_page import SettingsPage
 from app.ui.workers import wait_all
 from app.utils.logging_setup import get_logger

@@ -28,6 +28,9 @@
 #define AppExe "Vyonix.exe"
 #define DataDir "{commonappdata}\VYONIX\DICOM Print"
 #define UserDataDir "{localappdata}\VYONIX\DICOM Print"
+; Cofre do licenciamento (Installation ID, DEMO, Time Integrity): NUNCA removido pela desinstalação.
+#define LicensingDir "{commonappdata}\VYONIX\Licensing"
+#define UninstallKey "Software\Microsoft\Windows\CurrentVersion\Uninstall\{8C4E2D6A-3F1B-4B7E-9A2C-5D1E7F9B0A11}_is1"
 
 [Setup]
 ; AppId fixo: atualizações reconhecem a instalação existente. Nunca alterar.
@@ -81,6 +84,7 @@ Name: "firewall"; Description: "Permitir que equipamentos DICOM se conectem ao V
 ; O serviço (conta Sistema Local) e a interface (usuário comum) compartilham o banco em ProgramData;
 ; por isso Usuários têm permissão de modificação (limitação documentada no Manual de Instalação).
 Name: "{#DataDir}"; Permissions: users-modify; Flags: uninsneveruninstall
+Name: "{#LicensingDir}"; Permissions: users-modify; Flags: uninsneveruninstall
 
 [InstallDelete]
 ; Atualização: remove bibliotecas da versão anterior para não misturar DLLs.
@@ -98,6 +102,11 @@ Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; WorkingDir: "{app
 Root: HKLM; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "VYONIX DICOM Print"; ValueData: """{app}\{#AppExe}"" --tray"; Flags: uninsdeletevalue; Tasks: tray
 
 [Run]
+; Licenciamento: instalação nova (novo Installation ID) × atualização (ID, ativação e licença preservados).
+; A distinção vem da entrada de desinstalação do Windows (lida antes da cópia dos arquivos) e do
+; registro selado da instalação — não da simples presença de um arquivo.
+Filename: "{app}\{#AppExe}"; Parameters: "--installation install --upgrade --report ""{#LicensingDir}\instalador.json"""; Flags: runhidden waituntilterminated; Check: IsUpgrade; StatusMsg: "Preservando a ativação da instalação existente..."
+Filename: "{app}\{#AppExe}"; Parameters: "--installation install --fresh --report ""{#LicensingDir}\instalador.json"""; Flags: runhidden waituntilterminated; Check: not IsUpgrade; StatusMsg: "Registrando a nova instalação..."
 ; Serviço Windows: instala (ou atualiza) com início automático atrasado, reinício automático em falhas.
 Filename: "{app}\VyonixService.exe"; Parameters: "--startup delayed install"; Flags: runhidden waituntilterminated; Tasks: service; StatusMsg: "Instalando o serviço Windows..."
 Filename: "{app}\VyonixService.exe"; Parameters: "--startup delayed update"; Flags: runhidden waituntilterminated; Tasks: service
@@ -111,6 +120,7 @@ Filename: "{app}\{#AppExe}"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags
 
 [UninstallRun]
 Filename: "{app}\VyonixService.exe"; Parameters: "--wait 60 stop"; Flags: runhidden waituntilterminated; RunOnceId: "VyonixServiceStop"
+Filename: "{app}\{#AppExe}"; Parameters: "--installation uninstall --report ""{#LicensingDir}\desinstalador.json"""; Flags: runhidden waituntilterminated; RunOnceId: "VyonixEndActivation"
 Filename: "{app}\VyonixService.exe"; Parameters: "remove"; Flags: runhidden waituntilterminated; RunOnceId: "VyonixServiceRemove"
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""VYONIX DICOM Print (serviço)"""; Flags: runhidden; RunOnceId: "VyonixFirewallService"
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""VYONIX DICOM Print"""; Flags: runhidden; RunOnceId: "VyonixFirewall"
@@ -118,6 +128,19 @@ Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=
 [Code]
 var
   RemoveData: Boolean;
+  Upgrading: Boolean;
+
+{ Atualização × instalação nova: consulta feita ANTES de copiar os arquivos. }
+function InitializeSetup(): Boolean;
+begin
+  Upgrading := RegKeyExists(HKLM64, '{#UninstallKey}') or RegKeyExists(HKLM32, '{#UninstallKey}');
+  Result := True;
+end;
+
+function IsUpgrade(): Boolean;
+begin
+  Result := Upgrading;
+end;
 
 { Atualização: para o serviço da versão anterior antes de substituir os arquivos. }
 function PrepareToInstall(var NeedsRestart: Boolean): String;
@@ -137,7 +160,8 @@ begin
   if not UninstallSilent() then
     RemoveData := MsgBox(
       'Deseja remover também os dados do VYONIX (banco de dados, configurações, imagens e logs)?' + #13#10 + #13#10 +
-      'Escolha "Não" para manter os dados e reutilizá-los em uma reinstalação.',
+      'Escolha "Não" para manter os dados e reutilizá-los em uma reinstalação.' + #13#10 + #13#10 +
+      'Em qualquer caso, a ativação desta instalação é encerrada: uma nova instalação exigirá nova licença.',
       mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES;
   Result := True;
 end;

@@ -2,5 +2,3 @@
 pytest>=8
 pytest-qt>=4.4
 pyinstaller>=6.10
-# Somente testes da ferramenta de emissão de licenças (não entra no aplicativo).
-cryptography>=42

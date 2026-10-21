@@ -141,6 +141,9 @@ def run_ui(*, data_dir=None, log_level=None, console_log=False, smoke_test=False
         poll.start()
         if not (tray_start and tray is not None):
             window.show_fitted()
+            if not smoke_test:
+                from app.ui.pages.license_page import maybe_show_activation
+                QTimer.singleShot(400, lambda: maybe_show_activation(window, ctx))
         if smoke_test:
             QTimer.singleShot(300, lambda: _smoke(app, window, ctx, result, translations))
         code = exec_app(app)
@@ -371,16 +374,26 @@ def _smoke(app: QApplication, window, ctx, result: dict, translations) -> None:
                 f"fonte {Path(font.path).name}")
 
     def licensing() -> str:
-        from app.licensing import ed25519
-        from app.licensing.license import parse_request
-        pk = bytes.fromhex("d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a")
-        sig = bytes.fromhex("e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555fb8821590a33bac"
-                            "c61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b")
-        if not ed25519.verify(pk, b"", sig) or ed25519.verify(pk, b"x", sig):
-            raise RuntimeError("verificação Ed25519 incorreta (vetor RFC 8032)")
-        req = parse_request(ctx.license.request_code())
+        from vyonix_protocol import crypto, formats
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+        k = Ed25519PrivateKey.generate()
+        sig = crypto.sign_ed25519(k, b"vyonix")
+        if not crypto.verify_ed25519(crypto.public_hex(k), b"vyonix", sig) or \
+                crypto.verify_ed25519(crypto.public_hex(k), b"vyonix!", sig):
+            raise RuntimeError("verificação Ed25519 incorreta")
+        req = formats.parse_request(ctx.license.request_code())
         st = ctx.license.status(refresh=True)
-        return f"Ed25519 OK; código de solicitação válido (computador {req['machine_id'][:8]}…); estado {st.state.value}"
+        note = ""
+        if ctx.license.enforced and not st.active:
+            if not ctx.paths.isolated:
+                raise RuntimeError(f"funções licenciadas suspensas ({st.state.label}); ative a licença ou inicie a "
+                                   "demonstração antes do autoteste")
+            st = ctx.license.start_demo(actor="smoke-test")     # pasta isolada: DEMO só deste autoteste
+            note = "; DEMO iniciada na pasta isolada do autoteste"
+        prof = ctx.license.profile()
+        comps = ", ".join(k for k, v in prof.available.items() if v) or "nenhum"
+        return (f"Ed25519 (cryptography) OK; solicitação {req['hardware_id']} / {req['installation_id'][:13]}…; "
+                f"componentes: {comps}; estado {st.state.value}{note}")
 
     def logs() -> str:
         if not ctx.log_file.exists() or ctx.log_file.stat().st_size == 0:
@@ -406,12 +419,13 @@ def _smoke(app: QApplication, window, ctx, result: dict, translations) -> None:
                                f"{avail.width()}x{avail.height()}")
         return f"janela {frame.width()}x{frame.height()} em tela útil {avail.width()}x{avail.height()}"
 
-    for name, fn in (("recursos visuais", assets), ("navegação", pages),
+    for name, fn in (("licenciamento", licensing), ("recursos visuais", assets), ("navegação", pages),
                      ("tradução do Qt", translation), ("tamanho da janela", geometry),
                      ("dashboard", dashboard), ("configurações", settings_roundtrip),
                      ("temas", themes), ("histórico", history), ("servidor DICOM", dicom_server),
                      ("codecs de imagem", image_codecs), ("calibração", calibration_preview),
-                     ("impressão DICOM (Print SCP)", print_scp), ("impressão em PDF (fila)", print_pdf), ("impressoras do Windows", windows_printers), ("licenciamento", licensing), ("calibração por equipamento", device_calibration),
+                     ("impressão DICOM (Print SCP)", print_scp), ("impressão em PDF (fila)", print_pdf), ("impressoras do Windows", windows_printers),
+                     ("calibração por equipamento", device_calibration),
                      ("logs", logs)):
         check(name, fn)
 

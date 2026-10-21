@@ -25,7 +25,7 @@ from app.core.errors import SettingsValidationError, ValidationError
 from app.database.connection import Database
 from app.database.repositories.events_repo import Category, EventRepository
 from app.database.repositories.settings_repo import ChangeHistoryRepository
-from app.printing.paper import PAPER_SIZES, parse_layout
+from app.printing.paper import PAPER_CHOICES, parse_layout
 from app.utils.timeutil import utc_now_iso
 
 EXPORT_FORMAT = "vyonix-rules"
@@ -321,7 +321,7 @@ def validate_rule(rule: Rule, profile_exists: Callable[[int], bool] | None = Non
                 errors[f"action:{key}"] = "; ".join(exc.errors.values())
             continue
         try:
-            if kind == "paper" and val not in PAPER_SIZES:
+            if kind == "paper" and val not in PAPER_CHOICES:
                 raise ValueError("papel inválido")
             if kind == "orientation" and val not in ("auto", "portrait", "landscape"):
                 raise ValueError("orientação inválida")

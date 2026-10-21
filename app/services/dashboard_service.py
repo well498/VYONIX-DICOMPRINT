@@ -69,13 +69,14 @@ class DashboardService:
         alerts: list[Alert] = [Alert("warning", brand.CLINICAL_DISCLAIMER)]
         if self.license is not None:
             lst = self.license.status()
-            if lst.state.value != "valid":
-                level = "warning" if self.license.enforced else "info"
-                alerts.append(Alert(level, f"Licença: {lst.message} {self.license.policy_text()}"))
-            elif lst.expires_at is not None:
-                days = (lst.expires_at - utc_now()).days
-                if days <= 30:
-                    alerts.append(Alert("warning", f"A licença vence em {max(days, 0)} dia(s). Solicite a renovação."))
+            if not lst.active:
+                level = "error" if self.license.enforced else "info"
+                alerts.append(Alert(level, f"{lst.state.label}: {lst.message} {self.license.policy_text()}"))
+            elif lst.warning:
+                alerts.append(Alert("warning", f"{lst.state.label}: {lst.warning} Solicite a renovação ou a "
+                                               "licença comercial ao administrador."))
+            elif lst.state.value == "demo":
+                alerts.append(Alert("info", lst.message))
         elif not self.stats.active_license():
             alerts.append(Alert("info", "Licença não ativada."))
         if self.stats.devices_total() == 0:

@@ -89,6 +89,12 @@ jobs:
           & $env:TOOLS_PY tools/check_dll_deps.py dist\Vyonix
           if ($LASTEXITCODE -ne 0) { exit 1 }
 
+      - name: PyInstaller (dist\VYONIX_License_Manager.exe — portátil, separado do produto comercial)
+        run: |
+          python -m PyInstaller --noconfirm LicenseManager.spec 2>&1 | Tee-Object dist\validation\pyinstaller-lm.txt
+          if (-not (Test-Path dist\VYONIX_License_Manager.exe)) { exit 1 }
+          Get-Item dist\VYONIX_License_Manager.exe | Select-Object Name, Length
+
       - name: Inno Setup
         run: |
           $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
@@ -98,12 +104,17 @@ jobs:
           }
           & $iscc "/DAppVersion=${{ steps.ver.outputs.APP_VERSION }}" "/DFileVersion=${{ steps.ver.outputs.FILE_VERSION }}" installer\Vyonix.iss 2>&1 | Tee-Object dist\validation\iscc.txt
           if ($LASTEXITCODE -ne 0) { exit 1 }
-          Get-ChildItem dist\installer
+          & $iscc "/DAppVersion=${{ steps.ver.outputs.LM_VERSION }}" "/DFileVersion=${{ steps.ver.outputs.LM_FILE_VERSION }}" installer\LicenseManager.iss 2>&1 | Tee-Object dist\validation\iscc-lm.txt
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          Get-ChildItem dist\installer, dist\installer-lm
 
       - name: Validar executável e instalador
         run: |
           $inst = (Get-ChildItem dist\installer\*.exe | Select-Object -First 1).FullName
-          .\tools\ci_validate.ps1 -Installer $inst -Version "${{ steps.ver.outputs.APP_VERSION }}" -OutDir dist\validation
+          & $env:TOOLS_PY tools/scan_private_keys.py dist\Vyonix dist\installer dist\installer-lm dist\VYONIX_License_Manager.exe | Tee-Object dist\validation\private-key-scan.txt
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          .\tools\ci_validate.ps1 -Installer $inst -Version "${{ steps.ver.outputs.APP_VERSION }}" -OutDir dist\validation `
+            -LMExe dist\VYONIX_License_Manager.exe -LMInstaller dist\installer-lm\VYONIX_License_Manager_Setup.exe
           if ($LASTEXITCODE -ne 0) { exit 1 }
 
       - name: Medir tamanho, memória e abertura do executável final
@@ -116,7 +127,8 @@ jobs:
         run: |
           $inst = (Get-ChildItem dist\installer\*.exe | Select-Object -First 1).FullName
           & $env:TOOLS_PY tools/make_release.py --perf dist\perf\enxuta.json --version "${{ steps.ver.outputs.APP_VERSION }}" --commit "${{ github.sha }}" `
-            --installer $inst --junit dist\validation\pytest.xml --validation dist\validation --env dist\validation\env.txt
+            --installer $inst --junit dist\validation\pytest.xml --validation dist\validation --env dist\validation\env.txt `
+            --lm-exe dist\VYONIX_License_Manager.exe --lm-installer dist\installer-lm\VYONIX_License_Manager_Setup.exe
           git archive --format=zip --prefix="VYONIX_DICOM_Print_source_${{ steps.ver.outputs.APP_VERSION }}/" -o "dist\VYONIX_DICOM_Print_source_${{ steps.ver.outputs.APP_VERSION }}.zip" HEAD
 
       - name: Publicar pré-release
@@ -124,22 +136,26 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $v = "${{ steps.ver.outputs.APP_VERSION }}"
-          $tag = "v$v"
+          # RELEASE_TAG (opcional) publica uma revisão sem substituir a release anterior da mesma versão.
+          $tag = if (Test-Path RELEASE_TAG) { (Get-Content RELEASE_TAG -Raw).Trim() } else { "v$v" }
           $s = Get-Content dist\release-summary.json -Raw | ConvertFrom-Json
           $notes = @"
           VYONIX DICOM Print $v — versão para homologação ($($s.phase)).
           Requisito mínimo: Windows 10 64 bits (1809) ou Windows 11.
           NÃO validada para uso clínico. Declaração de conformidade DICOM de homologação incluída.
 
-          Instalador: $($s.installer)
-          SHA-256: $($s.installer_sha256)
+          Instalador comercial: $($s.installer) — SHA-256 $($s.installer_sha256)
+          License Manager portátil: VYONIX_License_Manager.exe — SHA-256 $($s.lm_exe_sha256)
+          License Manager (instalador opcional): VYONIX_License_Manager_Setup.exe — SHA-256 $($s.lm_installer_sha256)
+          O License Manager é administrativo: NÃO distribuir aos clientes.
           Testes automatizados: $($s.tests.aprovado) aprovados, $($s.tests.falhou) falhas, $($s.tests.ignorado) ignorados
           Validação do executável/instalador: $($s.validation_passed)/$($s.validation_total)
           Commit: ${{ github.sha }}
           "@
           gh release delete $tag --yes --cleanup-tag 2>$null
           gh release create $tag --target "${{ github.sha }}" --prerelease --title "VYONIX DICOM Print $v (homologação)" --notes $notes `
-            "dist\installer\$($s.installer)" "dist\$($s.zip)" "dist\VYONIX_DICOM_Print_source_$v.zip" `
+            "dist\installer\$($s.installer)" dist\VYONIX_License_Manager.exe dist\installer-lm\VYONIX_License_Manager_Setup.exe `
+            "dist\$($s.zip)" "dist\$($s.lm_zip)" "dist\VYONIX_DICOM_Print_source_$v.zip" `
             dist\release-summary.json dist\validation\results.json dist\validation\pytest.xml
 
       - name: Diagnóstico em caso de falha
@@ -167,6 +183,8 @@ jobs:
           name: vyonix-windows-build
           path: |
             dist/installer
+            dist/installer-lm
+            dist/VYONIX_License_Manager.exe
             dist/validation
             dist/*.zip
             dist/release-summary.json

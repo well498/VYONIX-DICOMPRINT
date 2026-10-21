@@ -289,9 +289,23 @@ class PrinterBackend(Protocol):
 class LicenseState(str, enum.Enum):
     NOT_ACTIVATED = "not_activated"
     VALID = "valid"
+    DEMO = "demo"
+    DEMO_EXPIRED = "demo_expired"
     EXPIRED = "expired"
     INVALID = "invalid"
     HARDWARE_MISMATCH = "hardware_mismatch"
+    INSTALLATION_MISMATCH = "installation_mismatch"
+    REVOKED = "revoked"
+    SUSPENDED = "suspended"          # integridade temporal ou de estado: revalidação administrativa
+
+    @property
+    def label(self) -> str:
+        return {
+            "not_activated": "Não ativado", "valid": "Licença válida", "demo": "Demonstração ativa",
+            "demo_expired": "Demonstração encerrada", "expired": "Licença vencida", "invalid": "Licença inválida",
+            "hardware_mismatch": "Licença de outro computador", "installation_mismatch": "Licença de outra instalação",
+            "revoked": "Licença revogada", "suspended": "Funções suspensas",
+        }[self.value]
 
 
 @dataclass(frozen=True)
@@ -302,6 +316,18 @@ class LicenseStatus:
     features: Sequence[str] = ()
     expires_at: datetime | None = None
     message: str = ""
+    kind: str | None = None                  # commercial | demo_signed | demo_local
+    license_id: str | None = None
+    license_type: str | None = None
+    remaining_s: float | None = None
+    warning: str | None = None
+    hardware_id: str | None = None
+    max_devices: int | None = None
+    max_printers: int | None = None
+
+    @property
+    def active(self) -> bool:
+        return self.state in (LicenseState.VALID, LicenseState.DEMO)
 
 
 @runtime_checkable

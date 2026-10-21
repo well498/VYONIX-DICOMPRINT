@@ -14,3 +14,6 @@ pywin32>=306; sys_platform == "win32"
 pylibjpeg>=2.0
 pylibjpeg-openjpeg>=2.3
 pyjpegls>=1.4
+
+# Licenciamento (formato 2): verificação Ed25519 e da prova do TPM com biblioteca auditada.
+cryptography>=42

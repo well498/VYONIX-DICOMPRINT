@@ -47,6 +47,18 @@ class CompositorTest(TempDirTestCase):
         c = Compositor(LayoutSpec(paper="A3", orientation="landscape", dpi=100))
         self.assertEqual((c.width_px, c.height_px), (1654, 1169))
 
+    def test_letter_legal_and_custom_papers(self):
+        from app.printing.layout_engine import Compositor, LayoutSpec
+        from app.printing.paper import parse_custom
+        for paper, (w, h) in (("Letter", (215.9, 279.4)), ("Legal", (215.9, 355.6))):
+            c = Compositor(LayoutSpec(paper=paper, orientation="portrait", dpi=100))
+            self.assertEqual((c.width_px, c.height_px), (round(w / 25.4 * 100), round(h / 25.4 * 100)))
+        c = Compositor(LayoutSpec(paper="custom", custom_mm=parse_custom("240x300"), orientation="landscape", dpi=72))
+        self.assertEqual((c.geom.width_mm, c.geom.height_mm), (300.0, 240.0))
+        for bad in ("10x10", "abc", "2000x300"):
+            with self.assertRaises(ValidationError):
+                parse_custom(bad)
+
     def test_grid_pages_and_gray_memory(self):
         from app.printing.layout_engine import Compositor, LayoutSpec
         c = Compositor(LayoutSpec(layout="2x2", dpi=100, exam_info=False, page_numbers=True))
