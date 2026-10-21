@@ -50,10 +50,12 @@ Menu **Equipamentos DICOM → Adicionar**:
 |---|---|---|
 | Nome * | Tomógrafo — Sala 2 | Identificação no VYONIX |
 | AE Title * | `CT_SALA2` | Deve ser exatamente o AE Title configurado no equipamento |
-| Modalidade | CT | Usada nos filtros e, futuramente, nas regras de impressão |
+| Modalidade | CT | Usada nos filtros, nas regras e no perfil padrão da modalidade |
 | Endereço IP | `192.168.10.25` | Se preenchido, só conexões deste IP são aceitas |
 | Porta | `104` | Porta do equipamento, usada só no teste C-ECHO feito pelo VYONIX |
 | Unidade, setor, fabricante, modelo, observações | — | Informativos |
+
+**AE Title repetido:** vários equipamentos saem de fábrica com o mesmo AE Title. O VYONIX aceita AE Titles iguais **somente** se os cadastros tiverem IPs diferentes; a origem é identificada por AE Title + IP. Se uma conexão chegar com um AE Title compartilhado de um IP não cadastrado, ela é recusada com o motivo "conflito" no Histórico.
 
 Marque **Autorizado a enviar imagens** para liberar o equipamento. Um equipamento pode ser bloqueado a qualquer momento (**Autorizar / bloquear**) sem perder o cadastro.
 
@@ -84,7 +86,9 @@ Para equipamentos que enviam para uma impressora DICOM (impressora de filme):
 3. No equipamento, crie uma impressora DICOM com o IP do computador do VYONIX, a porta e o AE Title de impressão.
 4. Defina a impressora de papel em *Impressoras* e, se quiser, um perfil para o equipamento ou a modalidade.
 
-O que é respeitado do pedido do equipamento: formato `STANDARD\C,R` (vira o layout linhas × colunas, com células vazias mantidas em branco), orientação, número de cópias, prioridade, polaridade e Presentation LUT. O papel e a impressora vêm do perfil ou do padrão do VYONIX: um filme 14 × 17 pol. é impresso no papel configurado, e isso fica anotado no histórico do trabalho. As densidades de borda e de fundo do filme (geralmente pretas) não são aplicadas ao papel, salvo se *Aplicar densidades do filme ao papel* estiver ligado.
+**Prioridade do pedido:** em *Configurações → DICOM — Impressão* (padrão) e em cada equipamento: *equipamento prevalece* (padrão — as configurações do equipamento e as regras dele vencem o pedido), *pedido prevalece* ou *ignorar o pedido*.
+
+O que é aproveitado do pedido do equipamento: formato `STANDARD\C,R` (vira o layout linhas × colunas, com células vazias mantidas em branco), orientação, número de cópias, prioridade, polaridade e Presentation LUT. O papel e a impressora vêm do perfil ou do padrão do VYONIX: um filme 14 × 17 pol. é impresso no papel configurado, e isso fica anotado no histórico do trabalho. As densidades de borda e de fundo do filme (geralmente pretas) não são aplicadas ao papel, salvo se *Aplicar densidades do filme ao papel* estiver ligado.
 
 O VYONIX só confirma o comando de impressão (N-ACTION) ao equipamento depois que as imagens foram gravadas e o trabalho entrou na fila persistente. Se o equipamento encerrar a conexão sem mandar imprimir, nada é impresso e o Histórico registra o aviso.
 

@@ -13,7 +13,8 @@ from app.ui.admin import current_actor, ensure_admin
 from app.ui.pages.base import Page, banner
 from app.ui.pages.jobs_page import SETTING_LABELS, _fmt
 from app.ui.qt import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QGridLayout,
-                       QHBoxLayout, QLabel, QLineEdit, QPlainTextEdit, QPushButton, QSpinBox, QVBoxLayout, QWidget)
+                       QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPlainTextEdit, QPushButton, QSpinBox, QVBoxLayout,
+                       QWidget)
 from app.ui.widgets import button, button_row, fill_table, local_time, make_table, selected_key, status_text
 from app.ui.workers import run_async
 
@@ -75,7 +76,7 @@ class ConditionRow(QWidget):
 
 
 class RuleDialog(QDialog):
-    def __init__(self, parent: QWidget, ctx, rule: Rule | None) -> None:
+    def __init__(self, parent: QWidget, ctx, rule: Rule | None, device_id: int | None = None) -> None:
         super().__init__(parent)
         self.ctx, self.rule, self.saved = ctx, rule, None
         self.setWindowTitle("Editar regra" if rule else "Nova regra")
@@ -89,7 +90,14 @@ class RuleDialog(QDialog):
         self.priority.setValue(100)
         self.active = QCheckBox("Regra ativa")
         self.active.setChecked(True)
+        self.scope = QComboBox()
+        self.scope.addItem("Regra geral (todos os equipamentos)", None)
+        for d in ctx.devices.list(include_inactive=True):
+            self.scope.addItem(f"Somente o equipamento {d.name} ({d.ae_title})", d.id)
+        start = rule.device_id if rule else device_id
+        self.scope.setCurrentIndex(max(self.scope.findData(start), 0) if start is not None else 0)
         form.addRow("Nome *", self.name)
+        form.addRow("Aplica-se a", self.scope)
         form.addRow("Descrição", self.description)
         form.addRow("Prioridade (menor = avaliada primeiro)", self.priority)
         form.addRow("", self.active)
@@ -149,7 +157,23 @@ class RuleDialog(QDialog):
             w = QComboBox()
             for p in self.ctx.printers.list():
                 w.addItem(p.name, p.name)
-        elif key == "profile_id":
+        elif key in ("brightness", "contrast", "gamma"):
+            from app.ui.qt import QDoubleSpinBox
+            w = QDoubleSpinBox()
+            w.setRange(-5.0, 5.0)
+            w.setDecimals(1)
+            w.setSingleStep(0.5)
+        elif key == "spacing_mm":
+            from app.ui.qt import QDoubleSpinBox
+            w = QDoubleSpinBox()
+            w.setRange(0, 20)
+            w.setDecimals(1)
+        elif key == "dicom_policy":
+            from app.devices.settings import DICOM_POLICIES
+            w = QComboBox()
+            for k_, label_ in DICOM_POLICIES.items():
+                w.addItem(label_, k_)
+        elif key in ("profile_id", "calibration_profile_id"):
             w = QComboBox()
             for p in self.ctx.profiles.list():
                 w.addItem(p.name, p.id)
@@ -170,6 +194,8 @@ class RuleDialog(QDialog):
             return w.currentData()
         if isinstance(w, QSpinBox):
             return w.value()
+        if hasattr(w, "decimals"):
+            return round(float(w.value()), 1)
         return w.text().strip()
 
     @staticmethod
@@ -182,6 +208,8 @@ class RuleDialog(QDialog):
             w.setCurrentIndex(max(idx, 0))
         elif isinstance(w, QSpinBox):
             w.setValue(int(value))
+        elif hasattr(w, "decimals"):
+            w.setValue(float(value))
         else:
             w.setText(str(value))
 
@@ -214,7 +242,8 @@ class RuleDialog(QDialog):
         actions = {k: self._value(w) for k, (chk, w) in self.actions.items() if chk.isChecked()}
         return Rule(id=self.rule.id if self.rule else None, name=self.name.text(),
                     description=self.description.text() or None, conditions=[c.get() for c in self.conditions],
-                    actions=actions, priority=self.priority.value(), active=self.active.isChecked())
+                    actions=actions, priority=self.priority.value(), active=self.active.isChecked(),
+                    device_id=self.scope.currentData())
 
     def _save(self) -> None:
         try:
@@ -319,6 +348,72 @@ class SimulationDialog(QDialog):
                                  for k, v in res.values.items() if k in SETTING_LABELS])
 
 
+class DeviceRulesDialog(QDialog):
+    """Regras de um equipamento (Equipamentos → Regras do equipamento)."""
+
+    def __init__(self, parent: QWidget, ctx, device) -> None:
+        super().__init__(parent)
+        self.ctx, self.device = ctx, device
+        self.setWindowTitle(f"Regras do equipamento — {device.name}")
+        self.resize(1000, 520)
+        lay = QVBoxLayout(self)
+        note = QLabel("Regras deste equipamento têm prioridade sobre as configurações gerais dele e sobre as regras "
+                      "gerais. Elas nunca afetam outro equipamento.")
+        note.setWordWrap(True)
+        lay.addWidget(note)
+        self.table = make_table(["Prioridade", "Regra", "Ativa", "Quando", "Então"])
+        lay.addWidget(self.table, 1)
+        row = QHBoxLayout()
+        for text, slot in (("Nova regra", self.add), ("Editar", self.edit), ("Duplicar", self.duplicate),
+                           ("Ativar / desativar", self.toggle), ("Excluir", self.delete)):
+            b = QPushButton(text)
+            b.clicked.connect(lambda _=False, f=slot: f())
+            row.addWidget(b)
+        row.addStretch(1)
+        bb = QDialogButtonBox(QDialogButtonBox.Close)
+        bb.rejected.connect(self.reject)
+        row.addWidget(bb)
+        lay.addLayout(row)
+        self.refresh()
+
+    def refresh(self) -> None:
+        self.rules = {r.id: r for r in self.ctx.rules.list(device_id=self.device.id)}
+        fill_table(self.table, [(r.priority, r.name, "Sim" if r.active else "Não", describe_conditions(r),
+                                 describe_actions(r)) for r in self.rules.values()], list(self.rules))
+
+    def _sel(self):
+        return self.rules.get(selected_key(self.table))
+
+    def add(self) -> None:
+        if ensure_admin(self, self.ctx.access, "criar regra"):
+            if RuleDialog(self, self.ctx, None, device_id=self.device.id).exec():
+                self.refresh()
+
+    def edit(self) -> None:
+        r = self._sel()
+        if r and ensure_admin(self, self.ctx.access, "editar regra") and RuleDialog(self, self.ctx, r).exec():
+            self.refresh()
+
+    def duplicate(self) -> None:
+        r = self._sel()
+        if r and ensure_admin(self, self.ctx.access, "duplicar regra"):
+            self.ctx.rules.duplicate(r.id, actor=current_actor())
+            self.refresh()
+
+    def toggle(self) -> None:
+        r = self._sel()
+        if r and ensure_admin(self, self.ctx.access, "ativar ou desativar regra"):
+            self.ctx.rules.set_active(r.id, not r.active, actor=current_actor())
+            self.refresh()
+
+    def delete(self) -> None:
+        r = self._sel()
+        if r and ensure_admin(self, self.ctx.access, "excluir regra") and QMessageBox.question(
+                self, "Excluir regra", f"Excluir \u201c{r.name}\u201d?") == QMessageBox.Yes:
+            self.ctx.rules.delete(r.id, actor=current_actor())
+            self.refresh()
+
+
 class RulesPage(Page):
     def __init__(self, ctx, parent: QWidget | None = None) -> None:
         super().__init__("Regras automáticas",
@@ -333,25 +428,48 @@ class RulesPage(Page):
         self.body.addLayout(button_row(
             button("Nova regra", self.add, primary=True), button("Editar", self.edit),
             button("Ativar / desativar", self.toggle), button("Subir", lambda: self.move(-1)),
-            button("Descer", lambda: self.move(1)), button("Excluir", self.delete),
+            button("Descer", lambda: self.move(1)), button("Duplicar", self.duplicate),
+            button("Versões…", self.versions), button("Excluir", self.delete),
             button("Simular…", self.simulate), button("Importar…", self.import_), button("Exportar…", self.export),
-            stretch_at=6))
-        self.table = make_table(["Prioridade", "Regra", "Ativa", "Quando", "Então", "Alterada em"])
+            stretch_at=8))
+        frow = QHBoxLayout()
+        frow.addWidget(QLabel("Mostrar"))
+        self.scope_filter = QComboBox()
+        self.scope_filter.addItem("Todas as regras", "all")
+        self.scope_filter.addItem("Somente regras gerais", None)
+        self.scope_filter.currentIndexChanged.connect(lambda _: self.refresh())
+        frow.addWidget(self.scope_filter, 1)
+        self.body.addLayout(frow)
+        self.table = make_table(["Prioridade", "Regra", "Aplica-se a", "Ativa", "Quando", "Então", "Alterada em"])
         self.table.doubleClicked.connect(lambda _: self.edit())
         self.body.addWidget(self.table, 1)
         self.rules: dict[int, Rule] = {}
 
+    def refresh(self) -> None:
+        scope = self.scope_filter.currentData() if self.scope_filter.currentIndex() >= 0 else "all"
+
+        def load():
+            devices = {d.id: d.name for d in self.ctx.devices.list(include_inactive=True)}
+            return self.ctx.rules.list(device_id=scope), devices
+        run_async(load, self._render, self._error)
+
     def on_shown(self) -> None:
+        current = self.scope_filter.currentData()
+        self.scope_filter.blockSignals(True)
+        while self.scope_filter.count() > 2:
+            self.scope_filter.removeItem(2)
+        for d in self.ctx.devices.list(include_inactive=True):
+            self.scope_filter.addItem(f"Regras do equipamento {d.name}", d.id)
+        self.scope_filter.setCurrentIndex(max(self.scope_filter.findData(current), 0))
+        self.scope_filter.blockSignals(False)
         self.refresh()
 
-    def refresh(self) -> None:
-        run_async(self.ctx.rules.list, self._render, self._error)
-
-    def _render(self, rules) -> None:
+    def _render(self, data) -> None:
+        rules, devices = data
         self.rules = {r.id: r for r in rules}
-        fill_table(self.table, [(r.priority, r.name, "Sim" if r.active else "Não", describe_conditions(r),
-                                 describe_actions(r), local_time(r.updated_at)) for r in rules],
-                   [r.id for r in rules])
+        fill_table(self.table, [(r.priority, r.name, devices.get(r.device_id, "?") if r.device_id else "Todos",
+                                 "Sim" if r.active else "Não", describe_conditions(r), describe_actions(r),
+                                 local_time(r.updated_at)) for r in rules], [r.id for r in rules])
 
     def _error(self, exc: BaseException) -> None:
         self._msg(f"Falha: {exc}", "err")
@@ -371,7 +489,8 @@ class RulesPage(Page):
     def add(self) -> None:
         if not ensure_admin(self, self.ctx.access, "criar regra"):
             return
-        dlg = RuleDialog(self, self.ctx, None)
+        scope = self.scope_filter.currentData()
+        dlg = RuleDialog(self, self.ctx, None, device_id=scope if isinstance(scope, int) else None)
         if dlg.exec():
             self._msg(f"Regra “{dlg.saved.name}” criada.", "ok")
             self.refresh()
@@ -405,6 +524,46 @@ class RulesPage(Page):
     def move(self, delta: int) -> None:
         self._act("mudar a prioridade", lambda r: self.ctx.rules.move(r.id, delta, actor=current_actor()),
                   "Prioridade de “{name}” alterada.")
+
+    def duplicate(self) -> None:
+        self._act("duplicar regra", lambda r: self.ctx.rules.duplicate(r.id, actor=current_actor()),
+                  "Cópia de \u201c{name}\u201d criada (inativa até ser revisada).")
+
+    def versions(self) -> None:
+        r = self._selected()
+        if r is None:
+            return
+        vs = self.ctx.rules.versions(r.id)
+        dlg = QDialog(self)
+        dlg.setWindowTitle(f"Versões anteriores — {r.name}")
+        dlg.resize(900, 420)
+        lay = QVBoxLayout(dlg)
+        t = make_table(["Alterada em", "Por", "Condições", "Ações"])
+        fill_table(t, [(local_time(v["changed_at"]), v["changed_by"],
+                        describe_conditions(Rule(id=None, name="", conditions=v["rule"].get("conditions") or [],
+                                                 actions={})),
+                        describe_actions(Rule(id=None, name="", conditions=[], actions=v["rule"].get("actions") or {})))
+                       for v in vs], [v["id"] for v in vs])
+        lay.addWidget(t)
+        bb = QDialogButtonBox(QDialogButtonBox.Close)
+        restore = bb.addButton("Restaurar esta versão", QDialogButtonBox.ActionRole)
+        bb.rejected.connect(dlg.reject)
+
+        def do_restore():
+            hid = selected_key(t)
+            if hid is None or not ensure_admin(self, self.ctx.access, "restaurar versão da regra"):
+                return
+            try:
+                self.ctx.rules.restore_version(r.id, int(hid), actor=current_actor())
+            except VyonixError as exc:
+                self._msg(str(exc), "err")
+                return
+            dlg.accept()
+            self._msg(f"Versão restaurada para \u201c{r.name}\u201d.", "ok")
+            self.refresh()
+        restore.clicked.connect(lambda _=False: do_restore())
+        lay.addWidget(bb)
+        dlg.exec()
 
     def delete(self) -> None:
         self._act("excluir regra", lambda r: self.ctx.rules.delete(r.id, actor=current_actor()),

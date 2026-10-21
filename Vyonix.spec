@@ -69,7 +69,7 @@ a = Analysis(
     [str(ROOT / "packaging" / "launcher.py")],
     pathex=[str(ROOT)],
     binaries=[],
-    datas=[(str(ROOT / "assets"), "assets")] + CODEC_METADATA,
+    datas=[(str(ROOT / "assets"), "assets"), (str(ROOT / "print_templates"), "print_templates")] + CODEC_METADATA,
     hiddenimports=[f"{QT_BINDING}.QtSvg"] + CODEC_HIDDEN + WIN32_HIDDEN,
     hookspath=[],
     runtime_hooks=[],
@@ -130,7 +130,8 @@ s = Analysis(
     [str(ROOT / "packaging" / "service_launcher.py")],
     pathex=[str(ROOT)],
     binaries=[],
-    datas=CODEC_METADATA,
+    datas=[(str(ROOT / "assets" / "fonts"), "assets/fonts"), (str(ROOT / "print_templates"), "print_templates")]
+          + CODEC_METADATA,
     hiddenimports=CODEC_HIDDEN + WIN32_HIDDEN + SERVICE_HIDDEN,
     hookspath=[],
     runtime_hooks=[],

@@ -4,13 +4,24 @@
 
 ## Natureza desta versão
 
-Versão de **desenvolvimento para homologação**, correspondente às **Fases 1 a 8** (todas as fases do plano: Fundação, Comunicação DICOM, Imagens e calibração, Impressão e fila, DICOM Print SCP, Regras automáticas, Serviço Windows e Licenciamento) do plano de 8 fases. Não é a versão comercial 1.0.0: o número `{VERSION}` indica uma pré-versão de 1.0.0.
+Versão **{VERSION} para homologação**: as 8 fases do plano e o *prompt mestre atualizado* (equipamentos independentes, calibração visual avançada, teste 3 × 3, calibração progressiva e cabeçalho/rodapé BMP). A lista detalhada do que foi implementado e do que está pendente está em *Funcionalidades*.
 
-**Não validada para uso clínico. Sem declaração de conformidade DICOM.**
+**Não validada para uso clínico.** A declaração de conformidade DICOM incluída é de homologação.
 
 ## Requisito mínimo
 
 Windows 10 64 bits (versão 1809 ou posterior) ou Windows 11. O executável usa Python 3.12 e Qt 6.
+
+## Novidades da versão 1.0.0
+
+- **Equipamentos independentes:** configurações de impressão exclusivas por equipamento, com versões, restauração, duplicação (cópia independente) e comparação; regras próprias de cada equipamento; hierarquia configurável (regra do equipamento → equipamento → pedido DICOM Print conforme a política → perfil da modalidade → global) com a origem de cada valor; impressão automática ou manual por equipamento.
+- **Identificação da origem por AE Title + IP:** dois equipamentos podem ter o mesmo AE Title se tiverem IPs diferentes; ambiguidade é recusada com motivo claro.
+- **Calibração visual avançada:** brilho, contraste e gama de −5,0 a +5,0 (setas ±0,5, passo fino 0,1/0,2, barra, campo, restaurar, indicador de não salvo, atalhos), com fórmulas documentadas aplicadas em ponto flutuante no mesmo pipeline da impressão; imagem recebida, arquivo (DICOM, JPG, PNG, BMP) ou padrão de teste; pré-visualização original × ajustada em segundo plano, zoom, antes/depois.
+- **Teste de calibração 3 × 3** (três modos, quatro incrementos, ajuste nos limites, rótulos em faixa própria, pré-visualização da folha) e **calibração progressiva** com escolha da melhor imagem, novas rodadas, histórico e reversão.
+- **Cabeçalho e rodapé BMP universais** de 3000 × 206 px (modelos brancos incluídos), personalização com conversão proporcional, aplicação em A4/A3, retrato/paisagem, na largura útil (considerando a área não imprimível do driver), ativação individual por equipamento.
+- **Motor de layout:** layout personalizado, área não imprimível da impressora, alerta de resolução efetiva insuficiente, pré-visualização fiel da página (mesmo código da impressão) nos trabalhos e nas configurações do equipamento.
+- **Banco e histórico:** migração 4 (configurações e versões por equipamento, regras por equipamento, rodadas de calibração) sem perda de cadastros; backup automático diário e manual verificados; restauração por `--restore-backup`.
+- **Correção:** textos impressos (cabeçalho, rodapé, padrão de teste) agora saem com acentos — a fonte DejaVu Sans é distribuída com o programa.
 
 ## Implementado
 
@@ -63,5 +74,8 @@ Windows 10 64 bits (versão 1809 ou posterior) ou Windows 11. O executável usa 
 - Imagens multiframe com mais de 16 quadros: na impressão automática, sai só o primeiro quadro.
 - Testes de recepção feitos com equipamento simulado (pynetdicom). Interoperabilidade com equipamentos reais deve ser verificada na homologação.
 - Os testes automatizados foram executados em Windows Server 2022 no GitHub Actions. O teste em Windows 10 e 11 limpos, sem Python, deve ser feito na homologação (ver Relatório de Validação).
-- Esta pré-versão usa a chave de licenças de **homologação** (`hml-2026`) e não limita recursos. Antes da versão comercial, gere a chave de produção com `license_admin keygen`, inclua a chave pública no aplicativo e recompile; versões sem o sufixo `.dev` aplicam a política de licença.
+- **Licença:** a versão 1.0.0 aplica a política de licenciamento. Sem licença válida, tudo funciona em modo de avaliação e as páginas saem com "NÃO LICENCIADO — USO PARA AVALIAÇÃO" no rodapé. Esta compilação aceita a chave de **homologação** (`hml-2026`); antes da distribuição comercial gere a chave de produção com `license_admin keygen`, inclua a chave pública e recompile.
+- **Calibração:** as fórmulas de brilho, contraste e gama são parâmetros iniciais; a calibração é visual (não densitométrica) e não comprova qualidade diagnóstica.
+- **Restauração do banco:** feita pela linha de comando com o serviço parado (a interface mostra o procedimento).
+- Imagens coloridas são convertidas para tons de cinza na folha de teste 3 × 3.
 - A disponibilidade jurídica do nome VYONIX ainda deve ser verificada antes da distribuição comercial.

@@ -389,6 +389,43 @@ class PrintWorker:
                         pages_total=1, paper=paper, width_mm=geom.width_mm, height_mm=geom.height_mm,
                         orientation=orientation, dpi=dpi, warnings=list(matrix.notes), compositor=None)
 
+    def preview_device(self, device_id: int | None, instance_id: int | None = None,
+                       resolved: Resolved | None = None) -> tuple[list, list[str], Resolved]:
+        """Página como sairia para um equipamento (com uma imagem recebida ou o padrão de teste),
+        pelo mesmo caminho de impressão — sem criar trabalho."""
+        from types import SimpleNamespace
+        conn = self.db.connection()
+        dev = conn.execute("SELECT name, ae_title, modality FROM devices WHERE id = ?", (device_id,)).fetchone() \
+            if device_id else None
+        modality = dev["modality"] if dev else None
+        items = []
+        if instance_id is not None:
+            r = conn.execute("SELECT file_path, received_at, modality FROM instances WHERE id = ?",
+                             (instance_id,)).fetchone()
+            if r is None:
+                raise ValidationError("Imagem não encontrada (pode ter sido removida pela retenção).")
+            items = [{"file_path": r["file_path"], "frame_index": 0, "position": 0, "received_at": r["received_at"],
+                      "instance_id": instance_id}]
+            modality = r["modality"] or modality
+        if resolved is None:
+            ev = self.jobs.evaluate_rules(source_type="storage" if items else "test_page",
+                                          source_ae=dev["ae_title"] if dev else None, device_id=device_id,
+                                          modality=modality, items=[(instance_id, 0)] if items else [])
+            resolved = self.jobs.resolve_for(device_id=device_id, modality=modality, rules=ev)
+        job = SimpleNamespace(id=0, source_type="storage" if items else "test_page", modality=modality,
+                              device_name=dev["name"] if dev else None, source_ae=dev["ae_title"] if dev else None,
+                              created_at=utc_now_iso(), device_id=device_id)
+        printer = backend = None
+        try:
+            printer = self.printers.resolve(resolved.values.get("printer") or None)
+            backend = self.printers.backend_for(printer)
+        except Exception:  # noqa: BLE001
+            pass
+        prep = self.prepare(job, resolved, items, printer=printer, backend=backend)
+        pages = list(prep.pages())[:1]
+        warnings = list(prep.warnings) + (list(prep.compositor.warnings) if prep.compositor else [])
+        return pages, warnings, resolved
+
     def preview(self, job_id: int, max_pages: int = 4) -> tuple[list, list[str]]:
         """Páginas do trabalho como serão impressas (sem enviar ao spooler)."""
         job = self.jobs.get_job(job_id)

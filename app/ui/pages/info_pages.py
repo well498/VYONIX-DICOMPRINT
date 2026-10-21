@@ -181,7 +181,8 @@ class AboutPage(Page):
 
         frame, lay = card("Componentes de terceiros")
         for text in (f"Qt {QT_VERSION} / {QT_API} (Qt for Python) — LGPLv3", "SQLite — domínio público",
-                     "Python — PSF License"):
+                     "Python — PSF License", "pydicom / pynetdicom — MIT", "NumPy — BSD", "Pillow — HPND",
+                     "DejaVu Sans (fonte das impressões) — licença Bitstream Vera/DejaVu (livre)"):
             lay.addWidget(QLabel("•  " + text))
         self.body.addWidget(frame)
         self.body.addStretch(1)

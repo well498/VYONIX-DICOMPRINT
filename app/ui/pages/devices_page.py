@@ -10,7 +10,7 @@ from app.security.access import AdminAccess
 from app.ui.admin import current_actor, ensure_admin
 from app.ui.pages.base import Page, banner
 from app.ui.qt import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout,
-                       QLabel, QLineEdit, QMessageBox, QPlainTextEdit, QSpinBox, QVBoxLayout,
+                       QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPlainTextEdit, QSpinBox, QVBoxLayout,
                        QWidget)
 from app.ui.widgets import (button, button_row, fill_table, local_time, make_table, selected_key,
                             status_text)
@@ -20,13 +20,15 @@ FIELDS = [
     ("name", "Nome *"), ("ae_title", "AE Title *"), ("modality", "Modalidade"),
     ("manufacturer", "Fabricante"), ("model", "Modelo"), ("ip_address", "Endereço IP"),
     ("port", "Porta (para teste C-ECHO)"), ("site", "Unidade ou clínica"), ("department", "Setor"),
+    ("printer_id", "Impressora associada"), ("print_profile_id", "Perfil de impressão"),
     ("notes", "Observações"),
 ]
 
 
 class DeviceDialog(QDialog):
-    def __init__(self, parent: QWidget, service: DeviceService, device=None) -> None:
+    def __init__(self, parent: QWidget, service: DeviceService, device=None, ctx=None) -> None:
         super().__init__(parent)
+        self.ctx = ctx
         self.service = service
         self.device = device
         self.result_device = None
@@ -42,6 +44,18 @@ class DeviceDialog(QDialog):
                 w.addItem("—", None)
                 for code, name in MODALITIES:
                     w.addItem(f"{code} — {name}", code)
+            elif key in ("printer_id", "print_profile_id"):
+                w = QComboBox()
+                w.addItem("— nenhum —", None)
+                try:
+                    if key == "printer_id" and ctx is not None:
+                        for pr in ctx.printers.list():
+                            w.addItem(pr.name, pr.id)
+                    elif ctx is not None:
+                        for pf in ctx.profiles.list():
+                            w.addItem(pf.name, pf.id)
+                except Exception:  # noqa: BLE001
+                    pass
             elif key == "port":
                 w = QSpinBox()
                 w.setRange(0, 65535)
@@ -121,12 +135,13 @@ class DeviceDialog(QDialog):
 
 class DevicesPage(Page):
     def __init__(self, service: DeviceService, access: AdminAccess, exports_dir: Path,
-                 parent: QWidget | None = None) -> None:
+                 parent: QWidget | None = None, ctx=None) -> None:
         super().__init__("Equipamentos DICOM",
                          "Somente equipamentos ativos e autorizados podem enviar imagens, salvo se a "
                          "opção \"aceitar equipamentos não cadastrados\" estiver ligada em Configurações.",
                          parent)
         self.service, self.access, self.exports_dir = service, access, exports_dir
+        self.ctx = ctx
         self.status = banner("")
         self.status.hide()
         self.body.addWidget(self.status)
@@ -137,12 +152,24 @@ class DevicesPage(Page):
             button("Autorizar / bloquear", self.toggle_auth), button("Testar conexão (C-ECHO)", self.echo),
             button("Histórico", self.history), button("Remover", self.remove),
             button("Importar…", self.import_), button("Exportar…", self.export), stretch_at=6))
-        self.body.addWidget(self.show_inactive)
+        if ctx is not None:
+            self.body.addLayout(button_row(
+                button("Configurações de impressão…", self.print_settings, primary=True),
+                button("Calibração de imagem…", self.calibration),
+                button("Regras do equipamento…", self.device_rules), button("Comparar com…", self.compare)))
+        search_row = QHBoxLayout()
+        self.search = QLineEdit()
+        self.search.setPlaceholderText("Pesquisar por nome, modalidade, AE Title, IP ou unidade")
+        self.search.textChanged.connect(lambda _: self._render(list(self.devices_all)))
+        search_row.addWidget(self.search, 1)
+        search_row.addWidget(self.show_inactive)
+        self.body.addLayout(search_row)
         self.table = make_table(["Nome", "AE Title", "Modalidade", "IP:porta", "Unidade / setor",
                                  "Autorizado", "Último contato", "Situação"])
         self.table.doubleClicked.connect(lambda _: self.edit())
         self.body.addWidget(self.table, 1)
         self.devices: dict[int, object] = {}
+        self.devices_all: list = []
 
     def on_shown(self) -> None:
         self.refresh()
@@ -152,6 +179,12 @@ class DevicesPage(Page):
         run_async(lambda: self.service.list(include_inactive=include), self._render, self._error)
 
     def _render(self, devices) -> None:
+        self.devices_all = list(devices)
+        q = self.search.text().strip().lower()
+        if q:
+            devices = [d for d in devices if any(q in (str(x or "")).lower() for x in
+                                                 (d.name, d.modality, d.ae_title, d.ip_address, d.site,
+                                                  d.department, d.manufacturer, d.model))]
         self.devices = {d.id: d for d in devices}
         rows = []
         for d in devices:
@@ -181,7 +214,7 @@ class DevicesPage(Page):
     def add(self) -> None:
         if not ensure_admin(self, self.access, "cadastrar equipamento"):
             return
-        dlg = DeviceDialog(self, self.service)
+        dlg = DeviceDialog(self, self.service, ctx=self.ctx)
         if dlg.exec():
             self._msg(f"Equipamento \"{dlg.result_device.name}\" cadastrado.", "ok")
             self.refresh()
@@ -190,10 +223,33 @@ class DevicesPage(Page):
         d = self._selected()
         if d is None or not ensure_admin(self, self.access, "editar equipamento"):
             return
-        dlg = DeviceDialog(self, self.service, d)
+        dlg = DeviceDialog(self, self.service, d, ctx=self.ctx)
         if dlg.exec():
             self._msg("Alterações salvas.", "ok")
             self.refresh()
+
+    def print_settings(self) -> None:
+        from app.ui.pages.device_settings_dialog import DeviceSettingsDialog
+        d = self._selected()
+        if d is not None:
+            DeviceSettingsDialog(self, self.ctx, d).exec()
+
+    def calibration(self) -> None:
+        from app.ui.pages.device_calibration import DeviceCalibrationDialog
+        d = self.devices.get(selected_key(self.table))
+        DeviceCalibrationDialog(self, self.ctx, d.id if d else None).exec()
+
+    def device_rules(self) -> None:
+        from app.ui.pages.rules_page import DeviceRulesDialog
+        d = self._selected()
+        if d is not None:
+            DeviceRulesDialog(self, self.ctx, d).exec()
+
+    def compare(self) -> None:
+        from app.ui.pages.device_settings_dialog import DeviceSettingsDialog
+        d = self._selected()
+        if d is not None:
+            DeviceSettingsDialog(self, self.ctx, d).compare()
 
     def toggle_auth(self) -> None:
         d = self._selected()

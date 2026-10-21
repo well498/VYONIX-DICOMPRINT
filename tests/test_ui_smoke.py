@@ -101,6 +101,66 @@ class UiSmokeTest(TempDirTestCase):
         finally:
             ctx.close()
 
+    def test_device_calibration_dialog_real_qt(self):
+        """Calibração de imagem: setas ±0,5, campo, barra, pré-visualização assíncrona, folha 3 × 3 e escolha."""
+        import time
+        from app.bootstrap import bootstrap
+        from app.printing.backends.pdf import PDF_PRINTER
+        from app.ui.pages.device_calibration import DeviceCalibrationDialog
+        from app.ui.pages.device_settings_dialog import DeviceSettingsDialog
+        from app.ui.pages.identity_widgets import BackupBox, IdentityBox
+        from app.ui.qt import QWidget
+        from app.ui.workers import wait_all
+        ctx = bootstrap(data_dir=self.tmp / "cal")
+        try:
+            ctx.printers.refresh()
+            ctx.settings.update({"printing.default_printer": PDF_PRINTER}, actor="t")
+            d = ctx.devices.create({"name": "Philips Brilliance 16", "ae_title": "CT_P", "modality": "CT"}, actor="t")
+            parent = QWidget()
+            dlg = DeviceCalibrationDialog(parent, ctx, d.id)
+            b = dlg.controls["brightness"]
+            b.up.click()
+            b.up.click()
+            self.assertEqual(b.value(), 1.0)
+            dlg.controls["gamma"].down.click()
+            self.assertEqual(dlg.controls["gamma"].value(), -0.5)
+            dlg.controls["contrast"].slider.setValue(15)
+            self.assertEqual(dlg.controls["contrast"].value(), 1.5)
+            dlg.controls["contrast"].spin.setValue(1.7)
+            self.assertEqual(dlg.controls["contrast"].value(), 1.7)
+            self.assertTrue(b.is_dirty())
+            self.assertIn("não salvas", dlg.dirty.text())
+            end = time.monotonic() + 15
+            while dlg._adjusted is None and time.monotonic() < end:
+                wait_all(200)
+                self.app.processEvents()
+            self.assertIsNotNone(dlg._adjusted)
+            self.assertIsNotNone(dlg._original)
+            dlg.printer.setCurrentIndex(dlg.printer.findData(PDF_PRINTER))
+            dlg.print_sheet()
+            self.assertIsNotNone(dlg.last_round)
+            dlg.best.setValue(1)
+            dlg.apply_choice()
+            chosen = dlg.current()
+            ctx.device_settings.save_tone(d.id, chosen, actor="t", reason="teste")
+            self.assertEqual(ctx.device_settings.tone(d.id), chosen)
+            sd = DeviceSettingsDialog(parent, ctx, d)
+            sd.editors["paper"].setCurrentIndex(sd.editors["paper"].findData("A3"))
+            sd.editors["layout"].setCurrentIndex(sd.editors["layout"].findData("3x3"))
+            sd.editors["header_enabled"].setCurrentIndex(sd.editors["header_enabled"].findData(True))
+            values = sd.values()
+            self.assertEqual((values["paper"], values["layout"], values["header_enabled"]), ("A3", "3x3", True))
+            self.assertIsNone(values["margin_mm"])
+            self.assertEqual(values["gamma"], chosen.gamma)       # calibração preservada ao salvar o formulário
+            ib = IdentityBox(ctx)
+            ib.refresh()
+            BackupBox(ctx).refresh()
+            dlg.timer.stop()
+            wait_all(5000)
+            parent.deleteLater()
+        finally:
+            ctx.close()
+
     def test_tray_and_close_to_tray(self):
         from app.bootstrap import bootstrap
         from app.ui.application import _make_tray

@@ -1,9 +1,11 @@
 ﻿VYONIX DICOM Print — Precisão em cada imagem.
 
-ATENÇÃO — VERSÃO DE DESENVOLVIMENTO PARA HOMOLOGAÇÃO
+ATENÇÃO — VERSÃO 1.0.0 PARA HOMOLOGAÇÃO
 
-Esta compilação contém todas as 8 fases do plano de desenvolvimento
-(inclui serviço Windows e licenciamento offline), ainda em homologação.
+Esta compilação contém as 8 fases do plano e o prompt mestre atualizado:
+configurações e regras independentes por equipamento, calibração visual
+(−5 a +5), folha de teste 3 × 3, calibração progressiva e cabeçalho/rodapé
+BMP universais (3000 × 206).
 
 Requisitos: Windows 10 64 bits (versão 1809 ou posterior) ou Windows 11.
 
@@ -18,7 +20,8 @@ Incluído nesta versão:
   - Impressão DICOM (Print SCP) para equipamentos que imprimem em filme.
   - Regras automáticas com simulação.
   - Serviço Windows: recepção e impressão com a janela fechada; ícone na bandeja.
-  - Licenciamento offline (nesta versão, verificado mas sem limitar recursos).
+  - Licenciamento offline. Sem licença instalada, o VYONIX funciona em modo
+    de avaliação: as páginas saem com "NÃO LICENCIADO" no rodapé.
 
 Limitações desta versão:
   - Não verificada com equipamentos DICOM reais nem com impressão em

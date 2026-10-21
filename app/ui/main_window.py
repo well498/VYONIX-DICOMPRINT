@@ -61,11 +61,11 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central)
 
         exports = ctx.paths.exports_dir
-        self.settings_page = SettingsPage(ctx.settings, exports, ctx.access)
+        self.settings_page = SettingsPage(ctx.settings, exports, ctx.access, ctx=ctx)
         self.settings_page.settings_saved.connect(self._on_settings_saved)
         pages: list[Page] = [
             DashboardPage(ctx.dashboard),
-            DevicesPage(ctx.devices, ctx.access, exports),
+            DevicesPage(ctx.devices, ctx.access, exports, ctx=ctx),
             ServerPage(ctx),
             PrintersPage(ctx),
             JobsPage(ctx),

@@ -127,7 +127,7 @@ jobs:
           $tag = "v$v"
           $s = Get-Content dist\release-summary.json -Raw | ConvertFrom-Json
           $notes = @"
-          VYONIX DICOM Print $v — versão de desenvolvimento para homologação ($($s.phase)).
+          VYONIX DICOM Print $v — versão para homologação ($($s.phase)).
           Requisito mínimo: Windows 10 64 bits (1809) ou Windows 11.
           NÃO validada para uso clínico. Declaração de conformidade DICOM de homologação incluída.
 

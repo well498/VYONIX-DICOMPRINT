@@ -30,7 +30,7 @@ class SettingsPage(Page):
     settings_saved = Signal(dict)   # chaves alteradas → novos valores
 
     def __init__(self, service: SettingsService, exports_dir: Path, access: AdminAccess,
-                 parent: QWidget | None = None) -> None:
+                 parent: QWidget | None = None, ctx=None) -> None:
         super().__init__("Configurações",
                          "Alterações são validadas, registradas no histórico e auditadas. Com senha de "
                          "administrador definida, salvar exige desbloqueio.", parent)
@@ -59,6 +59,14 @@ class SettingsPage(Page):
             for d in defs:
                 form.addRow(d.label + ("  ⟳" if d.restart_required else ""), self._field(d))
             self.body.addWidget(box)
+            if group_key == "print_identity" and ctx is not None:
+                from app.ui.pages.identity_widgets import IdentityBox
+                self.identity_box = IdentityBox(ctx)
+                self.body.addWidget(self.identity_box)
+        if ctx is not None:
+            from app.ui.pages.identity_widgets import BackupBox
+            self.backup_box = BackupBox(ctx)
+            self.body.addWidget(self.backup_box)
 
         box = QGroupBox("Senha de administrador")
         al = QVBoxLayout(box)

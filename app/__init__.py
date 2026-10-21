@@ -1,4 +1,4 @@
 """VYONIX DICOM Print — Precisão em cada imagem."""
 
-__version__ = "1.0.0.dev9"
-__phase__ = "Fase 8 — Licenciamento (todas as fases implementadas)"
+__version__ = "1.0.0"
+__phase__ = "Versão 1.0.0 — equipamentos independentes, calibração 3 × 3 e BMP"

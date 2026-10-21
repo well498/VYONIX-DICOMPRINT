@@ -52,8 +52,57 @@ Lista os equipamentos que podem enviar imagens, com AE Title, IP, autorização,
 - **Histórico:** eventos do equipamento (conexões, recusas, alterações).
 - **Remover:** exclui o cadastro; se o equipamento já enviou imagens, ele é apenas desativado, para preservar o histórico.
 - **Importar / Exportar:** copia os cadastros entre instalações em um arquivo JSON.
+- **Pesquisar:** filtra por nome, modalidade, AE Title, IP, unidade, fabricante ou modelo.
+- **Impressora associada** e **Perfil de impressão** podem ser escolhidos no cadastro.
 
 Detalhes de configuração dos equipamentos estão no *Guia de Configuração DICOM*.
+
+### 4.1 Configurações de impressão do equipamento
+
+Selecione o equipamento e clique em **Configurações de impressão…**. Cada equipamento tem configurações **só dele**: duas tomografias podem usar papel, layout e calibração completamente diferentes, e alterar uma nunca muda a outra.
+
+| Campo | Observação |
+|---|---|
+| Impressora, papel, orientação, layout (inclusive personalizado, até 8 × 8), cópias | "— herdar —" usa o próximo nível da hierarquia |
+| Margens, espaçamento, margem adicional | em mm |
+| Inverter escala de cinza | |
+| Cabeçalho BMP / Rodapé BMP, espaços entre cabeçalho/rodapé e imagens | as artes são as mesmas para todos (ver 7.1); só a aplicação é individual |
+| Impressão automática | "Não" deixa os trabalhos retidos até serem liberados (impressão manual) |
+| Prioridade do pedido DICOM Print | equipamento prevalece / pedido prevalece / ignorar o pedido |
+| Perfil de calibração da impressora | níveis de preto/branco, escala e deslocamento definidos na página Calibração |
+
+- **Resultado final e origem:** mostra o valor final de cada configuração e de onde ele veio.
+- **Pré-visualizar página:** monta a página exatamente como será impressa (com a última imagem recebida do equipamento ou com o padrão de teste) e mostra avisos, como resolução insuficiente.
+- **Versões anteriores:** toda gravação cria uma versão; **Restaurar versão selecionada** volta a qualquer uma.
+- **Duplicar de outro equipamento:** copia os valores (cópia independente, sem vínculo).
+- **Comparar com…:** tabela lado a lado das configurações de dois equipamentos, com as diferenças marcadas.
+
+**Hierarquia** (da maior para a menor prioridade): regras do equipamento → configurações gerais do equipamento → pedido DICOM Print (conforme a política) → perfil padrão da modalidade → configurações globais do VYONIX. Com a política "pedido prevalece", o pedido DICOM fica acima de tudo; com "ignorar", ele não é usado. Uma escolha manual (ex.: reimprimir com outra impressora) vale só para aquele trabalho.
+
+### 4.2 Regras do equipamento
+
+**Regras do equipamento…** abre as regras que valem só para ele. Cada regra tem condições e prioridade próprias e pode definir impressora, papel, orientação, layout, cópias, margens, espaçamento, brilho, contraste, gama, inversão, cabeçalho, rodapé, impressão automática ou manual, prioridade do pedido DICOM Print e perfil de calibração. É possível criar, editar, duplicar, ativar/desativar e excluir; a página **Regras automáticas** também importa, exporta e restaura versões anteriores.
+
+### 4.3 Calibração de imagem
+
+**Calibração de imagem…** (também em Calibração → *Calibração de imagem por equipamento*). A janela abre mesmo sem nenhuma imagem recebida.
+
+1. **Selecionar imagem para calibração:** *Imagem padrão de teste* (escala de cinza numerada, gradiente, áreas claras e escuras, barras, círculo, quadrado e triângulo, régua de 10 cm), *Receber de equipamento DICOM* (lista as imagens recebidas daquele equipamento, com data, modalidade, identificação técnica e miniatura — sem dados do paciente) ou *Abrir imagem do computador* (DICOM com ou sem extensão, JPG, PNG, BMP).
+2. **Ajustes:** brilho, contraste e gama de **−5,0 a +5,0** (0,0 = neutro). Cada controle tem seta para baixo/para cima (±0,5), campo numérico, barra deslizante, valor atual, botão ↺ (restaura o valor salvo) e marca ● de alteração não salva. O campo numérico aceita passo fino de 0,1 ou 0,2. Teclado: Ctrl+1/2/3 escolhe o controle, Ctrl+↑/↓ = ±0,5, PgUp/PgDn no controle = ±0,5.
+3. **Pré-visualização:** *Imagem Original | Imagem Ajustada* lado a lado ou antes/depois, zoom (ajustar, 50, 100, 200 %), valores atuais e indicador "Processando…". A imagem ajustada é gerada em segundo plano pelo **mesmo processamento da impressão** (inclusive a calibração da impressora usada pelo equipamento); a original não é alterada.
+4. **Salvar no perfil do equipamento** (pede confirmação antes de substituir uma calibração existente), **Restaurar ajustes**, **Cancelar sem salvar**, **Reverter para calibração anterior**.
+
+**Fórmulas** (sobre a imagem normalizada 0–1, em ponto flutuante, antes de virar 8 bits): contraste = ganho 2^(C/5) em torno do cinza médio; brilho = deslocamento de 0,05 × B (±25 % nos extremos); gama γ = 2^(G/5) aplicado como saída = entrada^(1/γ) — gama positivo clareia os tons médios. São parâmetros iniciais de engenharia, a avaliar nos testes de qualidade de impressão.
+
+### 4.4 Teste de calibração 3 × 3 e calibração progressiva
+
+1. Escolha **Comparar** (Gama × Contraste, Brilho × Contraste ou Gama × Brilho; o terceiro fica fixo), o **Incremento** (0,1; 0,2; 0,5 ou 1,0), a impressora e o papel (A4 ou A3).
+2. **Pré-visualizar folha** mostra a página inteira; **GERAR E IMPRIMIR TESTE DE CALIBRAÇÃO — 9 IMAGENS** imprime. A folha tem título, equipamento, modalidade, impressora, papel, data e hora, e as nove versões em 3 linhas × 3 colunas (linhas = primeiro parâmetro, colunas = segundo). Cada imagem tem uma faixa própria com `IMAGEM 05 | B +0,5 | C +1,0 | G −0,5`, sem texto sobre a imagem. Perto de −5/+5 os valores são deslocados para continuarem distintos, e a folha avisa.
+3. Compare no papel, informe a **melhor imagem** (1–9) e clique em **Aplicar combinação escolhida**: os valores dela viram o novo centro e o incremento passa para o próximo menor.
+4. Gere quantas rodadas quiser; o histórico das rodadas (modo, incremento, centro, imagem escolhida, trabalho) fica na janela e no banco.
+5. **Salvar no perfil do equipamento** grava o resultado; a versão anterior pode ser recuperada com **Reverter para calibração anterior**.
+
+A escolha visual na folha não comprova qualidade diagnóstica.
 
 ## 5. Servidor DICOM
 
@@ -89,7 +138,7 @@ Cada série recebida vira um trabalho depois de alguns segundos sem novas imagen
 | Retido | Aguardando liberação manual |
 | Cancelado | Cancelado pelo usuário |
 
-Ações: **Detalhes** (configurações aplicadas com a origem de cada uma, histórico de estados e imagens), **Reter**, **Liberar**, **Tentar de novo**, **Reprocessar com config. atuais**, **Reimprimir…** (cria um novo trabalho, com outra impressora ou número de cópias se você quiser) e **Cancelar trabalho**.
+Ações: **Pré-visualizar página** (as páginas exatamente como serão impressas, com avisos de resolução), **Detalhes** (configurações aplicadas com a origem de cada uma, histórico de estados e imagens), **Reter**, **Liberar**, **Tentar de novo**, **Reprocessar com config. atuais**, **Reimprimir…** (cria um novo trabalho, com outra impressora ou número de cópias se você quiser) e **Cancelar trabalho**.
 
 **Sem impressão duplicada:** se o equipamento reenviar a mesma série, nada é impresso de novo, e o Histórico registra o reenvio. Para outra cópia, use Reimprimir. Se o programa for fechado durante o envio ao Windows, o trabalho volta como *Retido*: confira se a impressão saiu antes de liberar.
 
@@ -153,6 +202,20 @@ Outros botões:
 O **tema** (Seguir o Windows, Claro, Escuro) e o **nível de log** são aplicados imediatamente.
 
 Toda alteração é registrada com usuário do Windows, data, hora, valor anterior e novo valor.
+
+### 7.1 Identidade da Impressão (cabeçalho e rodapé BMP)
+
+Em **Configurações → Identidade da Impressão**: um único `header.bmp` e um único `footer.bmp`, 3000 × 206 px, BMP RGB 24 bits, fundo branco, usados em A4 e A3, retrato e paisagem e em todas as modalidades. Os modelos originais são brancos.
+
+- **Alterar Cabeçalho/Rodapé:** escolha um BMP. Se não tiver 3000 × 206, o VYONIX oferece convertê-lo preservando a proporção (sem deformar nem cortar), centralizado e com o restante em branco. A arte anterior fica guardada como `*.anterior.bmp`.
+- **Visualizar** e **Restaurar … Original**.
+- No papel, a arte ocupa a largura útil (descontada a área não imprimível informada pelo driver), mantém a proporção 3000:206, fica centralizada e tem espaço reservado — as imagens nunca ficam embaixo dela. A altura impressa varia com a largura disponível; *Altura máxima* limita o tamanho mantendo a proporção.
+- Cada equipamento liga ou desliga cabeçalho e rodapé e define espaços e margens adicionais (4.1).
+- As artes ficam em `C:\ProgramData\VYONIX\DICOM Print\print_templates` e são preservadas nas atualizações. Arquivo ausente ou corrompido: a página sai sem o elemento e o trabalho registra o aviso.
+
+### 7.2 Backup do banco de dados
+
+Backup automático diário (mantidos os 14 mais recentes) e **Fazer backup agora**. Cada backup é verificado (integridade) ao ser criado. **Como restaurar…** explica a restauração: fechar o VYONIX, parar o serviço e executar `Vyonix.exe --restore-backup <arquivo>` como administrador — o banco atual é guardado antes da troca.
 
 ## 8. Histórico
 

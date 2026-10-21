@@ -353,6 +353,23 @@ def _smoke(app: QApplication, window, ctx, result: dict, translations) -> None:
         return (f"{len(names)} impressora(s); página de teste via GDI/spooler em '{target.name}' gerou "
                 f"{out.stat().st_size // 1024} KB (estado: {job.state.label})")
 
+    def device_calibration() -> str:
+        from app.imaging import tone
+        from app.printing import calibration_sheet as cs
+        from app.utils.fonts import print_font
+        font = print_font(20)
+        if not hasattr(font, "path"):
+            raise RuntimeError("fonte das impressões (DejaVu Sans) ausente: textos sairiam sem acentos")
+        for kind in ("header", "footer"):
+            info = ctx.templates.info(kind)
+            if info is None or not info.is_standard:
+                raise RuntimeError(f"modelo {kind}.bmp ausente ou fora do padrão 3000 × 206")
+        m = cs.build_matrix(tone.ToneControls(gamma=0.5), "gamma_contrast", 0.5)
+        page = cs.compose(m, lambda p, side: ctx.imaging.render("pattern", p, max_side=side), paper="A4", dpi=72,
+                          info=cs.sheet_info(device="autoteste", modality="CT", printer="—", paper="A4"))
+        return (f"folha 3 × 3 {page.pixels.shape[1]}×{page.pixels.shape[0]} px; header/footer.bmp 3000 × 206; "
+                f"fonte {Path(font.path).name}")
+
     def licensing() -> str:
         from app.licensing import ed25519
         from app.licensing.license import parse_request
@@ -394,7 +411,7 @@ def _smoke(app: QApplication, window, ctx, result: dict, translations) -> None:
                      ("dashboard", dashboard), ("configurações", settings_roundtrip),
                      ("temas", themes), ("histórico", history), ("servidor DICOM", dicom_server),
                      ("codecs de imagem", image_codecs), ("calibração", calibration_preview),
-                     ("impressão DICOM (Print SCP)", print_scp), ("impressão em PDF (fila)", print_pdf), ("impressoras do Windows", windows_printers), ("licenciamento", licensing),
+                     ("impressão DICOM (Print SCP)", print_scp), ("impressão em PDF (fila)", print_pdf), ("impressoras do Windows", windows_printers), ("licenciamento", licensing), ("calibração por equipamento", device_calibration),
                      ("logs", logs)):
         check(name, fn)
 

@@ -37,6 +37,8 @@ DOCS = [
     ("Guia_Configuracao_DICOM", "Guia de Configuração DICOM"),
     ("Notas_da_Versao", "Notas da Versão"),
     ("Declaracao_Conformidade_DICOM", "Declaração de Conformidade DICOM"),
+    ("Funcionalidades", "Funcionalidades Implementadas e Pendentes"),
+    ("Roteiro_Testes_Manuais", "Roteiro de Testes Manuais"),
 ]
 
 
@@ -173,7 +175,7 @@ README = """VYONIX DICOM Print {version}
 Precisão em cada imagem.
 ======================================================================
 
-VERSÃO DE DESENVOLVIMENTO PARA HOMOLOGAÇÃO ({phase}).
+VERSÃO PARA HOMOLOGAÇÃO ({phase}).
 NÃO VALIDADA PARA USO CLÍNICO. Declaração de conformidade DICOM de homologação incluída.
 
 Conteúdo
@@ -183,6 +185,8 @@ Conteúdo
   Documentacao\\Guia_Configuracao_DICOM.pdf
   Documentacao\\Notas_da_Versao.pdf
   Documentacao\\Declaracao_Conformidade_DICOM.pdf
+  Documentacao\\Funcionalidades.pdf
+  Documentacao\\Roteiro_Testes_Manuais.pdf
   Testes\\Relatorio_de_Validacao.pdf
   Integridade\\SHA256SUMS.txt
 

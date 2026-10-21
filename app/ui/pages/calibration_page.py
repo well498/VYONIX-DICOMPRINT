@@ -58,6 +58,16 @@ class CalibrationPage(Page):
         self.status.hide()
         self.body.addWidget(self.status)
 
+        dev_row = QHBoxLayout()
+        dev_note = QLabel("Brilho, contraste e gama de <b>cada equipamento</b> (escala −5 a +5, folha de teste 3 × 3 e "
+                          "calibração progressiva) ficam em Equipamentos → Calibração de imagem. Esta página ajusta a "
+                          "resposta de cada <b>impressora</b> (níveis de preto/branco, escala e deslocamento).")
+        dev_note.setWordWrap(True)
+        dev_row.addWidget(dev_note, 1)
+        dev_btn = QPushButton("Calibração de imagem por equipamento…")
+        dev_btn.clicked.connect(lambda _=False: self._open_device_calibration())
+        dev_row.addWidget(dev_btn)
+        self.body.addLayout(dev_row)
         grid = QGridLayout()
         grid.setSpacing(14)
         self.body.addLayout(grid)
@@ -328,6 +338,10 @@ class CalibrationPage(Page):
             self.ctx.profiles.bind(pid, kind.currentData(), value.currentData(), actor=current_actor())
             self._msg("Associação salva.", "ok")
             run_async(lambda: self.ctx.profiles.bindings(pid), self._show_bindings)
+
+    def _open_device_calibration(self) -> None:
+        from app.ui.pages.device_calibration import DeviceCalibrationDialog
+        DeviceCalibrationDialog(self, self.ctx).exec()
 
     def test_page(self) -> None:
         from app.core.errors import VyonixError

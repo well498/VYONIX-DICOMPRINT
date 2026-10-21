@@ -58,14 +58,26 @@ A instalação silenciosa instala por padrão o serviço, o ícone na bandeja e 
 | Conteúdo | Pasta |
 |---|---|
 | Programa | `C:\Program Files\VYONIX\DICOM Print` |
-| Banco de dados, backups, imagens recebidas, PDFs gerados, logs do serviço | `C:\ProgramData\VYONIX\DICOM Print` |
+| Banco de dados, backups, imagens recebidas, PDFs gerados, cabeçalho/rodapé BMP (`print_templates`), logs do serviço | `C:\ProgramData\VYONIX\DICOM Print` |
 | Logs da interface e exportações de cada usuário | `%LOCALAPPDATA%\VYONIX\DICOM Print` |
 
 Nenhum dado é gravado na pasta do programa. Antes de qualquer atualização do esquema do banco de dados, o VYONIX cria uma cópia de segurança em `C:\ProgramData\VYONIX\DICOM Print\backups`.
 
 ## 4. Atualização
 
-Execute o instalador da nova versão sobre a instalação existente. O programa é substituído; banco de dados, configurações e logs são preservados. Feche o VYONIX antes de atualizar — o instalador solicita o fechamento se ele estiver aberto, para o serviço antes de substituir os arquivos e o inicia de novo ao final. Durante a atualização (alguns segundos), os equipamentos não conseguem enviar; eles costumam tentar de novo automaticamente.
+Execute o instalador da nova versão sobre a instalação existente. O programa é substituído; banco de dados, configurações, calibrações, artes de cabeçalho/rodapé e logs são preservados. Feche o VYONIX antes de atualizar — o instalador solicita o fechamento se ele estiver aberto, para o serviço antes de substituir os arquivos e o inicia de novo ao final. Durante a atualização (alguns segundos), os equipamentos não conseguem enviar; eles costumam tentar de novo automaticamente.
+
+### Backup e restauração
+
+Backups automáticos diários ficam em `C:\ProgramData\VYONIX\DICOM Print\backups`. Para criar um agora: `Vyonix.exe --backup-now`. Para restaurar (Prompt de Comando como administrador):
+
+```
+sc stop VyonixDicomPrint
+"C:\Program Files\VYONIX\DICOM Print\Vyonix.exe" --restore-backup "C:\ProgramData\VYONIX\DICOM Print\backups\<arquivo>.db"
+sc start VyonixDicomPrint
+```
+
+Feche a janela do VYONIX antes. O banco atual é guardado como `…-antes-da-restauracao.db`; backups corrompidos ou de versão mais nova são recusados.
 
 ## 5. Desinstalação
 

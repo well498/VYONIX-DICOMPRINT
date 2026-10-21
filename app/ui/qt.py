@@ -32,13 +32,17 @@ _W = QtWidgets
  QVBoxLayout, QGroupBox, QFrame, QScrollArea, QSizePolicy, QListWidget, QListWidgetItem,
  QStackedWidget, QTabWidget, QTableWidget, QTableWidgetItem, QHeaderView,
  QAbstractItemView, QDialog, QDialogButtonBox, QInputDialog, QPlainTextEdit,
- QSystemTrayIcon, QMenu) = (
+ QSystemTrayIcon, QMenu, QSlider, QDoubleSpinBox, QToolButton, QSplitter, QButtonGroup,
+ QRadioButton, QProgressBar) = (
     _W.QApplication, _W.QWidget, _W.QMainWindow, _W.QLabel, _W.QPushButton, _W.QLineEdit,
     _W.QSpinBox, _W.QCheckBox, _W.QComboBox, _W.QDateEdit, _W.QFileDialog, _W.QMessageBox,
     _W.QFormLayout, _W.QGridLayout, _W.QHBoxLayout, _W.QVBoxLayout, _W.QGroupBox, _W.QFrame,
     _W.QScrollArea, _W.QSizePolicy, _W.QListWidget, _W.QListWidgetItem, _W.QStackedWidget,
     _W.QTabWidget, _W.QTableWidget, _W.QTableWidgetItem, _W.QHeaderView, _W.QAbstractItemView,
-    _W.QDialog, _W.QDialogButtonBox, _W.QInputDialog, _W.QPlainTextEdit, _W.QSystemTrayIcon, _W.QMenu)
+    _W.QDialog, _W.QDialogButtonBox, _W.QInputDialog, _W.QPlainTextEdit, _W.QSystemTrayIcon, _W.QMenu,
+    _W.QSlider, _W.QDoubleSpinBox, _W.QToolButton, _W.QSplitter, _W.QButtonGroup, _W.QRadioButton,
+    _W.QProgressBar)
+QShortcut, QKeySequence = QtGui.QShortcut, QtGui.QKeySequence
 
 
 def prepare_application() -> None:

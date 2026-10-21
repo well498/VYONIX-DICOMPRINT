@@ -28,6 +28,10 @@ SETTING_LABELS = {
     "copies": "Cópias", "border": "Borda", "header_text": "Cabeçalho", "footer_text": "Rodapé",
     "exam_info": "Informações do exame", "patient_info": "Dados do paciente", "page_numbers": "Numeração",
     "calibration": "Calibração",
+    "brightness": "Brilho", "contrast": "Contraste", "gamma": "Gama", "invert": "Inverter",
+    "header_enabled": "Cabeçalho BMP", "footer_enabled": "Rodapé BMP", "auto_print": "Impressão automática",
+    "dicom_policy": "Prioridade DICOM Print", "extra_margin_mm": "Margem adicional (mm)",
+    "header_gap_mm": "Espaço cabeçalho→imagens (mm)", "footer_gap_mm": "Espaço imagens→rodapé (mm)",
 }
 
 
@@ -65,9 +69,10 @@ class JobsPage(Page):
         top.addWidget(self.search, 1)
         self.body.addLayout(top)
         self.body.addLayout(button_row(
-            button("Detalhes", self.details, primary=True), button("Reter", self.hold), button("Liberar", self.release),
+            button("Detalhes", self.details, primary=True), button("Pré-visualizar página", self.preview),
+            button("Reter", self.hold), button("Liberar", self.release),
             button("Tentar de novo", self.retry), button("Reprocessar com config. atuais", self.reprocess),
-            button("Reimprimir…", self.reprint), button("Cancelar trabalho", self.cancel), stretch_at=6))
+            button("Reimprimir…", self.reprint), button("Cancelar trabalho", self.cancel), stretch_at=7))
         self.table = make_table(["Nº", "Criado em", "Origem", "Equipamento / AE", "Modalidade", "Imagens", "Páginas",
                                  "Cópias", "Impressora", "Estado", "Detalhe"])
         self.table.doubleClicked.connect(lambda _: self.details())
@@ -173,6 +178,44 @@ class JobsPage(Page):
             return
         self._msg(f"Reimpressão criada: trabalho #{new}.", "ok")
         self.refresh()
+
+    def preview(self) -> None:
+        j = self._selected()
+        if j is None:
+            return
+        self._msg(f"Montando a pré-visualização do trabalho #{j.id}…", "muted")
+
+        def show(data) -> None:
+            from app.ui.images import to_pixmap
+            from app.ui.qt import QScrollArea, Qt
+            pages, warnings = data
+            dlg = QDialog(self)
+            dlg.setWindowTitle(f"Pré-visualização — trabalho #{j.id} (como será impresso)")
+            dlg.resize(1000, 860)
+            lay = QVBoxLayout(dlg)
+            if warnings:
+                w = QLabel("Avisos: " + "; ".join(warnings))
+                w.setWordWrap(True)
+                w.setObjectName("fieldError")
+                lay.addWidget(w)
+            inner = QWidget()
+            il = QVBoxLayout(inner)
+            for page in pages:
+                lbl = QLabel()
+                lbl.setPixmap(to_pixmap(page.pixels, 920, 1300))
+                lbl.setAlignment(Qt.AlignCenter)
+                lbl.setStyleSheet("border: 1px solid #999; background: white;")
+                il.addWidget(lbl)
+            sc = QScrollArea()
+            sc.setWidgetResizable(True)
+            sc.setWidget(inner)
+            lay.addWidget(sc, 1)
+            bb = QDialogButtonBox(QDialogButtonBox.Close)
+            bb.rejected.connect(dlg.reject)
+            lay.addWidget(bb)
+            self.status.hide()
+            dlg.exec()
+        run_async(lambda: self.ctx.worker.preview(j.id), show, self._error)
 
     def details(self) -> None:
         j = self._selected()
