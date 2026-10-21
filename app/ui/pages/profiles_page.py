@@ -28,6 +28,7 @@ def _spin(lo: int, hi: int, special: str | None = "não definir") -> QSpinBox:
     s.setRange(lo - (1 if special else 0), hi)
     if special:
         s.setSpecialValueText(special)
+    s.setValue(s.minimum())   # o QSpinBox começa em 0; "não definir" é o mínimo
     return s
 
 
