@@ -1,7 +1,7 @@
 # VYONIX DICOM Print — Arquitetura Técnica
 
 > **VYONIX DICOM Print** · *Precisão em cada imagem.*
-> Documento de arquitetura — revisão 1 (Fase 1). Plataforma-alvo: Windows 10 (1809+) e Windows 11, 64 bits (decisão revista em 20/10/2026).
+> Documento de arquitetura — revisão 2 (todas as fases implementadas, versão 1.0.0.dev9). Plataforma-alvo: Windows 10 (1809+) e Windows 11, 64 bits (decisão revista em 20/10/2026).
 >
 > **Aviso:** este software está em desenvolvimento e **não está validado para uso clínico**.
 > Nenhuma declaração de conformidade DICOM ou aptidão assistencial é feita por este documento.
@@ -14,12 +14,14 @@ O VYONIX é dividido em **dois processos** e **camadas independentes**:
 
 | Processo | Execução | Responsabilidade |
 |---|---|---|
-| `VyonixService` (Fase 7) | Serviço Windows, sessão 0, conta `LocalService` ou conta dedicada | DICOM Storage SCP, DICOM Print SCP, pipeline de imagens, motor de regras, fila e spooler. Funciona com a interface fechada. |
+| `VyonixService.exe` | Serviço Windows `VyonixDicomPrint`, sessão 0, conta Sistema Local (impressão GDI exige acesso às impressoras instaladas no computador) | DICOM Storage SCP, DICOM Print SCP, pipeline de imagens, motor de regras, fila e spooler. Funciona com a interface fechada. |
 | `Vyonix.exe` | Sessão interativa do usuário | Interface PySide6, bandeja do sistema, administração. Nunca roda dentro do serviço. |
-| `VyonixLicenseAdmin` (Fase 8) | Máquina do fabricante, **nunca distribuída** | Emissão e assinatura (Ed25519) de licenças. Contém a chave privada. |
+| `license_admin` | Máquina do fabricante, **nunca distribuída** | Emissão e assinatura (Ed25519) de licenças. Contém a chave privada. |
 
-Até a Fase 7, o núcleo roda dentro do processo da interface (modo "monoprocesso") usando **exatamente
-os mesmos módulos** — a separação em serviço muda apenas *onde* os módulos são instanciados, não o código deles.
+Sem o serviço instalado/em execução, o núcleo roda dentro do processo da interface (modo "monoprocesso") usando
+**exatamente os mesmos módulos** — a separação em serviço muda apenas *onde* os módulos são instanciados. Com o
+serviço ativo, a interface troca o `CoreRuntime` por `RemoteRuntime` (`app/service/remote.py`) e conversa com o
+serviço por *named pipe* autenticado (HMAC); dados continuam no banco SQLite compartilhado (WAL).
 Isso é garantido pela regra de dependência abaixo.
 
 ### 1.1 Regra de dependência (camadas)
@@ -35,7 +37,7 @@ Isso é garantido pela regra de dependência abaixo.
 * `app/core` não importa nada do projeto. Define **contratos** (`typing.Protocol`) e **DTOs** imutáveis.
 * Módulos de domínio dependem apenas de `core` e da infraestrutura. **Nenhum módulo de domínio importa Qt.**
 * `app/ui` é a única camada que importa PySide6. Ela conversa somente com `services` (fachadas).
-* Na Fase 7, `services` ganha uma implementação cliente (IPC) com a mesma interface — a UI não muda.
+* Com o serviço ativo, `RemoteRuntime`/`RemoteSCP` expõem a mesma interface por IPC — a UI não muda.
 
 ---
 
@@ -174,7 +176,7 @@ Nunca no diretório do executável. Resolução em `app/utils/paths.py`:
 
 | Uso | Windows | Observação |
 |---|---|---|
-| Dados da máquina (BD, imagens, cache, backups, logs do serviço) | `%ProgramData%\VYONIX\DICOM Print\` | ACLs restritas configuradas pelo instalador (Fase 8) |
+| Dados da máquina (BD, imagens, cache, backups, logs do serviço) | `%ProgramData%\VYONIX\DICOM Print\` | Usuários com Modificar (interface e serviço compartilham o banco — limitação documentada) |
 | Dados do usuário (preferências da UI, logs da UI, exportações) | `%LOCALAPPDATA%\VYONIX\DICOM Print\` | por usuário |
 | Desenvolvimento/testes | `VYONIX_HOME` ou `--data-dir` | ambiente isolado |
 

@@ -4,27 +4,25 @@
 
 Plataforma de gerenciamento de impressão de imagens médicas DICOM para Windows 10 e 11 (64 bits).
 
-> **Versão de desenvolvimento 1.0.0.dev3.**
-> Este software **não está validado para uso clínico** e **não possui declaração de conformidade DICOM**.
-> Recepção DICOM, impressão e licenciamento ainda não estão implementados (ver "Situação").
+> **Versão de homologação 1.0.0.dev9 — todas as 8 fases implementadas.**
+> Este software **não está validado para uso clínico**. A declaração de conformidade DICOM incluída é de homologação
+> e foi verificada com equipamento simulado (pynetdicom), não com equipamentos reais.
 
 ## Situação
 
-| Área | Estado |
-|---|---|
-| Arquitetura, contratos entre módulos, modelo de dados completo (migração v1) | ✅ Fase 1 |
-| Diretórios em ProgramData/LocalAppData, logs JSON rotativos com redação de dados de paciente | ✅ Fase 1 |
-| Configurações validadas e auditadas, histórico de alterações, eventos com filtros e exportação CSV | ✅ Fase 1 |
-| Interface: Dashboard, Configurações, Histórico, Licença (ID da instalação), Sobre; tema claro/escuro | ✅ Fase 1 — **validar no Windows** |
-| Equipamentos, Storage SCP (C-ECHO/C-STORE), controle de acesso administrativo | Fase 2 |
-| Pipeline de imagem, pré-visualização, calibração | Fase 3 |
-| Impressoras Windows, layouts, fila persistente | Fase 4 |
-| DICOM Print SCP e declaração de conformidade | Fase 5 |
-| Motor de regras e perfis | Fase 6 |
-| Serviço Windows, IPC, bandeja | Fase 7 |
-| Licenciamento offline, instalador, distribuição | Fase 8 |
+| Área | Estado | Verificação automatizada no Windows (CI) |
+|---|---|---|
+| Fundação: banco, migrações, logs com redação de PHI, configurações auditadas | ✅ Fase 1 | testes + instalador |
+| Equipamentos, Storage SCP (C-ECHO/C-STORE), senha de administrador, retenção | ✅ Fase 2 | SCP real em loopback |
+| Decodificação (incl. RLE, JPEG, JPEG 2000, JPEG-LS), pipeline, calibração | ✅ Fase 3 | autoteste de codecs |
+| Layout, impressoras Windows (GDI/spooler), VYONIX PDF, fila persistente, perfis | ✅ Fase 4 | Microsoft Print to PDF |
+| DICOM Print SCP (Basic Grayscale/Color Print Management) | ✅ Fase 5 | SCU simulado |
+| Regras automáticas com prioridade e simulação | ✅ Fase 6 | testes |
+| Serviço Windows, named pipe autenticado, bandeja | ✅ Fase 7 | serviço instalado, C-ECHO, impressão pelo serviço |
+| Licenciamento offline Ed25519 + `license_admin` | ✅ Fase 8 | vetores RFC 8032, fluxo completo |
 
-As páginas das áreas não implementadas existem no menu e informam explicitamente a fase prevista; nada é simulado.
+Não verificado: equipamentos DICOM reais, impressão em papel em impressoras físicas, Windows 10/11 limpos
+(o CI usa Windows Server 2022), assinatura digital do instalador.
 
 A arquitetura completa (diagramas, modelo de dados, dependências, riscos e plano por fases) está em
 [`docs/ARQUITETURA.md`](docs/ARQUITETURA.md).
