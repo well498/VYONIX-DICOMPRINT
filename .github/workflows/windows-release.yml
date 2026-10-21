@@ -14,6 +14,11 @@ on:
   push:
     branches: [main, develop, "build/**", "phase/**"]
   workflow_dispatch:
+    inputs:
+      republish:
+        description: "Substituir a release existente de RELEASE_TAG"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -161,6 +166,14 @@ jobs:
           Validação do executável/instalador: $($s.validation_passed)/$($s.validation_total)
           Commit: ${{ github.sha }}
           "@
+          # Uma release publicada nunca é substituída por um push comum (os SHA-256 já entregues continuam
+          # válidos). Para publicar outra revisão, altere RELEASE_TAG; para republicar a mesma de propósito,
+          # execute o workflow manualmente com republish=true.
+          $existing = gh release view $tag --json tagName 2>$null
+          if ($existing -and "${{ github.event.inputs.republish }}" -ne "true") {
+            Write-Host "::notice title=Publicação::A release $tag já existe e não foi substituída (altere RELEASE_TAG para nova revisão)."
+            exit 0
+          }
           gh release delete $tag --yes --cleanup-tag 2>$null
           gh release create $tag --target "${{ github.sha }}" --prerelease --title "VYONIX DICOM Print $v (homologação)" --notes $notes `
             "dist\installer\$($s.installer)" dist\VYONIX_License_Manager.exe dist\installer-lm\VYONIX_License_Manager_Setup.exe `
