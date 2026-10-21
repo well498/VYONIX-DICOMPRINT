@@ -189,7 +189,7 @@ def _smoke(app: QApplication, window, ctx, result: dict, translations) -> None:
         return "ícone e logotipo carregados"
 
     def pages() -> str:
-        if window.nav.count() != 12 or len(MENU) != 12:
+        if window.nav.count() != len(MENU) or len(MENU) != 13:
             raise RuntimeError(f"menu com {window.nav.count()} itens")
         for row in range(window.nav.count()):
             window.nav.setCurrentRow(row)
