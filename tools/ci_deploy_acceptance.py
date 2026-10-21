@@ -43,9 +43,15 @@ RESULTS: list[dict] = []
 OUT: Path
 
 
+def _ann(s: str) -> str:
+    return s.replace("%", "%25").replace("\r", "").replace("\n", "%0A")
+
+
 def record(crit: str, name: str, result: str, detail: str = "") -> None:
-    RESULTS.append({"criterio": crit, "teste": name, "resultado": result, "detalhe": detail[:1500]})
+    RESULTS.append({"criterio": crit, "teste": name, "resultado": result, "detalhe": detail[:3000]})
     print(f"[{result}] {crit} · {name}: {detail[:300]}", flush=True)
+    level = {"Aprovado": "notice", "Reprovado": "error"}.get(result, "warning")
+    print(f"::{level} title={crit} {result}::{_ann(name + ' — ' + detail[:2500])}", flush=True)
 
 
 def check(crit: str, name: str):
@@ -603,10 +609,6 @@ $ap = $r | Get-NetFirewallApplicationFilter
     counts = {k: sum(1 for r in RESULTS if r["resultado"] == k) for k in ("Aprovado", "Reprovado", "Não executado")}
     print(f"::notice title=Aceitação DEPLOY::aprovados={counts['Aprovado']} reprovados={counts['Reprovado']} "
           f"nao_executados={counts['Não executado']}")
-    for r in RESULTS:
-        if r["resultado"] != "Aprovado":
-            print(f"::{'error' if r['resultado'] == 'Reprovado' else 'warning'} title={r['criterio']} "
-                  f"{r['teste'][:60]}::{r['detalhe'][:600].replace(chr(10), ' ')}")
     if os.environ.get("GITHUB_STEP_SUMMARY"):
         with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as f:
             f.write("## Aceitação da Fase 2 (VYONIX DEPLOY)\n\n" + "\n".join(md) + "\n")
@@ -614,4 +616,10 @@ $ap = $r | Get-NetFirewallApplicationFilter
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except SystemExit:
+        raise
+    except BaseException:  # noqa: BLE001
+        print(f"::error title=Aceitação interrompida::{_ann(traceback.format_exc()[-3500:])}", flush=True)
+        sys.exit(1)
