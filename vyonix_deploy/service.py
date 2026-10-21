@@ -40,6 +40,7 @@ class Deploy:
     def save_config(self, cfg: DeployConfig) -> None:
         d = cfg.to_dict()
         d["network"] = {**d["network"], "confirmed": False}       # confirmação vale só para aquela execução
+        d["restore_backup"] = None
         self.db.meta("config", json.dumps(d, ensure_ascii=False))
 
     def context(self, cfg: DeployConfig, *, inv: dict | None = None, extra: dict | None = None) -> Context:
@@ -71,7 +72,7 @@ class Deploy:
     def plan(self, kind: str, cfg: DeployConfig, *, extra: dict | None = None) -> dict[str, Any]:
         cfg.validate()
         inv = self.inventory()
-        mode = "diagnose" if kind == "diagnose" else ("install" if kind == "install" else "other")
+        mode = "diagnose" if kind in ("diagnose", "restore") else ("install" if kind == "install" else "other")
         findings = compat.evaluate(inv, cfg, mode=mode)
         ctx = self.context(cfg, inv=inv, extra=extra)
         eng = Engine(ctx, self.build_fn)

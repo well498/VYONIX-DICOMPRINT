@@ -13,6 +13,7 @@ const OPS = [
   ["diagnose", "Diagnosticar", "Somente leitura: confere tudo e gera relatório."],
   ["repair", "Reparar", "Diagnostica e propõe o reparo do que divergir."],
   ["reconfigure", "Reconfigurar servidor", "Muda portas, certificado, firewall ou rede."],
+  ["restore", "Restaurar backup", "Volta o banco a um backup do DEPLOY (exige confirmação)."],
   ["report", "Exportar relatório", "Baixa o PDF da execução mais recente."],
 ];
 
@@ -94,10 +95,25 @@ async function start(op) {
     if (r) location.href = `/api/report/${r.id}`; return;
   }
   if (op === "diagnose") return diagnose();
+  if (op === "restore") return restoreView();
   if (op === "repair" || op === "update") return planView(op, { config: {} }, {});
   app.innerHTML = `<h1>${OPS.find((o) => o[0] === op)[1]}</h1>${optionsForm(op)}`;
   $("#back").onclick = home;
   $("#opts").onsubmit = (e) => { e.preventDefault(); const o = readOptions(e.target); planView(op, o, o.secrets); };
+}
+
+async function restoreView() {
+  const list = await api("/api/backups", {});
+  app.innerHTML = `<h1>Restaurar backup</h1>
+    <div class="notice warn">A restauração substitui os dados atuais do VYONIX pelos do backup escolhido. Antes, o
+    plano faz um backup do estado atual. Você precisará digitar a confirmação no plano.</div>
+    ${list.length ? `<table><thead><tr><th></th><th>Backup</th><th>Data</th><th>Tamanho</th></tr></thead><tbody>${list.map((b, i) =>
+      `<tr><td><input type="radio" name="bk" value="${esc(b.name)}" ${i === 0 ? "checked" : ""}></td><td><code>${esc(b.name)}</code></td>
+       <td>${esc(b.at)}</td><td>${(b.bytes / 1048576).toFixed(1)} MB</td></tr>`).join("")}</tbody></table>`
+      : `<p class="sub">Nenhum backup do DEPLOY encontrado.</p>`}
+    <div class="actions">${list.length ? `<button class="primary" id="go">Planejar a restauração</button>` : ""}<button class="ghost" id="back">Voltar</button></div>`;
+  $("#back").onclick = home;
+  if ($("#go")) $("#go").onclick = () => planView("restore", { config: { restore_backup: app.querySelector("input[name=bk]:checked").value } }, {});
 }
 
 async function diagnose() {

@@ -9,6 +9,8 @@
     vyonix-deploy repair [--approve-all]
     vyonix-deploy uninstall --approve-all --silent     (dados preservados)
     vyonix-deploy resume                               (execução interrompida)
+    vyonix-deploy backups                              (lista os backups do DEPLOY)
+    vyonix-deploy restore --backup <pasta> --approve-all --confirm backup.restore="RESTAURAR <pasta>"
     vyonix-deploy verify-reports
     vyonix-deploy wizard [--diagnose]                  (assistente no navegador, 127.0.0.1)
 
@@ -28,7 +30,7 @@ from vyonix_deploy import __version__
 from vyonix_deploy.errors import Blocked, DeployError, NotApproved
 from vyonix_deploy.service import Deploy, dump_plan_file, env_secrets, load_config
 
-KINDS = ("install", "repair", "update", "uninstall", "reconfigure")
+KINDS = ("install", "repair", "update", "uninstall", "reconfigure", "restore")
 
 
 def _print(msg: str = "") -> None:
@@ -86,6 +88,8 @@ def cmd_run(d: Deploy, a) -> int:
         if r["status"] != "succeeded":
             return 1
     cfg = load_config(a.config, d.saved_config())
+    if a.kind == "restore":
+        cfg.restore_backup = a.backup
     if a.kind != "install" and d.saved_config() is None and a.kind != "uninstall":
         raise DeployError("Nenhuma instalação registrada pelo DEPLOY neste servidor: use install.")
     if a.kind == "repair" and not a.approve:
@@ -148,6 +152,9 @@ def main(argv: list[str] | None = None) -> int:
         s.add_argument("--approve-all", action="store_true")
         s.add_argument("--confirm", action="append", default=[], metavar='ITEM="TEXTO"')
         s.add_argument("--silent", action="store_true")
+        if k == "restore":
+            s.add_argument("--backup", required=True, help="nome da pasta em ProgramData\\VYONIX\\Backups")
+    sub.add_parser("backups")
     dg = sub.add_parser("diagnose")
     dg.add_argument("--json", action="store_true")
     sub.add_parser("resume")
@@ -202,6 +209,10 @@ def main(argv: list[str] | None = None) -> int:
             probs = verify_chain(d.db)
             _print("Relatórios e manifestos íntegros." if not probs else "\n".join(probs))
             return 0 if not probs else 1
+        if a.cmd == "backups":
+            from vyonix_deploy.steps.update import list_backups
+            _print(json.dumps(list_backups(d.paths), ensure_ascii=False, indent=2))
+            return 0
         if a.cmd == "runs":
             _print(json.dumps(d.db.runs(), ensure_ascii=False, indent=2))
             return 0

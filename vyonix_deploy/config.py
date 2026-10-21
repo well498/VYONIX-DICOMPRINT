@@ -52,6 +52,7 @@ class DeployConfig:
     network: NetworkChoice = field(default_factory=NetworkChoice)
     modules: list[str] = field(default_factory=list)                # módulos a habilitar além do core
     shortcuts: bool = True
+    restore_backup: str | None = None                               # só na execução "restore"
 
     def validate(self) -> None:
         if not ORG_RE.match(self.organization):

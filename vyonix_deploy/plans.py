@@ -14,7 +14,7 @@ from vyonix_deploy.steps.tls import TlsCertificateStep
 CORE_SVC = "VyonixCore"
 WORKER_SVC = "VyonixWorker"
 KINDS = {"install": "Nova instalação", "repair": "Reparo", "update": "Atualização", "uninstall": "Desinstalação",
-         "reconfigure": "Reconfigurar servidor"}
+         "reconfigure": "Reconfigurar servidor", "restore": "Restaurar backup"}
 
 REQUIRED_FILES = ["VyonixPlatform.exe", "vyonix-deploy.exe", "VERSION.txt", r"pgsql\bin\initdb.exe",
                   r"pgsql\bin\pg_ctl.exe", r"pgsql\bin\postgres.exe", r"pgsql\bin\pg_dump.exe", r"web\index.html"]
@@ -69,6 +69,12 @@ def build(ctx: Context, kind: str) -> list[Step]:
     if kind == "update":
         from vyonix_deploy.steps.update import update_steps
         return update_steps(ctx, install_steps(ctx))
+    if kind == "restore":
+        from vyonix_deploy.steps.update import restore_steps
+        backup = ctx.cfg.restore_backup
+        if not backup:
+            raise ValueError("Informe o backup a restaurar.")
+        return restore_steps(ctx, backup)
     if kind == "uninstall":
         from vyonix_deploy.steps.update import uninstall_steps
         return uninstall_steps(ctx)

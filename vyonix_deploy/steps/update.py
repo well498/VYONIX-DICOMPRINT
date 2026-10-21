@@ -23,12 +23,15 @@ class BackupStep(Step):
     """Cópia do banco (pg_dump, formato custom) e da configuração antes de migrar. Não apaga nada."""
 
     category = "banco"
-    id = "backup.before_update"
-    title = "Backup do banco e da configuração antes da atualização"
     reversible = False
 
+    def __init__(self, label: str = "antes-da-atualizacao", title: str = "antes da atualização") -> None:
+        self.label = label
+        self.id = "backup.before_update" if label == "antes-da-atualizacao" else f"backup.{label}"
+        self.title = f"Backup do banco e da configuração {title}"
+
     def _target(self, ctx: Context) -> Path:
-        return ctx.paths.backups / f"antes-da-atualizacao-{ctx.run_id}"
+        return ctx.paths.backups / f"{self.label}-{ctx.run_id}"
 
     def desired(self, ctx: Context) -> dict:
         return {"folder": str(ctx.paths.backups), "database": DB_NAME, "format": "pg_dump custom"}
@@ -40,7 +43,7 @@ class BackupStep(Step):
                 **(json.loads(man.read_text(encoding="utf-8")) if man.exists() else {})}
 
     def describe(self, ctx: Context) -> dict:
-        return {"current": {"backups": sorted(p.name for p in ctx.paths.backups.glob("antes-da-atualizacao-*"))
+        return {"current": {"backups": sorted(p.name for p in ctx.paths.backups.glob(f"{self.label}-*"))
                             if ctx.paths.backups.exists() else []},
                 "proposed": self.desired(ctx), "impact": "Somente leitura do banco; grava a cópia na pasta de backups.",
                 "undo": "Não se aplica (a cópia é mantida)."}
@@ -165,3 +168,111 @@ def uninstall_steps(ctx: Context) -> list[Step]:
     return [ServiceRemovedStep(CORE_SVC), ServiceRemovedStep(WORKER_SVC), ServiceRemovedStep(pg.SERVICE),
             RuleRemovedStep("core-https", "Core HTTPS", ctx.cfg.https_port),
             ShortcutsRemovedStep(ctx.cfg.https_port, p.install_dir / "vyonix-deploy.exe", p.reports)]
+
+
+class ServiceStoppedStep(Step):
+    category = "servico"
+
+    def __init__(self, name: str) -> None:
+        self.name = name
+        self.id = f"stopped.{name}"
+        self.title = f"Parar {name} durante a restauração"
+
+    def observe(self, ctx: Context) -> dict:
+        q = query_service(self.name) if IS_WINDOWS else None
+        return {"name": self.name, "state": q["state"] if q else "Ausente"}
+
+    def desired(self, ctx: Context) -> dict:
+        return {"name": self.name, "state": "Stopped"}
+
+    def check(self, ctx: Context) -> bool:
+        return self.observe(ctx)["state"] in ("Stopped", "Ausente")
+
+    def apply(self, ctx: Context) -> None:
+        stop_service(self.name)
+
+    def rollback(self, ctx: Context, before: dict) -> None:
+        if before.get("state") == "Running":
+            run([SC, "start", self.name])
+
+
+def list_backups(paths) -> list[dict]:
+    out = []
+    if not paths.backups.exists():
+        return out
+    for d in sorted(paths.backups.iterdir(), reverse=True):
+        m = d / "backup.json"
+        if m.exists():
+            out.append({"name": d.name, **json.loads(m.read_text(encoding="utf-8"))})
+    return out
+
+
+class RestoreBackupStep(Step):
+    """Restaura o banco do VYONIX a partir de um backup do DEPLOY. **Destrutivo**: substitui os dados
+    atuais. Exige a confirmação digitada com o nome do backup (segunda confirmação, além da aprovação
+    do plano), e o plano sempre faz antes um backup do estado atual."""
+
+    category = "banco"
+    destructive = True
+    reversible = False
+
+    def __init__(self, backup: str) -> None:
+        self.backup = backup
+        self.id = "backup.restore"
+        self.title = f"Restaurar o banco do backup {backup}"
+        self.confirm = f"RESTAURAR {backup}"
+
+    def _dir(self, ctx: Context) -> Path:
+        d = (ctx.paths.backups / self.backup).resolve()
+        if d.parent != ctx.paths.backups.resolve() or not (d / "backup.json").exists():
+            raise DeployError(f"Backup inexistente: {self.backup}")
+        return d
+
+    def observe(self, ctx: Context) -> dict:
+        marker = ctx.paths.deploy_dir / f"restaurado-{ctx.run_id}.json"
+        return {"backup": self.backup, "restored_in_this_run": marker.exists()}
+
+    def desired(self, ctx: Context) -> dict:
+        return {"backup": self.backup}
+
+    def describe(self, ctx: Context) -> dict:
+        info = json.loads((self._dir(ctx) / "backup.json").read_text(encoding="utf-8"))
+        return {"current": {"backup": self.backup, **info}, "proposed": self.desired(ctx),
+                "impact": "SUBSTITUI os dados atuais do VYONIX pelos do backup. Um backup do estado atual é feito "
+                          "antes, no mesmo plano.",
+                "undo": "Restaurar o backup feito no início desta execução."}
+
+    def check(self, ctx: Context) -> bool:
+        return self.observe(ctx)["restored_in_this_run"]
+
+    def apply(self, ctx: Context) -> None:
+        d = self._dir(ctx)
+        info = json.loads((d / "backup.json").read_text(encoding="utf-8"))
+        dump = d / info["dump"]
+        if hashlib.sha256(dump.read_bytes()).hexdigest() != info["sha256"]:
+            raise DeployError("O arquivo de backup foi alterado (SHA-256 não confere). Nada foi restaurado.")
+        exe = ctx.paths.pg_bin / ("pg_restore.exe" if IS_WINDOWS else "pg_restore")
+        env = {**os.environ, "PGPASSWORD": pg.superuser_password(ctx)}
+        r = run([str(exe), "-h", "127.0.0.1", "-p", str(ctx.cfg.pg_port), "-U", pg.SUPERUSER, "-d", DB_NAME,
+                 "--clean", "--if-exists", "--single-transaction", "--no-owner", "--role=vyonix_owner", str(dump)],
+                timeout=7200, env=env)
+        if not r.ok:
+            raise DeployError("pg_restore falhou (nada foi alterado: transação única): "
+                              + (r.err or r.out).strip()[-600:])
+        (ctx.paths.deploy_dir / f"restaurado-{ctx.run_id}.json").write_text(
+            json.dumps({"backup": self.backup, "sha256": info["sha256"],
+                        "at": datetime.now(timezone.utc).isoformat(timespec="seconds")}), encoding="utf-8")
+
+    def how_to_check(self) -> str:
+        return "Conferir os dados no VYONIX após a restauração"
+
+
+def restore_steps(ctx: Context, backup: str) -> list[Step]:
+    from vyonix_deploy.plans import CORE_SVC, WORKER_SVC
+    from vyonix_deploy.steps import core
+    from vyonix_deploy.steps.services import ServiceRunningStep
+    return [ServiceRunningStep(pg.SERVICE, "VYONIX PostgreSQL", probe=pg.can_connect),
+            BackupStep("antes-da-restauracao", "antes da restauração"),
+            ServiceStoppedStep(CORE_SVC), ServiceStoppedStep(WORKER_SVC), RestoreBackupStep(backup),
+            ServiceRunningStep(CORE_SVC, "VYONIX Core", probe=core.health, timeout=120),
+            ServiceRunningStep(WORKER_SVC, "VYONIX Worker")]

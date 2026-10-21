@@ -71,6 +71,9 @@ jobs:
           ! grep -q "Admin-CI-2026" "$RUNNER_TEMP/vyx/config.json"
       - name: Testes do DICOM Print continuam isolados (sem dependência da plataforma)
         run: python -m pytest tests_platform/test_architecture.py -q
+      - name: Falhas de teste como anotações
+        if: failure()
+        run: python tools/junit_annotations.py platform-junit.xml
       - uses: actions/upload-artifact@v4
         if: always()
         with:

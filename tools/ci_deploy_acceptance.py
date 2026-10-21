@@ -525,6 +525,27 @@ $ap = $r | Get-NetFirewallApplicationFilter
                "Exige equipamento autorizado e impressora configurados no DICOM Print; coberto pelos testes do "
                "próprio DICOM Print (test_print_scp) no pipeline Windows release.")
 
+    # ---------------------------------------------------------------- 2.7 reparo destrutivo
+    @check("2.7", "Restaurar backup exige segunda confirmação específica e restaura os dados do backup")
+    def _():
+        port = state.get("port", 8444)
+        api = Api(port)
+        api.login()
+        p2 = api.call("POST", "/patients", {"name": "Paciente Depois Do Backup"})
+        b = sorted(PATHS.backups.glob("antes-da-atualizacao-*"))[-1].name
+        r = deploy("restore", "--backup", b, "--approve-all", "--silent", ok=(2,))
+        assert "RESTAURAR" in r.stdout, r.stdout[-300:]
+        deploy("restore", "--backup", b, "--approve-all", "--silent", "--confirm", f"backup.restore=RESTAURAR {b}")
+        run, steps = last_run_steps()
+        assert run["kind"] == "restore" and run["status"] == "succeeded", run["message"]
+        assert any(s["step_id"] == "backup.antes-da-restauracao" and s["status"] == "done" for s in steps)
+        health(port)
+        api = Api(port)
+        api.login()
+        names = {x["name"] for x in api.call("GET", "/patients?q=Paciente")}
+        assert "Paciente Persistencia CI" in names and "Paciente Depois Do Backup" not in names, names
+        return f"sem confirmação: recusado; com “RESTAURAR {b}”: restaurado (backup do estado atual feito antes)"
+
     # ---------------------------------------------------------------- 2.4 rede (adaptador de loopback)
     @check("2.4", "Rede em adaptador de loopback: conflito recusado, IP fixo aplicado e revertido, reversão automática")
     def _():

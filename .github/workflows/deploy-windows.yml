@@ -116,6 +116,9 @@ jobs:
           foreach ($f in Get-ChildItem "$env:ProgramData\VYONIX\PostgreSQL\17\data\log\*" -ErrorAction SilentlyContinue) { Write-Host "== $f"; Get-Content $f -Tail 60 }
           Get-WinEvent -LogName Application -MaxEvents 40 -ErrorAction SilentlyContinue | Where-Object { $_.ProviderName -match 'Vyonix|Python|PostgreSQL|Service Control' } | Format-List TimeCreated,ProviderName,Message | Out-String | Write-Host
 
+      - name: Falhas de teste como anotações
+        if: failure()
+        run: python tools/junit_annotations.py dist/deploy-junit.xml
       - uses: actions/upload-artifact@v4
         if: always()
         with:

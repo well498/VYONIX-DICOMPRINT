@@ -177,7 +177,7 @@ def route(st: State, path: str, body: dict):
         return {"inventory": inv, "compatibility": [f.as_dict() for f in compat.evaluate(inv, cfg)]}
     if path == "/api/plan":
         kind = body.get("kind")
-        if kind not in ("install", "update", "repair", "reconfigure", "uninstall"):
+        if kind not in ("install", "update", "repair", "reconfigure", "uninstall", "restore"):
             raise DeployError("Operação inválida.")
         cfg = _cfg(body, d)
         if kind == "repair":
@@ -206,6 +206,9 @@ def route(st: State, path: str, body: dict):
                 st.jobs[jid].update(status="error", message=str(exc))
         threading.Thread(target=work, daemon=True).start()
         return {"job": jid}
+    if path == "/api/backups":
+        from vyonix_deploy.steps.update import list_backups
+        return list_backups(d.paths)
     if path == "/api/diagnose":
         r = d.diagnose()
         return {k: v for k, v in r.items() if k != "observed"}
