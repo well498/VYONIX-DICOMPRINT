@@ -160,7 +160,7 @@ def validation_report(version: str, commit: str, build_date: str, installer: Pat
         "| Windows 10 e 11 | O pipeline executa em Windows Server 2022 (mesmo núcleo do Windows 10/11). |",
         "| Usuário sem privilégios administrativos | O pipeline executa como administrador. |",
         "| Aparência visual da interface | O smoke test verifica funcionamento, não a aparência. |",
-        "| Recepção DICOM com equipamentos reais | Verificada apenas com equipamento simulado (pynetdicom). |",
+        "| Recepção e impressão DICOM com equipamentos reais | Verificadas apenas com equipamento simulado (pynetdicom). |",
         "| Impressão em papel em impressoras físicas | Não verificada: o CI usa a impressora Microsoft Print to PDF. |",
         "| Licenciamento | Funcionalidade não implementada nesta versão (Fase 8). |",
         "| Assinatura digital de código | Não aplicada nesta compilação. |",

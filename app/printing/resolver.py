@@ -39,7 +39,7 @@ class Resolved:
             margins_mm=tuple(float(x) for x in v.get("margins_mm") or (m, m, m, m)),
             spacing_mm=float(v["spacing_mm"]), border=bool(v["border"]), dpi=int(v["dpi"]),
             header_text=v["header_text"], footer_text=v["footer_text"], exam_info=bool(v["exam_info"]),
-            page_numbers=bool(v["page_numbers"]),
+            page_numbers=bool(v["page_numbers"]), background=int(v.get("background", 255)),
             calibration=CalibrationProfile.from_json(v.get("calibration")),
         )
 
@@ -62,6 +62,8 @@ def defaults(get: Callable[[str], Any]) -> dict[str, Any]:
         "patient_info": bool(get("printing.patient_info")),
         "page_numbers": bool(get("printing.page_numbers")),
         "calibration": None,
+        "background": 255,
+        "keep_positions": False,
     }
 
 

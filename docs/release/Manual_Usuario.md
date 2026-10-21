@@ -20,7 +20,7 @@ A barra inferior mostra a pasta de dados em uso e o aviso de que a versão não 
 |---|---|
 | Dashboard | Disponível |
 | Equipamentos DICOM | Disponível |
-| Servidor DICOM | Recepção disponível; impressão DICOM na Fase 5 |
+| Servidor DICOM | Disponível (recepção e impressão DICOM) |
 | Impressoras | Disponível |
 | Trabalhos de impressão | Disponível |
 | Regras automáticas | Não implementado — Fase 6 |
@@ -38,7 +38,7 @@ As páginas não implementadas mostram o escopo planejado e não executam nenhum
 Atualizado automaticamente a cada 5 segundos, com dados lidos do banco local:
 
 - **Indicadores:** trabalhos recebidos, em fila, enviados à impressão e com falha nas últimas 24 horas.
-- **Serviços:** estado real do servidor de recepção (Storage SCP); Print SCP e Serviço Windows aparecem como *Não implementado*, com a fase prevista.
+- **Serviços:** estado real do servidor de recepção (Storage SCP); estado real do Print SCP e da fila de impressão; Serviço Windows aparece como *Não implementado* (Fase 7).
 - **Configuração DICOM:** AE Title, endereço e porta configurados.
 - **Equipamentos, Impressora selecionada, Alertas operacionais e Falhas recentes.**
 
@@ -62,7 +62,9 @@ Mostra o estado da recepção (em execução, parado ou erro, com o motivo), o A
 - **Iniciar / Parar / Reiniciar:** controla o servidor.
 - **Testar (C-ECHO local):** verifica o próprio servidor.
 
-Nesta versão, o servidor funciona enquanto o VYONIX estiver aberto.
+O cartão **Print SCP — impressão DICOM** tem os mesmos controles para o servidor de impressão (AE Title padrão `VYONIX_PRINT`, porta `11113`). Equipamentos que "imprimem em filme" podem usar o VYONIX como impressora DICOM: cada filme vira um trabalho em *Trabalhos de impressão*, com origem "DICOM Print".
+
+Nesta versão, os servidores funcionam enquanto o VYONIX estiver aberto.
 
 ## 5A. Impressoras
 

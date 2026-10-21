@@ -113,7 +113,7 @@ class DashboardService:
 
 def _not_implemented_status(_settings) -> list[ServiceStatus]:
     return [
-        ServiceStatus("DICOM Storage SCP", ServiceState.NOT_IMPLEMENTED, "Previsto na Fase 2"),
-        ServiceStatus("DICOM Print SCP", ServiceState.NOT_IMPLEMENTED, "Previsto na Fase 5"),
+        ServiceStatus("DICOM Storage SCP", ServiceState.STOPPED, "sem provedor de estado"),
+        ServiceStatus("DICOM Print SCP", ServiceState.STOPPED, "sem provedor de estado"),
         ServiceStatus("Serviço Windows", ServiceState.NOT_IMPLEMENTED, "Previsto na Fase 7"),
     ]

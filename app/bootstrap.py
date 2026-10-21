@@ -30,6 +30,8 @@ from app.database.repositories.stats_repo import StatsRepository
 from app.devices.service import DeviceService
 from app.dicom import scu
 from app.dicom.storage import InstanceStore
+from app.dicom.print_intake import PrintIntake
+from app.dicom.print_scp import PrintSCP
 from app.dicom.storage_scp import StorageSCP
 from app.security.access import AdminAccess
 from app.imaging.cache import PreviewCache
@@ -73,6 +75,7 @@ class AppContext:
     printers: PrinterService
     jobs: JobService
     worker: PrintWorker
+    print_scp: PrintSCP
     schema_version: int
     applied_migrations: list[int] = field(default_factory=list)
     _closed: bool = False
@@ -159,8 +162,15 @@ def bootstrap(*, data_dir: str | os.PathLike[str] | None = None, role: str = "ui
         storage_scp.sink = collector
         worker = PrintWorker(db=db, events=events, jobs=jobs, printers=printers, imaging=imaging,
                              collector=collector, settings_get=get)
+        def device_modality(device_id: int) -> str | None:
+            d = devices.repo.get(device_id)
+            return d.modality if d else None
+
+        intake = PrintIntake(store=store, jobs=jobs, settings_get=get, device_modality=device_modality)
+        print_scp = PrintSCP(db=db, settings_get=get, devices=devices.repo, events=events, intake=intake,
+                             printer_status=lambda: _printer_status(printers, worker))
         runtime = CoreRuntime(storage_scp=storage_scp, retention=retention, settings_get=get,
-                              worker=worker, printers=printers)
+                              worker=worker, printers=printers, print_scp=print_scp)
         access = AdminAccess(db, events, lock_minutes=lambda: int(get("security.lock_minutes")))
         ctx = AppContext(
             role=role, paths=paths, log_file=log_file, db=db, events=events, settings=settings,
@@ -171,6 +181,7 @@ def bootstrap(*, data_dir: str | os.PathLike[str] | None = None, role: str = "ui
             devices=devices, store=store, storage_scp=storage_scp, retention=retention,
             access=access, runtime=runtime,
             imaging=imaging, profiles=profiles, printers=printers, jobs=jobs, worker=worker,
+            print_scp=print_scp,
             schema_version=schema, applied_migrations=applied,
         )
         settings.subscribe(runtime.on_settings_changed)
@@ -206,3 +217,22 @@ def _clean_temp(folder: Path) -> None:
             log.warning("Recepção incompleta removida após reinício", extra={"file": leftover.name})
         except OSError:
             pass
+
+
+def _printer_status(printers: PrinterService, worker: PrintWorker) -> tuple[str, str]:
+    """Estado informado ao equipamento no N-GET do Printer SOP Instance (PS3.3 C.13.9)."""
+    if not worker.running:
+        return "FAILURE", "PROC FAILURE"
+    try:
+        name = printers.resolve(None)
+    except Exception:  # noqa: BLE001 - nenhuma impressora definida
+        return "FAILURE", "PRINTER DOWN"
+    rec = printers.get_record(name)
+    if rec is None or not rec.available:
+        return "FAILURE", "PRINTER DOWN"
+    status = (rec.status or "").lower()
+    if any(w in status for w in ("sem papel", "papel atolado", "offline", "erro", "intervenção")):
+        if "papel" in status:
+            return "WARNING", "SUPPLY EMPTY"
+        return "WARNING", "PRINTER OFFLINE" if "offline" in status else "PRINTER DOWN"
+    return "NORMAL", "NORMAL"

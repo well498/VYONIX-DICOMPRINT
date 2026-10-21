@@ -16,14 +16,17 @@ log = get_logger("runtime")
 
 RETENTION_INTERVAL_S = 6 * 3600
 RETENTION_FIRST_DELAY_S = 120
+PRINT_RESTART_KEYS = {"dicom.print.enabled", "dicom.print.ae_title", "dicom.print.port", "dicom.print.color",
+                      "dicom.storage.bind_address", "dicom.storage.max_associations"}
 SCP_RESTART_KEYS = {"dicom.storage.ae_title", "dicom.storage.bind_address", "dicom.storage.port",
                     "dicom.storage.max_associations"}
 
 
 class CoreRuntime:
     def __init__(self, *, storage_scp, retention, settings_get: Callable[[str], Any], worker=None,
-                 printers=None) -> None:
+                 printers=None, print_scp=None) -> None:
         self.storage_scp = storage_scp
+        self.print_scp = print_scp
         self.worker = worker
         self.printers = printers
         self.retention = retention
@@ -45,34 +48,45 @@ class CoreRuntime:
             self.worker.start()
         if self.get("dicom.storage.autostart"):
             self.storage_scp.start()
+            if self.print_scp is not None:
+                self.print_scp.start()
         self._stop.clear()
         self._thread = threading.Thread(target=self._periodic, name="vyonix-periodic", daemon=True)
         self._thread.start()
 
     def stop(self) -> None:
-        if not self.started:
-            return
+        """Para tudo o que estiver rodando — inclusive serviços iniciados fora de ``start()``
+        (ex.: pela tela do servidor) —, antes de o banco ser fechado."""
         self._stop.set()
         if self._thread is not None:
             self._thread.join(timeout=5)
+            self._thread = None
         self.storage_scp.stop()
+        if self.print_scp is not None:
+            self.print_scp.stop()
         if self.worker is not None:
             self.worker.stop()
         self.started = False
 
     def on_settings_changed(self, changed: Mapping[str, Any]) -> None:
-        """Reinicia o SCP quando endereço, porta ou AE Title mudam."""
+        """Reinicia os SCPs quando endereço, porta ou AE Title mudam."""
+        self._maybe_restart_print(changed)
         if self.started and SCP_RESTART_KEYS & set(changed) and \
                 self.storage_scp.status().state == ServiceState.RUNNING:
             log.info("Reiniciando Storage SCP após mudança de configuração")
             threading.Thread(target=self.storage_scp.restart, name="vyonix-scp-restart",
                              daemon=True).start()
 
+    def _maybe_restart_print(self, changed: Mapping[str, Any]) -> None:
+        if self.started and self.print_scp is not None and PRINT_RESTART_KEYS & set(changed):
+            threading.Thread(target=self.print_scp.restart, name="vyonix-print-restart", daemon=True).start()
+
     def service_statuses(self, _settings=None) -> list[ServiceStatus]:
         return [
             self.storage_scp.status(),
             self._queue_status(),
-            ServiceStatus("DICOM Print SCP", ServiceState.NOT_IMPLEMENTED, "Previsto na Fase 5"),
+            self.print_scp.status() if self.print_scp is not None else
+            ServiceStatus("DICOM Print SCP", ServiceState.NOT_IMPLEMENTED, ""),
             ServiceStatus("Serviço Windows", ServiceState.NOT_IMPLEMENTED,
                           "Previsto na Fase 7 (hoje os serviços rodam com a interface aberta)"),
         ]

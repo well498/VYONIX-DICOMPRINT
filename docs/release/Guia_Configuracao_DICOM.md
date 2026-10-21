@@ -75,6 +75,28 @@ Depois, use o "Verify/Echo" do equipamento: no VYONIX, a coluna "Último contato
 
 **Sintaxes de transferência:** Implicit VR Little Endian, Explicit VR Little Endian, Deflated Explicit VR Little Endian e Explicit VR Big Endian. Comprimidas: RLE Lossless, JPEG Baseline (8 bits), JPEG 2000 (com e sem perdas) e JPEG-LS (com e sem perdas). JPEG Lossless e JPEG Extended (12 bits) ainda não são aceitos. Quando o equipamento oferece sem compressão e comprimido, o VYONIX escolhe sem compressão.
 
+## 6A. Impressão DICOM (Print SCP)
+
+Para equipamentos que enviam para uma impressora DICOM (impressora de filme):
+
+1. Em *Configurações → DICOM — Impressão*, confira **Habilitar DICOM Print SCP** (ligado por padrão), o **AE Title de impressão** (padrão `VYONIX_PRINT`) e a **porta** (padrão `11113`).
+2. Cadastre e autorize o equipamento em *Equipamentos DICOM* (o mesmo cadastro vale para recepção e impressão).
+3. No equipamento, crie uma impressora DICOM com o IP do computador do VYONIX, a porta e o AE Title de impressão.
+4. Defina a impressora de papel em *Impressoras* e, se quiser, um perfil para o equipamento ou a modalidade.
+
+O que é respeitado do pedido do equipamento: formato `STANDARD\C,R` (vira o layout linhas × colunas, com células vazias mantidas em branco), orientação, número de cópias, prioridade, polaridade e Presentation LUT. O papel e a impressora vêm do perfil ou do padrão do VYONIX: um filme 14 × 17 pol. é impresso no papel configurado, e isso fica anotado no histórico do trabalho. As densidades de borda e de fundo do filme (geralmente pretas) não são aplicadas ao papel, salvo se *Aplicar densidades do filme ao papel* estiver ligado.
+
+O VYONIX só confirma o comando de impressão (N-ACTION) ao equipamento depois que as imagens foram gravadas e o trabalho entrou na fila persistente. Se o equipamento encerrar a conexão sem mandar imprimir, nada é impresso e o Histórico registra o aviso.
+
+| Status devolvido | Quando |
+|---|---|
+| 0x0000 | Operação aceita |
+| 0x0106 | Formato não suportado (ROW, COL, SLIDE, CUSTOM), orientação inválida ou imagem com Pixel Data inválido |
+| 0x0112 | Film Session, Film Box ou Image Box inexistente |
+| 0x0118 | Classe não suportada (ex.: Annotation Box) |
+| 0x0123 | Ação diferente de "imprimir" |
+| 0xB602 / 0xB603 | Pedido de impressão sem nenhuma imagem (nada é impresso) |
+
 ## 7. Armazenamento
 
 - Cada imagem é gravada primeiro em uma pasta temporária e só então movida para `C:\ProgramData\VYONIX\DICOM Print\storage\<estudo>\<série>\<instância>.dcm`. O arquivo original nunca é alterado.

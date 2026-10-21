@@ -196,6 +196,49 @@ def _smoke(app: QApplication, window, ctx, result: dict, translations) -> None:
             time.sleep(0.2)
         return ctx.jobs.get_job(jid)
 
+    def print_scp() -> str:
+        """Associação real com o Print SCP: N-GET Printer, N-CREATE Film Session/Film Box e N-DELETE.
+
+        Não envia N-ACTION: o autoteste nunca imprime numa impressora real.
+        """
+        from pydicom.dataset import Dataset
+        from pydicom.uid import generate_uid
+        from pynetdicom import AE
+        from app.dicom import print_model as pm
+        from app.dicom.association_manager import SELFTEST_AE
+        st = ctx.print_scp.status()
+        if not ctx.settings.get("dicom.print.enabled"):
+            return "desativado em Configurações (não verificado)"
+        if st.state.value != "running":
+            raise RuntimeError(f"Print SCP não está em execução: {st.state.value} {st.detail}")
+        host, port = ctx.print_scp.bound
+        host = "127.0.0.1" if host in ("0.0.0.0", "") else host
+        ae = AE(ae_title=SELFTEST_AE)
+        ae.add_requested_context(pm.GRAYSCALE_META)
+        assoc = ae.associate(host, port, ae_title=ctx.settings.get("dicom.print.ae_title"))
+        if not assoc.is_established:
+            raise RuntimeError("associação de impressão recusada")
+        try:
+            status, printer = assoc.send_n_get([0x21100010], pm.PRINTER, pm.PRINTER_INSTANCE,
+                                               meta_uid=pm.GRAYSCALE_META)
+            fs_uid, fb_uid = generate_uid(), generate_uid()
+            fs = Dataset()
+            fs.NumberOfCopies = 1
+            s1, _ = assoc.send_n_create(fs, pm.FILM_SESSION, fs_uid, meta_uid=pm.GRAYSCALE_META)
+            fb = Dataset()
+            fb.ImageDisplayFormat = "STANDARD\\2,2"
+            ref = Dataset()
+            ref.ReferencedSOPClassUID, ref.ReferencedSOPInstanceUID = pm.FILM_SESSION, fs_uid
+            fb.ReferencedFilmSessionSequence = [ref]
+            s2, rsp = assoc.send_n_create(fb, pm.FILM_BOX, fb_uid, meta_uid=pm.GRAYSCALE_META)
+            s3 = assoc.send_n_delete(pm.FILM_SESSION, fs_uid, meta_uid=pm.GRAYSCALE_META)
+        finally:
+            assoc.release()
+        codes = [getattr(x, "Status", None) for x in (status, s1, s2, s3)]
+        if any(c != 0 for c in codes) or len(rsp.ReferencedImageBoxSequence) != 4:
+            raise RuntimeError(f"respostas inesperadas: {codes}")
+        return f"{st.detail}; Printer={printer.PrinterStatus}/{printer.PrinterStatusInfo}; film box 2×2 criado e removido"
+
     def print_pdf() -> str:
         from pathlib import Path
         from app.printing.backends.pdf import PDF_PRINTER
@@ -263,7 +306,7 @@ def _smoke(app: QApplication, window, ctx, result: dict, translations) -> None:
                      ("dashboard", dashboard), ("configurações", settings_roundtrip),
                      ("temas", themes), ("histórico", history), ("servidor DICOM", dicom_server),
                      ("codecs de imagem", image_codecs), ("calibração", calibration_preview),
-                     ("impressão em PDF (fila)", print_pdf), ("impressoras do Windows", windows_printers),
+                     ("impressão DICOM (Print SCP)", print_scp), ("impressão em PDF (fila)", print_pdf), ("impressoras do Windows", windows_printers),
                      ("logs", logs)):
         check(name, fn)
 

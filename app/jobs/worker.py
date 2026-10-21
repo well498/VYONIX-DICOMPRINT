@@ -252,12 +252,20 @@ class PrintWorker:
                 info = self.imaging.info(items[0]["file_path"])
                 first_aspect = info.columns / info.rows if info.rows else None
             comp = Compositor(spec, first_aspect)
-            count = 1 if job.source_type == "test_page" else len(items)
+            keep = bool(resolved.values.get("keep_positions"))
+            if job.source_type == "test_page":
+                count = 1
+            elif keep:   # posições fixas (DICOM Print): células vazias continuam vazias
+                last = max(int(it["position"]) for it in items) + 1
+                count = -(-last // comp.cells) * comp.cells
+            else:
+                count = len(items)
             annotations = self._annotations(job, resolved, items)
-            get_image = self._image_source(job, items, comp)
+            get_image = self._image_source(job, items, comp, keep)
             # Valida o primeiro quadro já aqui (decodificação), para falhar antes do spooler.
+            first = 0 if not keep else (int(items[0]["position"]) if items else 0)
             if count:
-                get_image(0)
+                get_image(first)
             pages_total = comp.page_count(count)
         except (DecodeError, OSError, ValidationError) as exc:
             self._fail(job, f"Não foi possível preparar as imagens: {exc}", permanent=True)
@@ -316,7 +324,8 @@ class PrintWorker:
                         actor="system")
 
     # ---------------------------------------------------------------- imagens e anotações
-    def _image_source(self, job: Job, items: list[dict], comp: Compositor) -> Callable[[int], RenderedImage]:
+    def _image_source(self, job: Job, items: list[dict], comp: Compositor,
+                      keep_positions: bool = False) -> Callable[[int], RenderedImage | None]:
         if job.source_type == "test_page":
             x, y, w, h = comp.cell_rects_mm()[0]
             wpx, hpx = round(w * comp.px_per_mm), round(h * comp.px_per_mm)
@@ -327,8 +336,12 @@ class PrintWorker:
                                      applied={"source": "padrão de teste"})
             return pattern
 
-        def render(i: int) -> RenderedImage:
-            it = items[i]
+        by_pos = {int(it["position"]): it for it in items}
+
+        def render(i: int) -> RenderedImage | None:
+            it = by_pos.get(i) if keep_positions else items[i]
+            if it is None:
+                return None
             return self.imaging.render(it["file_path"], PresentationParams(frame_index=int(it["frame_index"])),
                                        max_side=None)
         return render

@@ -109,8 +109,14 @@ DEFINITIONS: tuple[SettingDef, ...] = (
                help="Desativado por padrão: somente equipamentos cadastrados e autorizados "
                     "podem enviar imagens."),
 
-    SettingDef("dicom.print.enabled", "Habilitar DICOM Print SCP", "dicom_print", "bool", False,
-               restart_required=True, help="Implementação prevista na Fase 5."),
+    SettingDef("dicom.print.enabled", "Habilitar DICOM Print SCP", "dicom_print", "bool", True,
+               help="Recebe filmes de equipamentos que imprimem via DICOM (Basic Print Management). "
+                    "Usa o mesmo cadastro e autorização de equipamentos da recepção."),
+    SettingDef("dicom.print.color", "Aceitar impressão colorida", "dicom_print", "bool", True,
+               help="Oferece a Basic Color Print Management Meta SOP Class além da escala de cinza."),
+    SettingDef("dicom.print.honor_density", "Aplicar densidades do filme ao papel", "dicom_print", "bool",
+               False, help="Desligado: fundo e bordas pretos pedidos para filme não são impressos no papel "
+                           "(evita páginas inteiras pretas). Ligado: Empty Image Density BLACK/WHITE é aplicada."),
     SettingDef("dicom.print.ae_title", "AE Title de impressão", "dicom_print", "str",
                "VYONIX_PRINT", validator=v.validate_ae_title, restart_required=True),
     SettingDef("dicom.print.port", "Porta TCP de impressão", "dicom_print", "int", 11113,

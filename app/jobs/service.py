@@ -157,7 +157,7 @@ class JobService:
             "SELECT state, COUNT(*) AS n FROM jobs GROUP BY state")}
 
     # ---------------------------------------------------------------- criação
-    def create(self, *, source_type: str, items: list[tuple[int, int]], idempotency_key: str | None = None,
+    def create(self, *, source_type: str, items: list[tuple[int, int]] | list[tuple[int, int, int]], idempotency_key: str | None = None,
                device_id: int | None = None, source_ae: str | None = None, modality: str | None = None,
                printer: str | None = None, overrides: dict[str, Any] | None = None,
                override_label: str = "Escolha manual", parent_job_id: int | None = None, priority: int = 0,
@@ -203,7 +203,7 @@ class JobService:
                  int(values.get("copies") or 1), int(self.get("jobs.max_attempts")), priority, now, now))
             job_id = int(cur.lastrowid)
             conn.executemany("INSERT INTO job_items(job_id, instance_id, frame_index, position) VALUES (?, ?, ?, ?)",
-                             [(job_id, inst, frame, pos) for pos, (inst, frame) in enumerate(items)])
+                             [(job_id, it[0], it[1], it[2] if len(it) > 2 else pos) for pos, it in enumerate(items)])
             conn.execute("""INSERT INTO job_state_history(job_id, from_state, to_state, actor, reason, at)
                             VALUES (?, NULL, ?, ?, ?, ?)""", (job_id, state.value, actor, reason, now))
             self.events.add(level="INFO", category=Category.JOB, action="job.create",
@@ -296,8 +296,8 @@ class JobService:
     def reprint(self, job_id: int, *, actor: str, printer: str | None = None, copies: int | None = None) -> int:
         """Novo trabalho com as mesmas imagens e configurações (opcionalmente outra impressora/cópias)."""
         job = self.get_job(job_id)
-        items = [(it["instance_id"], it["frame_index"]) for it in self.items(job_id)]
-        if job.source_type != "test_page" and (not items or any(i is None for i, _ in items)):
+        items = [(it["instance_id"], it["frame_index"], it["position"]) for it in self.items(job_id)]
+        if job.source_type != "test_page" and (not items or any(it[0] is None for it in items)):
             raise ValidationError("As imagens deste trabalho não estão mais disponíveis (retenção).")
         values, origins = dict(job.settings), dict(job.origins)
         if printer:

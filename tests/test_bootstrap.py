@@ -50,7 +50,8 @@ class BootstrapTest(TempDirTestCase):
         self.assertEqual((s.devices_total, s.jobs_in_queue, s.jobs_failed_24h), (0, 0, 0))
         states = {x.name: x.state for x in s.services}
         self.assertEqual(states["DICOM Storage SCP"], ServiceState.STOPPED)  # --check não inicia serviços
-        self.assertEqual(states["DICOM Print SCP"], ServiceState.NOT_IMPLEMENTED)
+        self.assertEqual(states["DICOM Print SCP"], ServiceState.STOPPED)
+        self.assertEqual(states["Serviço Windows"], ServiceState.NOT_IMPLEMENTED)
         self.assertTrue(any("senha de administrador" in a.text for a in s.alerts))
         self.assertTrue(any("uso clínico" in a.text for a in s.alerts))
         ctx.events.add(level="ERROR", category=Category.SPOOLER, action="x", message="falha teste")

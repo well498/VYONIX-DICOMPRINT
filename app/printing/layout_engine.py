@@ -128,13 +128,13 @@ class Compositor:
         return round(x * self.px_per_mm), round(y * self.px_per_mm)
 
     # -------------------------------------------------------------- montagem
-    def compose_page(self, index: int, total: int, images: Sequence[RenderedImage],
+    def compose_page(self, index: int, total: int, images: Sequence[RenderedImage | None],
                      annotations: PageAnnotations = PageAnnotations()) -> ComposedPage:
         import numpy as np
         from PIL import Image, ImageDraw
 
         s = self.spec
-        color = any(img.pixels.ndim == 3 for img in images)
+        color = any(img is not None and img.pixels.ndim == 3 for img in images)
         mode = "RGB" if color else "L"
         bg = (s.background,) * 3 if color else s.background
         page = Image.new(mode, (self.width_px, self.height_px), bg)
@@ -142,6 +142,8 @@ class Compositor:
         ink = (0, 0, 0) if color else 0
 
         for img, (x, y, w, h) in zip(images, self.cell_rects_mm()):
+            if img is None:      # célula vazia (ex.: Image Box sem imagem no DICOM Print)
+                continue
             px = apply_calibration(img.pixels, s.calibration)
             pil = Image.fromarray(px)
             if pil.mode != mode:
@@ -193,7 +195,7 @@ class Compositor:
                 draw.text((rx - draw.textlength(label, font=font), fy), label, fill=ink, font=font)
         return ComposedPage(index=index, pixels=np.asarray(page), dpi=s.dpi)
 
-    def iter_pages(self, count: int, get_image: Callable[[int], RenderedImage],
+    def iter_pages(self, count: int, get_image: Callable[[int], RenderedImage | None],
                    annotations: PageAnnotations = PageAnnotations()) -> Iterator[ComposedPage]:
         """Gera as páginas sob demanda; cada imagem é obtida (e liberada) dentro da sua página."""
         total = self.page_count(count)
