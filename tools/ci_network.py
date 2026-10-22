@@ -71,7 +71,7 @@ def main() -> int:
     ap.add_argument("--out", required=True)
     ap.add_argument("--child", help=argparse.SUPPRESS)
     a = ap.parse_args()
-    out = Path(a.out)
+    out = Path(a.out).resolve()
     if a.child:                       # processo que aplica e é encerrado à força no meio
         alias = a.child
         st = StaticIpStep(NetworkChoice(mode="static", interface=alias, ip="10.250.0.30", prefix=24,

@@ -254,7 +254,7 @@ def main() -> int:
     ap.add_argument("--print-setup")
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
-    OUT = Path(a.out)
+    OUT = Path(a.out).resolve()
     OUT.mkdir(parents=True, exist_ok=True)
     setup, dist = Path(a.setup).resolve(), Path(a.dist).resolve()
     cfg_file = OUT / "opcoes.json"
@@ -303,12 +303,15 @@ def main() -> int:
 
     @check("2.1", "Impeditivo detectado: porta HTTPS ocupada (nada alterado, relatório gerado)")
     def _():
-        lp = listener(8444)
+        cfg2 = OUT / "opcoes-porta.json"           # porta própria: um listener encerrado pode demorar a sumir
+        cfg2.write_text(json.dumps({**json.loads(cfg_file.read_text(encoding="utf-8")), "https_port": 8460}),
+                        encoding="utf-8")
+        lp = listener(8460)
         try:
-            p = sh([dist / "vyonix-deploy.exe", "install", "--config", cfg_file, "--plan-only"], ok=(2,))
+            p = sh([dist / "vyonix-deploy.exe", "install", "--config", cfg2, "--plan-only"], ok=(2,))
         finally:
             lp.kill()
-        assert "8444" in p.stdout and "Relatório" in p.stdout, p.stdout[-400:]
+        assert "8460" in p.stdout and "Relatório" in p.stdout, p.stdout[-400:]
         assert query_service("VyonixCore") is None
         return p.stdout.strip().splitlines()[-2][:200]
 

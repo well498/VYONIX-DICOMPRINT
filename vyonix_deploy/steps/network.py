@@ -148,7 +148,7 @@ foreach ($d in @($A.dns)) { if ($d) { $dns = $dns -and (Test-Connection -Compute
         return False, last
 
     def _script(self, ctx: Context):
-        return ctx.paths.deploy_dir / "restaurar_rede.ps1"
+        return (ctx.paths.deploy_dir / "restaurar_rede.ps1").resolve()
 
     def _arm_safety(self, ctx: Context, before: dict) -> None:
         """Tarefa agendada (SYSTEM) que restaura a rede em 3 min se o DEPLOY não confirmar a mudança."""
