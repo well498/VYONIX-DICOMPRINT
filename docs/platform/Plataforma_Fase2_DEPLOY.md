@@ -99,8 +99,25 @@ VYONIX_Setup_x64.exe /VERYSILENT /DEPLOYUPDATE=1
 ## 8. Validação
 
 Pipeline `deploy-windows.yml` (windows-2022): testes do motor; empacotamento; e aceitação real
-(`tools/ci_deploy_acceptance.py`) com o resultado de cada critério da seção 13 do plano. Resultados
-da última execução: ver a seção "Estado da implantação" do documento de arquitetura.
+(`tools/ci_deploy_acceptance.py`) com o resultado de cada critério da seção 13 do plano.
+
+Execução 39702093478 (commit `2b760e8`, Windows Server 2022, 22/10/2026): **26 aprovados, 0 reprovados,
+1 não executado**.
+
+| Etapa | Verificado no runner |
+|---|---|
+| 2.1 | Inventário com token restrito (sem administrador) não cria nada; impeditivos de porta ocupada e de disco com 6 GB livres detectados, nada alterado, relatório gerado |
+| 2.2 | Segunda execução: 23 passos, todos "já estava conforme"; retomada após processo encerrado e reversão (testes do motor) |
+| 2.3 | Serviços com `NT SERVICE\…`, início automático (atrasado), dependências e recuperação 5/15/60 s; regra nomeada, regra alheia intacta, perfis do firewall inalterados; ACL sem herança; atalhos |
+| 2.4 | Dois adaptadores de loopback: conflito recusado; sem gateway → revertido em ~76 s; IP fixo aplicado, conferido e revertido; tarefa de segurança restaurou após o DEPLOY ser encerrado à força; interface principal intocada |
+| 2.5 | Instalação silenciosa pelo instalador; `/health` por HTTPS com o certificado conferido; reinício e recuperação após o processo ser morto |
+| 2.6 | PDF com os itens reais (serviços, regra); nenhum dos segredos locais nem chave privada no PDF/manifesto; cadeia de 27 manifestos; alteração manual detectada |
+| 2.7 | Serviço parado, regra apagada, certificado vencido, permissão removida e porta ocupada: detectados e reparados, novo diagnóstico limpo; restauração exige `RESTAURAR <backup>` |
+| 2.8 | DICOM Print 1.0.0 (r5) instalado antes: C-ECHO storage/print antes e depois; Installation ID preservado; atualização com backup preservou paciente e configuração; desinstalação preservou dados e o DICOM Print |
+| 2.9 | Sem licença: recusado e revertido; com licença assinada (License Manager de teste): habilitado, sem reinstalar |
+
+Não executado: impressão de teste no DICOM Print durante a coexistência (exige equipamento autorizado
+e impressora configurados; coberta pelos testes do próprio DICOM Print).
 
 Não testado automaticamente (roteiro manual): mudança de IP na interface principal de um servidor
 real, certificados de autoridade pública e Linux. Impressão de teste no DICOM Print durante a
