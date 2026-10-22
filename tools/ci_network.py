@@ -33,11 +33,17 @@ def devcon() -> str | None:
     return None
 
 
-def loopback_alias() -> str | None:
-    r = powershell("@(Get-NetAdapter -IncludeHidden | Where-Object { $_.InterfaceDescription -like '*KM-TEST Loopback*' } "
-                   "| ForEach-Object { $_.Name })")
-    a = as_list(r)
-    return a[0] if a else None
+def loopback_aliases() -> list[str]:
+    r = powershell("@(Get-NetAdapter | Where-Object { $_.InterfaceDescription -like '*KM-TEST Loopback*' } "
+                   "| Sort-Object ifIndex | ForEach-Object { $_.Name })")
+    return as_list(r)
+
+
+def task_info() -> dict:
+    return powershell("$t = Get-ScheduledTask -TaskName $A.n -ErrorAction SilentlyContinue; if (-not $t) { return $null }; "
+                      "$i = $t | Get-ScheduledTaskInfo; [pscustomobject]@{ state=[string]$t.State; "
+                      "last=[string]$i.LastRunTime; result=[int64]$i.LastTaskResult; next=[string]$i.NextRunTime }",
+                      {"n": SAFETY_TASK}) or {}
 
 
 def norm(c: dict) -> dict:
@@ -69,7 +75,7 @@ def main() -> int:
     if a.child:                       # processo que aplica e é encerrado à força no meio
         alias = a.child
         st = StaticIpStep(NetworkChoice(mode="static", interface=alias, ip="10.250.0.30", prefix=24,
-                                        gateway="10.250.0.1", confirmed=True))
+                                        gateway="10.250.0.254", confirmed=True))
         st.apply(Ctx(out))
         return 0
     res: dict = {"ok": False, "checks": []}
@@ -80,13 +86,19 @@ def main() -> int:
         return 0
     try:
         main_alias, main_before = main_nic()
-        r = subprocess.run([dv, "install", os.path.join(os.environ["SystemRoot"], "inf", "netloop.inf"), "*msloop"],
-                           capture_output=True, text=True, timeout=300)
-        res["devcon"] = (r.stdout + r.stderr)[-400:]
-        time.sleep(8)
-        alias = loopback_alias()
-        assert alias, "adaptador de loopback não criado"
-        res["adapter"] = alias
+        for _ in range(2):                    # dois adaptadores: um faz o papel do gateway
+            r = subprocess.run([dv, "install", os.path.join(os.environ["SystemRoot"], "inf", "netloop.inf"), "*msloop"],
+                               capture_output=True, text=True, timeout=300)
+            res.setdefault("devcon", []).append((r.stdout + r.stderr)[-200:])
+        time.sleep(10)
+        names = loopback_aliases()
+        assert len(names) >= 2, f"adaptadores de loopback: {names}"
+        alias, gw_alias = names[0], names[1]
+        res["adapter"], res["gateway_adapter"] = alias, gw_alias
+        powershell("Set-NetIPInterface -InterfaceAlias $A.a -Dhcp Disabled; "
+                   "New-NetIPAddress -InterfaceAlias $A.a -IPAddress 10.250.0.1 -PrefixLength 24 | Out-Null",
+                   {"a": gw_alias}, as_json=False)
+        time.sleep(5)
         ctx = Ctx(out)
         before = norm(interface_config(alias))
         res["before"] = before
@@ -105,7 +117,7 @@ def main() -> int:
 
         # 2) sem conectividade → reversão automática (60 s)
         st = StaticIpStep(NetworkChoice(mode="static", interface=alias, ip="10.250.0.10", prefix=24,
-                                        gateway="10.250.0.1", confirmed=True))
+                                        gateway="10.250.0.254", confirmed=True))
         t0 = time.monotonic()
         try:
             st.apply(ctx)
@@ -118,14 +130,18 @@ def main() -> int:
 
         # 3) aplicação com conectividade (gateway = o próprio endereço) e reversão pelo motor
         st = StaticIpStep(NetworkChoice(mode="static", interface=alias, ip="10.250.0.20", prefix=24,
-                                        gateway="10.250.0.20", confirmed=True))
+                                        gateway="10.250.0.1", confirmed=True))
         cap = st.capture(ctx)
-        st.apply(ctx)
-        applied = st.check(ctx)
+        try:
+            st.apply(ctx)
+            applied = st.check(ctx)
+            seen = interface_config(alias)
+        except Exception as exc:  # noqa: BLE001
+            applied, seen = False, {"erro": str(exc)[:300]}
         st.rollback(ctx, cap)
         time.sleep(3)
         res["checks"].append(["IP fixo aplicado, conferido e revertido", applied and norm(interface_config(alias)) == before,
-                              f"aplicado={applied}; restaurado={norm(interface_config(alias)) == before}"])
+                              f"aplicado={applied}; observado={seen}; restaurado={norm(interface_config(alias)) == before}"])
 
         # 4) DEPLOY interrompido no meio: a tarefa de segurança restaura em até ~3 min
         p = subprocess.Popen([sys.executable, __file__, "--out", str(out), "--child", alias])
@@ -136,7 +152,8 @@ def main() -> int:
                 changed = True
                 break
             time.sleep(1)
-        p.kill()
+        subprocess.run(["taskkill", "/F", "/T", "/PID", str(p.pid)], capture_output=True)
+        res["task_after_kill"] = task_info()
         restored = False
         end = time.monotonic() + 300
         while changed and time.monotonic() < end:
@@ -144,8 +161,10 @@ def main() -> int:
             if norm(interface_config(alias)) == before:
                 restored = True
                 break
+        res["task_end"] = task_info()
         res["checks"].append(["tarefa de segurança restaurou após o DEPLOY ser encerrado", changed and restored,
-                              f"IP alterado={changed}; restaurado pela tarefa={restored}"])
+                              f"IP alterado={changed}; restaurado pela tarefa={restored}; tarefa: "
+                              f"{res['task_after_kill']} → {res['task_end']}; final={norm(interface_config(alias))}"])
         res["main_interface_untouched"] = norm(interface_config(main_alias)) == main_before["cfg"]
         res["checks"].append(["interface principal intocada", res["main_interface_untouched"], main_alias])
         res["ok"] = all(c[1] for c in res["checks"])

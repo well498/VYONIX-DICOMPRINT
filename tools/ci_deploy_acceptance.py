@@ -162,14 +162,34 @@ def problem_ids(d: dict) -> set[str]:
     return {p["id"] for p in d["problems"]}
 
 
-def listener(port: int) -> subprocess.Popen:
-    code = (f"import socket,time;s=socket.socket();s.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1);"
-            f"s.bind(('0.0.0.0',{port}));s.listen(5);open(r'{OUT / f'listen-{port}.ok'}','w').write('1');time.sleep(3600)")
-    p = subprocess.Popen([sys.executable, "-c", code])
-    end = time.monotonic() + 20
-    while not (OUT / f"listen-{port}.ok").exists() and time.monotonic() < end:
-        time.sleep(0.2)
-    return p
+class Listener:
+    """Outro processo ocupando uma porta TCP (cenário de conflito)."""
+
+    def __init__(self, port: int) -> None:
+        self.port = port
+        mark = OUT / f"listen-{port}-{time.time_ns()}.ok"
+        code = (f"import socket,time;s=socket.socket();s.bind(('0.0.0.0',{port}));s.listen(5);"
+                f"open(r'{mark}','w').write('1');time.sleep(3600)")
+        self.p = subprocess.Popen([sys.executable, "-c", code])
+        end = time.monotonic() + 20
+        while not mark.exists() and time.monotonic() < end:
+            time.sleep(0.2)
+        assert mark.exists(), "processo de teste não ocupou a porta"
+
+    def kill(self) -> None:
+        subprocess.run(["taskkill", "/F", "/T", "/PID", str(self.p.pid)], capture_output=True)
+        end = time.monotonic() + 60
+        while time.monotonic() < end:
+            with socket.socket() as s:
+                s.settimeout(1)
+                if s.connect_ex(("127.0.0.1", self.port)) != 0:
+                    return
+            time.sleep(1)
+        raise AssertionError(f"porta {self.port} continua ocupada após encerrar o processo de teste")
+
+
+def listener(port: int) -> Listener:
+    return Listener(port)
 
 
 def secrets_values() -> list[str]:

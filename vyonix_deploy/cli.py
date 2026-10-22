@@ -139,6 +139,11 @@ def cmd_run(d: Deploy, a) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    for s in (sys.stdout, sys.stderr):              # saída sempre em UTF-8 (redirecionada por scripts/CI)
+        try:
+            s.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:  # noqa: BLE001
+            pass
     p = argparse.ArgumentParser(prog="vyonix-deploy", description=f"VYONIX DEPLOY {__version__}")
     sub = p.add_subparsers(dest="cmd", required=True)
     i = sub.add_parser("inventory")
