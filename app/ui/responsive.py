@@ -14,10 +14,12 @@ Validado pela matriz ``tests/test_ui_matrix.py`` (11 configurações de resoluç
 
 from __future__ import annotations
 
-from app.ui.qt import (QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFrame, QInputDialog, QLabel,
-                       QMessageBox, QSize, QSizePolicy, QVBoxLayout, QWidget, Qt, QtCore, QtWidgets)
+from app.ui.qt import (QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QFrame, QGroupBox,
+                       QInputDialog, QLabel, QMessageBox, QSize, QSizePolicy, QVBoxLayout, QWidget, Qt, QtCore,
+                       QtWidgets)
 
 LONG_LABEL = 48
+LONG_GROUP_TITLE = 40
 COMBO_MIN_CHARS = 18
 SCREEN_MARGIN = 24
 
@@ -105,7 +107,9 @@ def fit_dialog(dlg: QDialog) -> bool:
     frame = dlg.frameGeometry()
     extra_w, extra_h = frame.width() - dlg.width(), frame.height() - dlg.height()
     want = dlg.sizeHint().expandedTo(dlg.size())
-    if want.width() + extra_w <= avail.width() and want.height() + extra_h <= avail.height():
+    squeezed = (dlg.layout() is not None and dlg.layout().minimumSize().height() > dlg.height() + 2)
+    if (not squeezed and want.width() + extra_w <= avail.width()
+            and want.height() + extra_h <= int(avail.height() * 0.92)):
         if not avail.contains(frame):
             dlg.move(max(avail.x(), min(frame.x(), avail.right() - frame.width())),
                      max(avail.y(), min(frame.y(), avail.bottom() - frame.height())))
@@ -148,6 +152,10 @@ class ResponsiveFilter(QtCore.QObject):
         t = event.type()
         if t in (QtCore.QEvent.Type.Polish, QtCore.QEvent.Type.Show):
             try:
+                if t == QtCore.QEvent.Type.Polish and isinstance(obj, QWidget) and obj.layout() is not None:
+                    _wrap_forms(obj.layout())
+                if isinstance(obj, QGroupBox) and t == QtCore.QEvent.Type.Polish:
+                    self._group(obj)
                 if isinstance(obj, QLabel):
                     self._label(obj)
                 elif isinstance(obj, QComboBox) and t == QtCore.QEvent.Type.Polish:
@@ -173,11 +181,51 @@ class ResponsiveFilter(QtCore.QObject):
                 lbl.setSizePolicy(QSizePolicy.Preferred, lbl.sizePolicy().verticalPolicy())
 
     @staticmethod
+    def _group(box: QGroupBox) -> None:
+        """Título longo de grupo não quebra linha e impõe largura: a explicação vai para um rótulo."""
+        title = box.title()
+        if box.property("vyxTitleSplit") or len(title) <= LONG_GROUP_TITLE:
+            return
+        for sep in (" — ", " - ", " ("):
+            if sep in title:
+                head, tail = title.split(sep, 1)
+                break
+        else:
+            return
+        tail = tail.strip().rstrip(")").strip()
+        tail = tail[:1].upper() + tail[1:]
+        lay = box.layout()
+        note = QLabel(tail)
+        note.setObjectName("muted")
+        note.setWordWrap(True)
+        if isinstance(lay, QFormLayout):
+            lay.insertRow(0, note)
+        elif isinstance(lay, QtWidgets.QBoxLayout):
+            lay.insertWidget(0, note)
+        else:
+            note.deleteLater()
+            return
+        box.setTitle(head)
+        box.setToolTip(title)
+        box.setProperty("vyxTitleSplit", True)
+
+    @staticmethod
     def _combo(combo: QComboBox) -> None:
         if combo.property("vyxKeepWidth"):
             return
         combo.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
         combo.setMinimumContentsLength(COMBO_MIN_CHARS)
+
+
+def _wrap_forms(layout) -> None:
+    """Formulários quebram a linha (rótulo acima do campo) quando falta largura."""
+    if isinstance(layout, QFormLayout):
+        if layout.rowWrapPolicy() == QFormLayout.DontWrapRows:
+            layout.setRowWrapPolicy(QFormLayout.WrapLongRows)
+    for i in range(layout.count()):
+        sub = layout.itemAt(i).layout()
+        if sub is not None:
+            _wrap_forms(sub)
 
 
 def install(app) -> None:

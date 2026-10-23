@@ -91,6 +91,7 @@ def card(title: str) -> tuple[QFrame, QVBoxLayout]:
     lay.setSpacing(6)
     lbl = QLabel(title)
     lbl.setObjectName("cardTitle")
+    lbl.setWordWrap(True)
     lay.addWidget(lbl)
     return frame, lay
 

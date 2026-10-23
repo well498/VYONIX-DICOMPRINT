@@ -65,33 +65,49 @@ def rendered_contrast(widget) -> dict:
             "text": "#%02X%02X%02X" % best, "size": [w, h]}
 
 
+def _desc(wd) -> str:
+    text = ""
+    for attr in ("text", "currentText", "title"):
+        fn = getattr(wd, attr, None)
+        if callable(fn):
+            try:
+                text = fn() or ""
+            except TypeError:
+                text = ""
+            if text:
+                break
+    text = " ".join(str(text).split())[:50]
+    return type(wd).__name__ + (f" “{text}”" if text else (f" #{wd.objectName()}" if wd.objectName() else ""))
+
+
 def culprits(inner, have: int) -> str:
-    """Widgets mais internos cuja largura mínima já passa da área visível (ou contêineres cujos
-    filhos, lado a lado, passam)."""
-    from app.ui.qt import QWidget
-    found = []
-    for wd in inner.findChildren(QWidget):
-        if not wd.isVisibleTo(inner):
-            continue
-        mw = max(wd.minimumSizeHint().width(), wd.minimumWidth())
-        if mw <= have:
-            continue
-        kids = [k for k in wd.findChildren(QWidget) if k.isVisibleTo(inner)
-                and max(k.minimumSizeHint().width(), k.minimumWidth()) > have]
-        if not kids:
-            text = ""
-            for attr in ("text", "currentText", "title"):
-                fn = getattr(wd, attr, None)
-                if callable(fn):
-                    try:
-                        text = fn() or ""
-                    except TypeError:
-                        text = ""
-                    if text:
-                        break
-            text = " ".join(str(text).split())[:60]
-            found.append(f"{type(wd).__name__}{(' “' + text + '”') if text else ''} mín. {mw} px")
-    return "; ".join(found[:4]) or "soma de widgets lado a lado"
+    """Desce pela árvore de layouts até o layout mais interno cuja largura mínima passa da área visível
+    e lista os itens dele (com a largura mínima de cada um)."""
+    def item_min(item) -> int:
+        return item.minimumSize().width()
+
+    def descend(layout, path):
+        for i in range(layout.count()):
+            it = layout.itemAt(i)
+            if item_min(it) <= have:
+                continue
+            if it.layout() is not None:
+                return descend(it.layout(), path + [type(it.layout()).__name__])
+            w = it.widget()
+            if w is not None and w.layout() is not None and w.layout().minimumSize().width() > have:
+                return descend(w.layout(), path + [_desc(w)])
+            return f"{' > '.join(path + [_desc(w) if w else 'item'])} mín. {item_min(it)} px"
+        parts = []
+        for i in range(layout.count()):
+            it = layout.itemAt(i)
+            w = it.widget()
+            parts.append((item_min(it), _desc(w) if w else type(it.layout() or it).__name__))
+        parts.sort(reverse=True)
+        return (f"{' > '.join(path)} soma {layout.minimumSize().width()} px: "
+                + ", ".join(f"{d} {m}" for m, d in parts[:6]))
+
+    lay = inner.layout()
+    return descend(lay, [type(lay).__name__]) if lay is not None else "?"
 
 
 def layout_issues(root, where: str) -> list[str]:
