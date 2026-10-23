@@ -118,16 +118,26 @@ class MainWindow(QMainWindow):
         lay.addWidget(s)
         return header
 
-    def show_fitted(self) -> None:
-        """Abre em 1280 x 820 quando cabe; em telas menores (ex.: 1366 x 768) abre maximizada."""
-        screen = QApplication.primaryScreen()
+    def show_fitted(self, screen=None) -> None:
+        """Abre em 1280 x 820, centralizada, quando cabe; em telas menores (ex.: 1366 x 768 ou
+        1920 x 1080 com escala de 150 %) abre maximizada. Com vários monitores, usa a tela indicada
+        ou a tela em que a janela já está (padrão: a principal) — nunca altera a resolução."""
+        screen = screen or (self.screen() if self.isVisible() else None) or QApplication.primaryScreen()
         avail = screen.availableGeometry() if screen else None
+        if avail is not None:
+            if self.windowHandle() is None:
+                self.winId()                      # cria a janela nativa para poder escolher a tela
+            if self.windowHandle() is not None:
+                self.windowHandle().setScreen(screen)
         if avail is None or (avail.width() >= 1320 and avail.height() >= 880):
             self.resize(1280, 820)
+            if avail is not None:
+                self.move(avail.x() + (avail.width() - 1280) // 2, avail.y() + (avail.height() - 820) // 2)
             self.show()
             return
         self.setMinimumSize(QSize(min(900, avail.width()), min(560, avail.height())))
         self.resize(min(1280, avail.width()), min(820, avail.height() - 40))
+        self.move(avail.topLeft())
         self.showMaximized()
 
     def _navigate(self, row: int) -> None:
