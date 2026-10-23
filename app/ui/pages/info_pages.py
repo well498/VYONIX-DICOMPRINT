@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from app.ui.qt import QT_API, QT_VERSION, Qt
 from app.ui.qt import QPixmap
-from app.ui.qt import QLabel, QWidget
+from app.ui.qt import QLabel, QLineEdit, QWidget
 
 from app import __phase__, __version__, brand
 from app.ui.pages.base import Page, banner, card
@@ -36,10 +36,13 @@ class AboutPage(Page):
         for label, path in (("Dados da máquina", paths.machine_root),
                             ("Dados do usuário", paths.user_root),
                             ("Banco de dados", paths.database_file)):
-            lbl = QLabel(f"{label}: {path}")
-            lbl.setTextInteractionFlags(Qt.TextSelectableByMouse)
-            lbl.setWordWrap(True)
-            lay.addWidget(lbl)
+            # caminho num campo somente leitura: não força a largura da página (um caminho não quebra
+            # linha) e pode ser copiado inteiro
+            lay.addWidget(QLabel(label))
+            field = QLineEdit(str(path))
+            field.setReadOnly(True)
+            field.setCursorPosition(0)
+            lay.addWidget(field)
         self.body.addWidget(frame)
 
         frame, lay = card("Componentes de terceiros")
