@@ -18,7 +18,7 @@ from app.ui.qt import (QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormL
                        QInputDialog, QLabel, QMessageBox, QSize, QSizePolicy, QVBoxLayout, QWidget, Qt, QtCore,
                        QtWidgets)
 
-LONG_LABEL = 48
+LONG_LABEL = 30
 LONG_GROUP_TITLE = 40
 COMBO_MIN_CHARS = 18
 SCREEN_MARGIN = 24
@@ -289,8 +289,15 @@ class ResponsiveFilter(QtCore.QObject):
     def _combo(combo: QComboBox) -> None:
         if combo.property("vyxKeepWidth"):
             return
-        combo.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
-        combo.setMinimumContentsLength(COMBO_MIN_CHARS)
+        compact_combo(combo)
+
+
+def compact_combo(combo: QComboBox, chars: int = COMBO_MIN_CHARS) -> None:
+    """A largura mínima da lista suspensa deixa de ser a do item mais longo (a lista aberta mostra tudo)."""
+    combo.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+    combo.setMinimumContentsLength(chars + 1)    # valor diferente do atual: invalida as dicas de tamanho
+    combo.setMinimumContentsLength(chars)
+    combo.updateGeometry()
 
 
 def _wrap_forms(layout) -> None:

@@ -128,11 +128,8 @@ class MainWindow(QMainWindow):
         ou a tela em que a janela já está (padrão: a principal) — nunca altera a resolução."""
         screen = screen or (self.screen() if self.isVisible() else None) or QApplication.primaryScreen()
         avail = screen.availableGeometry() if screen else None
-        if avail is not None:
-            if self.windowHandle() is None:
-                self.winId()                      # cria a janela nativa para poder escolher a tela
-            if self.windowHandle() is not None:
-                self.windowHandle().setScreen(screen)
+        if avail is not None and screen is not self.screen():
+            self.setScreen(screen)                # Qt 6: escolhe o monitor antes de mostrar
         if avail is None or (avail.width() >= 1320 and avail.height() >= 880):
             self.resize(1280, 820)
             if avail is not None:

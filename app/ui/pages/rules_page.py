@@ -11,6 +11,7 @@ from app.printing.paper import LAYOUTS, PAPER_LABELS
 from app.rules.engine import ACTIONS, FIELDS, OPS, SOURCES, Rule, facts_for
 from app.ui.admin import current_actor, ensure_admin
 from app.ui.pages.base import FitScrollArea, Page, banner
+from app.ui.responsive import compact_combo
 from app.ui.pages.jobs_page import SETTING_LABELS, _fmt
 from app.ui.qt import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QFrame, QGridLayout,
                        QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPlainTextEdit, QPushButton, QSpinBox, QVBoxLayout,
@@ -107,7 +108,8 @@ class RuleDialog(QDialog):
         form.addRow("Nome *", self.name)
         form.addRow("Aplica-se a", self.scope)
         form.addRow("Descrição", self.description)
-        form.addRow("Prioridade (menor = avaliada primeiro)", self.priority)
+        self.priority.setToolTip("Regras com número menor são avaliadas primeiro.")
+        form.addRow("Prioridade (menor primeiro)", self.priority)
         form.addRow("", self.active)
         lay.addLayout(form)
 
@@ -145,11 +147,18 @@ class RuleDialog(QDialog):
         bb.accepted.connect(self._save)
         bb.rejected.connect(self.reject)
         outer.addWidget(bb)
-        screen = self.screen().availableGeometry() if self.screen() else None
-        if screen is not None:
-            self.resize(min(860, screen.width() - 40), min(content.sizeHint().height() + 120, screen.height() - 60))
+        compact_combo(self.scope, 28)
+        self._content = content
         if rule:
             self._fill(rule)
+
+    def showEvent(self, event) -> None:  # noqa: N802 - API Qt
+        """Tamanho inicial pela tela em que o diálogo abre (calculado só agora, já com o estilo aplicado)."""
+        if not getattr(self, "_sized", False) and self.screen() is not None:
+            self._sized = True
+            avail = self.screen().availableGeometry()
+            self.resize(min(860, avail.width() - 40), min(self._content.sizeHint().height() + 120, avail.height() - 60))
+        super().showEvent(event)
 
     def _editor(self, key: str, kind: str) -> QWidget:
         if kind == "paper":

@@ -161,6 +161,7 @@ class DashboardPage(Page):
         row = QHBoxLayout()
         left = QLabel(label)
         left.setObjectName("muted")
+        left.setWordWrap(True)
         row.addWidget(left)
         row.addStretch(1)
         right = QLabel(value)
@@ -172,6 +173,7 @@ class DashboardPage(Page):
     def _muted(lay, text: str) -> None:
         lbl = QLabel(text)
         lbl.setObjectName("muted")
+        lbl.setWordWrap(True)
         lay.addWidget(lbl)
 
 
