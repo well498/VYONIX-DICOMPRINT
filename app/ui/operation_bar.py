@@ -49,6 +49,8 @@ class OperationBar(QWidget):
         self.log_button.clicked.connect(self.open_log)
         for w in (self.badge, self.toggle, self.log_button):
             lay.addWidget(w)
+        # avisos ao usuário; substituível em testes (QMessageBox é modal e bloquearia sem tela)
+        self.notify = lambda title, text: QMessageBox.warning(self, title, text)
         self.timer = QTimer(self)
         self.timer.setInterval(REFRESH_MS)
         self.timer.timeout.connect(self.refresh)
@@ -103,7 +105,7 @@ class OperationBar(QWidget):
         try:
             self.ctx.operation.pause(actor=current_actor(), reason=reason)
         except ValidationError as exc:
-            QMessageBox.warning(self, "Pausar sistema", str(exc))
+            self.notify("Pausar sistema", str(exc))
             return False
         self.refresh()
         return True

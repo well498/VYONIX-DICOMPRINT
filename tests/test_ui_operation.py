@@ -30,9 +30,12 @@ class UiOperationTest(TempDirTestCase):
         try:
             w = MainWindow(ctx)
             bar = w.operation_bar
+            notices = []
+            bar.notify = lambda title, text: notices.append(text)
             self.assertEqual(bar.toggle.text(), "Pausar sistema")
             self.assertTrue(bar.badge.isHidden())
             self.assertFalse(bar.pause_system(reason="  ", ask_admin=False))     # motivo obrigatório
+            self.assertEqual(notices, ["Informe o motivo da pausa."])
             self.assertFalse(ctx.operation.state().paused)
             self.assertTrue(bar.pause_system(reason="Troca de papel", ask_admin=False))
             self.assertTrue(ctx.operation.state().paused)
