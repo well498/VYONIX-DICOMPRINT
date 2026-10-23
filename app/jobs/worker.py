@@ -146,8 +146,9 @@ def _instance_number(path: str) -> int:
 class PrintWorker:
     def __init__(self, *, db: Database, events: EventRepository, jobs: JobService, printers: PrinterService,
                  imaging, collector: AutoPrintCollector, settings_get: Callable[[str], Any],
-                 license=None, templates=None) -> None:
+                 license=None, templates=None, operation=None) -> None:
         self.license = license
+        self.operation = operation            # pausa operacional (``app.services.operation``)
         self.templates = templates
         self.db = db
         self.events = events
@@ -231,9 +232,16 @@ class PrintWorker:
             return None
         return self.license.suspension_reason() or "impressão não incluída na licença"
 
+    def paused(self) -> bool:
+        """Sistema pausado pelo operador: o trabalho em andamento termina; os demais aguardam."""
+        return self.operation is not None and self.operation.is_paused()
+
     def _next_job(self) -> Job | None:
-        """Próximo trabalho. Com a assinatura suspensa ou vencida, os trabalhos aceitos **antes** da
-        restrição são concluídos normalmente; os posteriores aguardam na fila (nada é apagado)."""
+        """Próximo trabalho. Com o sistema pausado, nenhum trabalho novo é iniciado. Com a assinatura
+        suspensa ou vencida, os trabalhos aceitos **antes** da restrição são concluídos normalmente;
+        os posteriores aguardam na fila (nada é apagado)."""
+        if self.paused():
+            return None
         if self.suspended() is None:
             return self._claim()
         cutoff = self.license.drain_cutoff() if self.license is not None else None

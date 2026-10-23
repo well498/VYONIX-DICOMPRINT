@@ -37,6 +37,7 @@ from app.security.access import AdminAccess
 from app.imaging.cache import PreviewCache
 from app.jobs.service import JobService
 from app.jobs.worker import AutoPrintCollector, PrintWorker
+from app.services.operation import OperationControl
 from app.printing.backends import windows as win_backend
 from app.printing.backends.pdf import PdfFileBackend
 from app.printing.profiles import ProfileService
@@ -100,6 +101,7 @@ class AppContext:
     exporter: Any
     schema_version: int
     applied_migrations: list[int] = field(default_factory=list)
+    operation: OperationControl | None = None
     _closed: bool = False
 
     def summary(self) -> dict[str, Any]:
@@ -207,9 +209,11 @@ def bootstrap(*, data_dir: str | os.PathLike[str] | None = None, role: str = "ui
         exams.license_reason = license_service.suspension_reason
         store.listeners.append(exams.on_stored)
         jobs.after_create.append(exams.link_job)
+        operation = OperationControl(db, events)
+        operation.subscribe(lambda _st: jobs.wakeup.set())
         worker = PrintWorker(db=db, events=events, jobs=jobs, printers=printers, imaging=imaging,
                              collector=collector, settings_get=get, license=license_service,
-                             templates=templates)
+                             templates=templates, operation=operation)
         def device_modality(device_id: int) -> str | None:
             d = devices.repo.get(device_id)
             return d.modality if d else None
@@ -235,14 +239,14 @@ def bootstrap(*, data_dir: str | os.PathLike[str] | None = None, role: str = "ui
             changes=ChangeHistoryRepository(db), stats=stats,
             dashboard=DashboardService(stats, settings, events,
                                        service_status_provider=runtime.service_statuses,
-                                       access=access, license=license_service),
+                                       access=access, license=license_service, operation=operation),
             devices=devices, store=store, storage_scp=storage_scp, retention=retention,
             access=access, runtime=runtime,
             imaging=imaging, profiles=profiles, printers=printers, jobs=jobs, worker=worker,
             print_scp=print_scp, rules=rules, license=license_service,
             device_settings=device_settings, templates=templates, calibration=calibration, backups=backups,
             users=users, exams=exams, reception=reception, exporter=ExamExporter(db, events),
-            schema_version=schema, applied_migrations=applied,
+            schema_version=schema, applied_migrations=applied, operation=operation,
         )
         settings.subscribe(runtime.on_settings_changed)
         _clean_temp(paths.temp_dir)

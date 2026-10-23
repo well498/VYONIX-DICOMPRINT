@@ -40,6 +40,9 @@ class Category:
     }
 
 
+# Categorias que formam a trilha de auditoria (quem alterou o quê): retenção própria, mais longa.
+AUDIT_CATEGORIES = (Category.ADMIN, Category.SECURITY, Category.LICENSE)
+
 LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
 
 
@@ -121,10 +124,19 @@ class EventRepository:
                                  json.dumps(e.details, ensure_ascii=False) if e.details else ""])
         return len(rows)
 
-    def purge_older_than(self, days: int) -> int:
+    def purge_older_than(self, days: int, audit_days: int | None = None) -> int:
+        """Remove eventos operacionais com mais de ``days`` dias. A trilha de auditoria
+        (``AUDIT_CATEGORIES``: administração, segurança e licença) tem prazo próprio, ``audit_days``
+        — nunca menor que o dos eventos operacionais (Prompt Mestre §19: logs operacionais
+        temporários separados da trilha de auditoria obrigatória)."""
         cutoff = to_iso(utc_now() - timedelta(days=days))
+        audit_cutoff = to_iso(utc_now() - timedelta(days=max(days, audit_days if audit_days is not None else days)))
+        marks = ",".join("?" * len(AUDIT_CATEGORIES))
         with self.db.transaction():
-            cur = self.db.connection().execute("DELETE FROM events WHERE ts < ?", (cutoff,))
+            cur = self.db.connection().execute(
+                f"DELETE FROM events WHERE (category NOT IN ({marks}) AND ts < ?) "
+                f"OR (category IN ({marks}) AND ts < ?)",
+                (*AUDIT_CATEGORIES, cutoff, *AUDIT_CATEGORIES, audit_cutoff))
         return cur.rowcount
 
     def last_ts(self) -> str | None:

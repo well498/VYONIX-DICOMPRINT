@@ -45,7 +45,7 @@ jobs:
           VYONIX_UI_MATRIX_OUT: ${{ github.workspace }}\dist\ui_matrix
         run: |
           New-Item -ItemType Directory -Force dist | Out-Null
-          python -m pytest tests/test_ui_tokens.py tests/test_ui_matrix.py tests/test_ui_smoke.py -v -ra --junitxml=dist\ui.xml 2>&1 | Tee-Object dist\ui.txt
+          python -m pytest tests/test_ui_tokens.py tests/test_ui_operation.py tests/test_ui_matrix.py tests/test_ui_smoke.py -v -ra --junitxml=dist\ui.xml 2>&1 | Tee-Object dist\ui.txt
           $code = $LASTEXITCODE
           python tools\junit_annotations.py dist\ui.xml
           python tools\ui_matrix_summary.py dist\ui_matrix

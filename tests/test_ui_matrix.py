@@ -58,12 +58,15 @@ def run_config(name: str, screens, index: int) -> dict:
     cfg.write_text(json.dumps(screens_config(screens)), encoding="utf-8")
     out = tmp / "resultado.json"
     env = dict(os.environ)
-    env["QT_QPA_PLATFORM"] = f"offscreen:configfile={cfg.as_posix()}"
+    # o Qt separa os parâmetros da plataforma por ":" — um caminho com letra de unidade (C:\\...) quebraria;
+    # por isso o processo roda na pasta do arquivo e o caminho é relativo.
+    env["QT_QPA_PLATFORM"] = f"offscreen:configfile={cfg.name}"
+    env["PYTHONPATH"] = os.pathsep.join(p for p in (str(ROOT), env.get("PYTHONPATH", "")) if p)
     for k in ("QT_SCALE_FACTOR", "QT_SCREEN_SCALE_FACTORS", "QT_AUTO_SCREEN_SCALE_FACTOR", "QT_ENABLE_HIGHDPI_SCALING"):
         env.pop(k, None)
     env["QT_SCALE_FACTOR_ROUNDING_POLICY"] = "PassThrough"
     proc = subprocess.run([sys.executable, "-m", "tests.ui_matrix_probe", str(out), str(tmp / "dados"), str(index)],
-                          cwd=ROOT, env=env, capture_output=True, text=True, timeout=600)
+                          cwd=tmp, env=env, capture_output=True, text=True, timeout=600)
     data = json.loads(out.read_text(encoding="utf-8")) if out.exists() else {
         "crash": f"código {proc.returncode}\n{proc.stdout[-2000:]}\n{proc.stderr[-4000:]}"}
     data["config"] = {"name": name, "screens": screens, "open_on": index}

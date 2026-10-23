@@ -7,6 +7,7 @@ interface. Não importa Qt.
 from __future__ import annotations
 
 import threading
+import time
 from typing import Any, Callable, Mapping
 
 from app.core.contracts import ServiceState, ServiceStatus
@@ -20,6 +21,7 @@ PRINT_RESTART_KEYS = {"dicom.print.enabled", "dicom.print.ae_title", "dicom.prin
                       "dicom.storage.bind_address", "dicom.storage.max_associations"}
 LISTENER_CHECK_S = 10
 LICENSE_CHECK_S = 600
+SAFE_RESTART_WAIT_S = 60.0
 SCP_RESTART_KEYS = {"dicom.storage.ae_title", "dicom.storage.bind_address", "dicom.storage.port",
                     "dicom.storage.max_associations"}
 
@@ -90,17 +92,33 @@ class CoreRuntime:
         self.started = False
 
     def on_settings_changed(self, changed: Mapping[str, Any]) -> None:
-        """Reinicia os SCPs quando endereço, porta ou AE Title mudam."""
+        """Reinicia os SCPs quando endereço, porta ou AE Title mudam — sem cortar transferências: o
+        reinício espera as associações em andamento terminarem (até ``SAFE_RESTART_WAIT_S``)."""
         self._maybe_restart_print(changed)
         if self.started and SCP_RESTART_KEYS & set(changed) and \
                 self.storage_scp.status().state == ServiceState.RUNNING:
             log.info("Reiniciando Storage SCP após mudança de configuração")
-            threading.Thread(target=self.storage_scp.restart, name="vyonix-scp-restart",
+            threading.Thread(target=self.restart_when_idle, args=(self.storage_scp,), name="vyonix-scp-restart",
                              daemon=True).start()
 
     def _maybe_restart_print(self, changed: Mapping[str, Any]) -> None:
         if self.started and self.print_scp is not None and PRINT_RESTART_KEYS & set(changed):
-            threading.Thread(target=self.print_scp.restart, name="vyonix-print-restart", daemon=True).start()
+            threading.Thread(target=self.restart_when_idle, args=(self.print_scp,), name="vyonix-print-restart",
+                             daemon=True).start()
+
+    def restart_when_idle(self, scp, wait_s: float | None = None, poll_s: float = 0.5) -> bool:
+        """Reinicia ``scp`` quando não houver associação ativa. Retorna False se o prazo acabou e o
+        reinício precisou interromper uma associação (o equipamento reenvia; o fato fica no log)."""
+        wait_s = SAFE_RESTART_WAIT_S if wait_s is None else wait_s
+        deadline = time.monotonic() + wait_s
+        idle = _active_associations(scp) == 0
+        while not idle and time.monotonic() < deadline:
+            time.sleep(poll_s)
+            idle = _active_associations(scp) == 0
+        if not idle:
+            log.warning("Reinício após %.0f s com associação DICOM ainda ativa", wait_s)
+        scp.restart()
+        return idle
 
     def service_statuses(self, _settings=None) -> list[ServiceStatus]:
         return [
@@ -132,6 +150,9 @@ class CoreRuntime:
         why = self.worker.suspended()
         if why:
             detail = "SUSPENSA pela licença: os trabalhos aguardam na fila"
+        if getattr(self.worker, "paused", None) and self.worker.paused():
+            detail = (f"PAUSADA — concluindo o trabalho #{self.worker.current_job}; os demais aguardam"
+                      if self.worker.current_job else "PAUSADA pelo operador: os trabalhos aguardam na fila")
         if self.printers is not None:
             detail += " · " + self.printers.status_summary()
         return ServiceStatus(name, ServiceState.RUNNING, detail)
@@ -200,3 +221,13 @@ class CoreRuntime:
                 self.retention.db.close_thread_connection()
             if self._stop.wait(RETENTION_INTERVAL_S):
                 return
+
+
+def _active_associations(scp) -> int:
+    try:
+        fn = getattr(scp, "active_associations", None)
+        if callable(fn):
+            return len(fn())
+        return len(getattr(scp, "_assocs", {}) or {})
+    except Exception:  # noqa: BLE001 - sem informação, não bloqueia o reinício
+        return 0

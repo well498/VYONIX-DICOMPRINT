@@ -243,8 +243,12 @@ DEFINITIONS: tuple[SettingDef, ...] = (
                validator=v.int_range(1, 3650, "Retenção de imagens"), minimum=1, maximum=3650,
                help="Política de retenção (LGPD): imagens e PDFs gerados mais antigos são removidos "
                     "automaticamente, exceto os ligados a trabalhos não concluídos."),
-    SettingDef("retention.events_days", "Reter eventos (dias)", "retention", "int", 365,
+    SettingDef("retention.events_days", "Reter eventos operacionais (dias)", "retention", "int", 365,
                validator=v.int_range(30, 3650, "Retenção de eventos"), minimum=30, maximum=3650),
+    SettingDef("retention.audit_days", "Reter a trilha de auditoria (dias)", "retention", "int", 1825,
+               validator=v.int_range(365, 7300, "Retenção da auditoria"), minimum=365, maximum=7300,
+               help="Alterações de configuração, acessos, licença e pausas do sistema. Prazo próprio, "
+                    "nunca menor que o dos eventos operacionais."),
 
     SettingDef("security.lock_minutes", "Bloquear administração após (min)", "security", "int", 10,
                validator=v.int_range(1, 240, "Tempo de bloqueio"), minimum=1, maximum=240,

@@ -24,6 +24,7 @@ from app.ui.pages.info_pages import AboutPage
 from app.ui.pages.license_page import LicensePage
 from app.ui.pages.reception_page import ReceptionPage
 from app.ui.pages.settings_page import SettingsPage
+from app.ui.operation_bar import OperationBar
 from app.ui.workers import wait_all
 from app.utils.logging_setup import get_logger
 from app.utils.resources import asset_path
@@ -116,6 +117,9 @@ class MainWindow(QMainWindow):
         s = QLabel(brand.SLOGAN)
         s.setObjectName("slogan")
         lay.addWidget(s)
+        lay.addSpacing(18)
+        self.operation_bar = OperationBar(self.ctx)
+        lay.addWidget(self.operation_bar)
         return header
 
     def show_fitted(self, screen=None) -> None:
@@ -170,6 +174,7 @@ class MainWindow(QMainWindow):
 
     def shutdown(self) -> None:
         """Interrompe atualizações e aguarda operações pendentes antes de fechar o banco."""
+        self.operation_bar.timer.stop()
         for i in range(self.stack.count()):
             timer = getattr(self.stack.widget(i), "timer", None)
             if timer is not None:

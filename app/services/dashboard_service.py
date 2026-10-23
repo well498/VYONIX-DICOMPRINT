@@ -43,13 +43,18 @@ class DashboardSnapshot:
     selected_printer: str
     recent_failures: list[EventRecord]
     alerts: list[Alert] = field(default_factory=list)
+    paused: bool = False
+    paused_since: str | None = None
+    paused_by: str | None = None
+    paused_reason: str | None = None
 
 
 class DashboardService:
     def __init__(self, stats: StatsRepository, settings: SettingsService,
                  events: EventRepository,
-                 service_status_provider=None, access=None, license=None) -> None:
+                 service_status_provider=None, access=None, license=None, operation=None) -> None:
         self.license = license
+        self.operation = operation
         self.stats = stats
         self.settings = settings
         self.events = events
@@ -67,6 +72,10 @@ class DashboardService:
                                                      else "Não configurada")
 
         alerts: list[Alert] = [Alert("warning", brand.CLINICAL_DISCLAIMER)]
+        op = self.operation.state() if self.operation is not None else None
+        if op is not None and op.paused:
+            alerts.insert(0, Alert("warning", f"Sistema PAUSADO por {op.actor}: {op.reason}. A recepção continua; "
+                                              "os trabalhos aguardam na fila até \u201cRetomar sistema\u201d."))
         if self.license is not None:
             lst = self.license.status()
             if not lst.active:
@@ -118,6 +127,8 @@ class DashboardService:
             selected_printer=printer,
             recent_failures=failures,
             alerts=alerts,
+            paused=bool(op and op.paused), paused_since=op.since if op else None,
+            paused_by=op.actor if op else None, paused_reason=op.reason if op else None,
         )
 
 

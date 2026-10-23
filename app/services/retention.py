@@ -100,7 +100,8 @@ class RetentionService:
                             outputs += 1
                     except OSError:
                         continue
-        events_removed = self.events.purge_older_than(int(self.get("retention.events_days")))
+        events_removed = self.events.purge_older_than(int(self.get("retention.events_days")),
+                                                      audit_days=int(self.get("retention.audit_days")))
         if removed or events_removed or outputs:
             self.events.add(level="INFO", category=Category.SYSTEM, action="retention.purge",
                             message=f"Retenção: {removed} imagem(ns) removida(s) "

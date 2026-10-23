@@ -35,6 +35,7 @@ class SettingsPage(Page):
                          "Alterações são validadas, registradas no histórico e auditadas. Com senha de "
                          "administrador definida, salvar exige desbloqueio.", parent)
         self.service = service
+        self._ctx = ctx
         self.access = access
         self.exports_dir = exports_dir
         self.editors: dict[str, QWidget] = {}
@@ -256,9 +257,40 @@ class SettingsPage(Page):
             return
         if not ensure_admin(self, self.access, "salvar configurações"):
             return
+        if not self.ensure_safe_pause(changes):
+            return
         self._set_busy(True)
         run_async(lambda: self.service.update(changes, actor=current_actor()),
                   self._saved, self._save_failed)
+
+    def sensitive_changes(self, changes: dict[str, Any]) -> list[str]:
+        """Rótulos das alterações que reiniciam a recepção ou a impressão DICOM."""
+        return [self.service.definition(k).label for k in changes if self.service.definition(k).restart_required]
+
+    def ensure_safe_pause(self, changes: dict[str, Any], *, answer: bool | None = None) -> bool:
+        """Configurações sensíveis exigem o sistema pausado (Prompt Mestre §19): a fila não inicia
+        novos trabalhos e o reinício dos servidores espera as transferências em andamento.
+        ``answer`` substitui a pergunta (testes)."""
+        sensitive = self.sensitive_changes(changes)
+        operation = getattr(self._ctx, "operation", None)
+        if not sensitive or operation is None or operation.state().paused:
+            return True
+        if answer is None:
+            box = QMessageBox(QMessageBox.Warning, "Pausa segura",
+                              "Estas alterações reiniciam os servidores DICOM:\n\n• " + "\n• ".join(sensitive) +
+                              "\n\nPara não interromper impressões, o sistema será pausado antes de salvar: a "
+                              "fila conclui o trabalho em andamento e não inicia outro, e o reinício espera as "
+                              "transferências em curso terminarem.\n\nDepois de conferir, use "
+                              "\u201cRetomar sistema\u201d no topo da janela.", parent=self)
+            go = box.addButton("Pausar e salvar", QMessageBox.AcceptRole)
+            box.addButton("Cancelar", QMessageBox.RejectRole)
+            box.exec()
+            answer = box.clickedButton() is go
+        if not answer:
+            return False
+        operation.pause(actor=current_actor(), reason="Alteração de configuração sensível: " +
+                        ", ".join(sensitive)[:150])
+        return True
 
     def restore_defaults(self) -> None:
         if not ensure_admin(self, self.access, "restaurar padrões"):
