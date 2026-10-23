@@ -10,6 +10,7 @@ from app.ui.qt import QGridLayout, QHBoxLayout, QLabel, QWidget
 from app.core.contracts import ServiceState
 from app.services.dashboard_service import DashboardService, DashboardSnapshot
 from app.ui.pages.base import Page, card
+from app.ui.responsive import ResponsiveGrid
 from app.ui.workers import run_async
 from app.utils.timeutil import from_iso
 
@@ -37,37 +38,35 @@ class DashboardPage(Page):
         self.service = service
         self._busy = False
 
-        grid = QGridLayout()
-        grid.setSpacing(14)
-        self.body.addLayout(grid)
+        # grade responsiva: 4 colunas na janela padrão, 2 ou 1 em telas estreitas ou com escala alta
+        grid = ResponsiveGrid(min_col=230, max_cols=4)
+        self.body.addWidget(grid)
 
         # Indicadores numéricos
         self.kpi: dict[str, QLabel] = {}
-        for col, (key, title) in enumerate([
+        for key, title in [
             ("received", "Trabalhos recebidos (24 h)"), ("queue", "Trabalhos em fila"),
             ("spooled", "Enviados à impressão (24 h)"), ("failed", "Falhas (24 h)"),
-        ]):
+        ]:
             frame, lay = card(title)
             value = QLabel("—")
             value.setObjectName("cardValue")
             lay.addWidget(value)
             self.kpi[key] = value
-            grid.addWidget(frame, 0, col)
+            grid.add(frame, 1)
 
         frame, self.services_lay = card("Serviços")
-        grid.addWidget(frame, 1, 0, 1, 2)
+        grid.add(frame, 2)
         frame, self.dicom_lay = card("Configuração DICOM")
-        grid.addWidget(frame, 1, 2, 1, 2)
+        grid.add(frame, 2)
         frame, self.devices_lay = card("Equipamentos")
-        grid.addWidget(frame, 2, 0, 1, 2)
+        grid.add(frame, 2)
         frame, self.printer_lay = card("Impressora selecionada")
-        grid.addWidget(frame, 2, 2, 1, 2)
+        grid.add(frame, 2)
         frame, self.alerts_lay = card("Alertas operacionais")
-        grid.addWidget(frame, 3, 0, 1, 4)
+        grid.add(frame, 4)
         frame, self.failures_lay = card("Falhas recentes")
-        grid.addWidget(frame, 4, 0, 1, 4)
-        for c in range(4):
-            grid.setColumnStretch(c, 1)
+        grid.add(frame, 4)
 
         self.updated = QLabel("")
         self.updated.setObjectName("muted")
@@ -108,14 +107,17 @@ class DashboardPage(Page):
         for st in s.services:
             text, style = _STATE_TEXT[st.state]
             row = QHBoxLayout()
-            row.addWidget(QLabel(st.name), 1)
+            name = QLabel(st.name)
+            name.setWordWrap(True)
+            row.addWidget(name, 1)
             state = QLabel(text)
             state.setObjectName(style)
             row.addWidget(state)
-            detail = QLabel(st.detail)
-            detail.setObjectName("muted")
-            row.addWidget(detail)
             self.services_lay.addLayout(row)
+            detail = QLabel(st.detail)              # na linha de baixo: o detalhe pode ser longo
+            detail.setObjectName("muted")
+            detail.setWordWrap(True)
+            self.services_lay.addWidget(detail)
 
         _clear(self.dicom_lay)
         self._line(self.dicom_lay, "Recepção (Storage SCP)",

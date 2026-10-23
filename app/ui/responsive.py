@@ -97,6 +97,82 @@ class FlowLayout(QtWidgets.QLayout):
         return y + line_h - rect.y() + m.bottom()
 
 
+class ResponsiveGrid(QWidget):
+    """Grade que muda o número de colunas conforme a largura disponível.
+
+    ``items`` são ``(widget, span)`` pensados para ``max_cols`` colunas; com menos colunas o
+    ``span`` é reduzido na mesma proporção e os itens seguem em fluxo, linha a linha. A largura
+    mínima da grade é a de uma coluna — nunca força rolagem horizontal.
+    """
+
+    def __init__(self, min_col: int, max_cols: int, spacing: int = 14, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.min_col, self.max_cols = min_col, max_cols
+        self.grid = QtWidgets.QGridLayout(self)
+        self.grid.setContentsMargins(0, 0, 0, 0)
+        self.grid.setSpacing(spacing)
+        self.grid.setSizeConstraint(QtWidgets.QLayout.SetNoConstraint)
+        self._items: list[tuple[QWidget, int]] = []
+        self.columns = 0
+
+    def add(self, widget: QWidget, span: int = 1) -> None:
+        self._items.append((widget, span))
+        widget.setParent(self)
+        self._arrange(force=True)
+
+    def columns_for(self, width: int) -> int:
+        spacing = self.grid.spacing()
+        return max(1, min(self.max_cols, (width + spacing) // (self.min_col + spacing)))
+
+    def _arrange(self, force: bool = False) -> None:
+        cols = self.columns_for(self.width() or self.min_col * self.max_cols)
+        if cols == self.columns and not force:
+            return
+        self.columns = cols
+        for w, _ in self._items:
+            self.grid.removeWidget(w)
+        for c in range(self.max_cols):
+            self.grid.setColumnStretch(c, 1 if c < cols else 0)
+        row = col = 0
+        for w, span in self._items:
+            sp = max(1, min(cols, -(-span * cols // self.max_cols)))
+            if col + sp > cols:
+                row, col = row + 1, 0
+            self.grid.addWidget(w, row, col, 1, sp)
+            col += sp
+            if col >= cols:
+                row, col = row + 1, 0
+        self.updateGeometry()
+
+    def resizeEvent(self, event) -> None:  # noqa: N802 - API Qt
+        super().resizeEvent(event)
+        self._arrange()
+
+    def minimumSizeHint(self) -> QSize:  # noqa: N802
+        w = max((wd.minimumSizeHint().width() for wd, _ in self._items), default=0)
+        return QSize(max(w, min(self.min_col, w or self.min_col)), super().minimumSizeHint().height())
+
+    def hasHeightForWidth(self) -> bool:  # noqa: N802
+        return True
+
+    def heightForWidth(self, width: int) -> int:  # noqa: N802
+        cols = self.columns_for(width)
+        spacing = self.grid.spacing()
+        col_w = max(1, (width - spacing * (cols - 1)) // cols)
+        total, row_h, col = 0, 0, 0
+        for w, span in self._items:
+            sp = max(1, min(cols, -(-span * cols // self.max_cols)))
+            if col + sp > cols:
+                total, row_h, col = total + row_h + spacing, 0, 0
+            ww = col_w * sp + spacing * (sp - 1)
+            h = w.heightForWidth(ww) if w.hasHeightForWidth() else -1
+            row_h = max(row_h, h if h > 0 else w.sizeHint().height())
+            col += sp
+            if col >= cols:
+                total, row_h, col = total + row_h + spacing, 0, 0
+        return total + row_h
+
+
 def fit_dialog(dlg: QDialog) -> bool:
     """Garante que o diálogo caiba na área útil da tela em que está. Retorna True se ajustou."""
     screen = dlg.screen()

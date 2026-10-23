@@ -10,7 +10,7 @@ from app.devices.service import MODALITIES
 from app.imaging.calibration import CalibrationProfile
 from app.printing.profiles import PrintProfile
 from app.services.imaging_service import PATTERN
-from app.ui.responsive import FlowLayout
+from app.ui.responsive import FlowLayout, ResponsiveGrid
 from app.ui.admin import current_actor, ensure_admin
 from app.ui.images import to_pixmap
 from app.ui.pages.base import Page, banner
@@ -69,9 +69,13 @@ class CalibrationPage(Page):
         dev_btn.clicked.connect(lambda _=False: self._open_device_calibration())
         dev_row.addWidget(dev_btn)
         self.body.addLayout(dev_row)
-        grid = QGridLayout()
-        grid.setSpacing(14)
-        self.body.addLayout(grid)
+        # pré-visualização à esquerda e controles à direita; em telas estreitas, um abaixo do outro
+        grid = ResponsiveGrid(min_col=420, max_cols=2)
+        self.body.addWidget(grid)
+        side = QWidget()
+        side_lay = QVBoxLayout(side)
+        side_lay.setContentsMargins(0, 0, 0, 0)
+        side_lay.setSpacing(14)
 
         # ---------------------------------------------------- pré-visualização
         prev = QGroupBox("Pré-visualização")
@@ -91,7 +95,8 @@ class CalibrationPage(Page):
         self.applied.setObjectName("muted")
         self.applied.setWordWrap(True)
         pl.addWidget(self.applied)
-        grid.addWidget(prev, 0, 0, 3, 1)
+        grid.add(prev, 1)
+        grid.add(side, 1)
 
         # ---------------------------------------------------- fonte
         src = QGroupBox("Imagem")
@@ -116,7 +121,7 @@ class CalibrationPage(Page):
             self.rotate.addItem(f"{deg}°", deg)
         self.rotate.currentIndexChanged.connect(lambda _: self._schedule(base=True))
         sl.addRow("Rotação", self.rotate)
-        grid.addWidget(src, 0, 1)
+        side_lay.addWidget(src)
 
         # ---------------------------------------------------- calibração
         cal = QGroupBox("Calibração visual (salva no perfil)")
@@ -139,7 +144,7 @@ class CalibrationPage(Page):
         cl.addRow("Escala física (×10)", self.scale)
         cl.addRow("Deslocamento X (×10)", self.off_x)
         cl.addRow("Deslocamento Y (×10)", self.off_y)
-        grid.addWidget(cal, 1, 1)
+        side_lay.addWidget(cal)
 
         # ---------------------------------------------------- perfil
         prof = QGroupBox("Perfil")
@@ -167,9 +172,8 @@ class CalibrationPage(Page):
                                    "calibração atual dos controles, mesmo antes de salvar o perfil.")
         self.print_test.clicked.connect(self.test_page)
         fl.addRow(self.print_test)
-        grid.addWidget(prof, 2, 1)
-        grid.setColumnStretch(0, 3)
-        grid.setColumnStretch(1, 2)
+        side_lay.addWidget(prof)
+        side_lay.addStretch(1)
 
         self._base = None          # imagem apresentada (antes da calibração)
         self._base_key = None

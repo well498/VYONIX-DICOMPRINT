@@ -57,14 +57,6 @@ class ProfileDialog(QDialog):
         self.copies = _spin(1, 99)
         self.margins = {k: _spin(0, 60) for k in ("top", "right", "bottom", "left")}
         self.spacing = _spin(0, 30)
-        margins_row = QGridLayout()           # 2 × 2: lado a lado, os quatro campos cortavam os rótulos
-        margins_row.setContentsMargins(0, 0, 0, 0)
-        for i, (k, label) in enumerate((("top", "Topo"), ("right", "Direita"), ("bottom", "Base"),
-                                        ("left", "Esquerda"))):
-            margins_row.addWidget(QLabel(label), i // 2, (i % 2) * 2)
-            margins_row.addWidget(self.margins[k], i // 2, (i % 2) * 2 + 1)
-        mw = QWidget()
-        mw.setLayout(margins_row)
         self.header = QLineEdit()
         self.footer = QLineEdit()
         self.dpi = QComboBox()
@@ -85,7 +77,8 @@ class ProfileDialog(QDialog):
         form.addRow("Orientação", self.orientation)
         form.addRow("Layout", self.layout_box)
         form.addRow("Cópias", self.copies)
-        form.addRow("Margens (mm)", mw)
+        for k, label in (("top", "superior"), ("right", "direita"), ("bottom", "inferior"), ("left", "esquerda")):
+            form.addRow(f"Margem {label} (mm)", self.margins[k])
         form.addRow("Espaçamento (mm)", self.spacing)
         form.addRow("Resolução de saída", self.dpi)
         form.addRow("Texto do cabeçalho", self.header)
