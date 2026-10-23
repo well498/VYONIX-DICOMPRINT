@@ -23,6 +23,12 @@ import traceback
 from pathlib import Path
 
 MIN_TEXT_CONTRAST = 4.5
+PROBE_TIMEOUT_S = 170
+
+
+def stage(text: str) -> None:
+    """Etapa atual no stderr — mostrada pelo teste se a sonda falhar."""
+    print(f"[sonda] {text}", file=sys.stderr, flush=True)
 
 
 def _lum(c) -> float:
@@ -172,6 +178,7 @@ def run(out_path: Path, data_dir: Path, screen_index: int) -> dict:
         device = ctx.devices.create({"name": "Tomografia Matriz 01", "ae_title": "CT_MTX", "modality": "CT"},
                                     actor="matriz")
         for mode in ("light", "dark"):
+            stage(f"{mode}: janela principal")
             theme.apply_theme(app, mode)
             w = MainWindow(ctx)
             w.show_fitted(screen)
@@ -181,11 +188,13 @@ def run(out_path: Path, data_dir: Path, screen_index: int) -> dict:
                 result["issues"].append(f"[{mode}] janela principal abriu em {w.screen().name()}, "
                                         f"e não em {screen.name()}")
             for row, label in enumerate(MENU):
+                stage(f"{mode}: página {label}")
                 w.nav.setCurrentRow(row)
                 settle()
                 result["issues"] += layout_issues(w, f"[{mode}] {label}")
                 result["pages"] += 1
 
+            stage(f"{mode}: lista suspensa e menu")
             combo = w.settings_page.findChild(QComboBox)
             if combo is not None:
                 combo.showPopup()
@@ -217,6 +226,7 @@ def run(out_path: Path, data_dir: Path, screen_index: int) -> dict:
                 ("Ativação", lambda: ActivationDialog(ctx)),
             ]
             for title, make in dialogs:
+                stage(f"{mode}: diálogo {title}")
                 try:
                     d = make()
                 except Exception as exc:  # noqa: BLE001 - registra e segue para os demais
@@ -248,7 +258,10 @@ def run(out_path: Path, data_dir: Path, screen_index: int) -> dict:
 
 
 def main(argv: list[str]) -> int:
+    import faulthandler
     out, data, idx = Path(argv[0]), Path(argv[1]), int(argv[2])
+    # se travar, a pilha de todas as threads vai para stderr e o processo termina (o teste mostra a pilha)
+    faulthandler.dump_traceback_later(PROBE_TIMEOUT_S, exit=True)
     try:
         run(out, data, idx)
         return 0

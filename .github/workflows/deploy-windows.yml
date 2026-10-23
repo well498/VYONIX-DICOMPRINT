@@ -37,6 +37,14 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements-platform.txt pyinstaller==6.16.0 pypdf pytest
 
+      - name: SBOM e vulnerabilidades conhecidas
+        run: |
+          python -m venv "$env:RUNNER_TEMP\sbomtools"
+          & "$env:RUNNER_TEMP\sbomtools\Scripts\python" -m pip install -q "cyclonedx-bom>=4,<8" "pip-audit>=2.7,<3"
+          $py = (Get-Command python).Source
+          & "$env:RUNNER_TEMP\sbomtools\Scripts\python" tools\sbom_audit.py $py dist\sbom vyonix-platform
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
       - name: Testes do motor do DEPLOY (Windows)
         env:
           VYONIX_REQUIRE_PYPDF: "1"

@@ -59,6 +59,14 @@ jobs:
           python -m pip freeze | Out-File dist\validation\env.txt -Append -Encoding utf8
           python -c "import sqlite3; print('SQLite', sqlite3.sqlite_version)"
 
+      - name: SBOM e vulnerabilidades conhecidas
+        run: |
+          python -m venv "$env:RUNNER_TEMP\sbomtools"
+          & "$env:RUNNER_TEMP\sbomtools\Scripts\python" -m pip install -q "cyclonedx-bom>=4,<8" "pip-audit>=2.7,<3"
+          $py = (Get-Command python).Source
+          & "$env:RUNNER_TEMP\sbomtools\Scripts\python" tools\sbom_audit.py $py dist\sbom vyonix-dicom-print
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
       - name: Compilar fontes (compileall)
         run: python -m compileall -q app packaging
 
@@ -158,6 +166,7 @@ jobs:
           NÃO validada para uso clínico. Declaração de conformidade DICOM de homologação incluída.
 
           Instalador comercial: $($s.installer) — SHA-256 $($s.installer_sha256)
+          (o mesmo arquivo também é publicado com o nome comercial Vyonix_Setup.exe — mesmo SHA-256)
           License Manager portátil: VYONIX_License_Manager.exe — SHA-256 $($s.lm_exe_sha256)
           License Manager (instalador opcional): VYONIX_License_Manager_Setup.exe — SHA-256 $($s.lm_installer_sha256)
           License Server (servidor central): VYONIX_License_Server.exe — SHA-256 $($s.ls_exe_sha256)
@@ -174,12 +183,17 @@ jobs:
             Write-Host "::notice title=Publicação::A release $tag já existe e não foi substituída (altere RELEASE_TAG para nova revisão)."
             exit 0
           }
+          # Nome comercial do instalador (Prompt Mestre §21, ADR-0011): cópia idêntica, conferida pelo SHA-256.
+          Copy-Item "dist\installer\$($s.installer)" dist\installer\Vyonix_Setup.exe -Force
+          $alias = (Get-FileHash dist\installer\Vyonix_Setup.exe -Algorithm SHA256).Hash.ToLower()
+          if ($alias -ne $s.installer_sha256.ToLower()) { Write-Host "::error::Vyonix_Setup.exe difere do instalador"; exit 1 }
           gh release delete $tag --yes --cleanup-tag 2>$null
           gh release create $tag --target "${{ github.sha }}" --prerelease --title "VYONIX DICOM Print $v (homologação)" --notes $notes `
-            "dist\installer\$($s.installer)" dist\VYONIX_License_Manager.exe dist\installer-lm\VYONIX_License_Manager_Setup.exe `
+            "dist\installer\$($s.installer)" dist\installer\Vyonix_Setup.exe dist\VYONIX_License_Manager.exe dist\installer-lm\VYONIX_License_Manager_Setup.exe `
             dist\VYONIX_License_Server.exe "dist\$($s.zip)" "dist\$($s.lm_zip)" "dist\$($s.ls_zip)" `
             "dist\VYONIX_DICOM_Print_source_$v.zip" `
-            dist\release-summary.json dist\validation\results.json dist\validation\pytest.xml
+            dist\release-summary.json dist\validation\results.json dist\validation\pytest.xml `
+            dist\sbom\vyonix-dicom-print.cdx.json dist\sbom\vyonix-dicom-print.audit.json
 
       - name: Diagnóstico em caso de falha
         if: failure()
@@ -210,6 +224,7 @@ jobs:
             dist/VYONIX_License_Manager.exe
             dist/VYONIX_License_Server.exe
             dist/validation
+            dist/sbom
             dist/*.zip
             dist/release-summary.json
             dist/perf

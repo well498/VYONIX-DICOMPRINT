@@ -42,6 +42,10 @@ Não verificado: equipamentos DICOM reais, impressão em papel em impressoras f�
 A arquitetura completa (diagramas, modelo de dados, dependências, riscos e plano por fases) está em
 [`docs/ARQUITETURA.md`](docs/ARQUITETURA.md).
 
+Continuidade do projeto (Prompt Mestre §53–§55, §64): estado, backlog e registro de sessões em
+[`VYONIX_PROJECT_STATE.md`](VYONIX_PROJECT_STATE.md); rastreabilidade de requisitos em
+[`VYONIX_REQUIREMENTS_TRACEABILITY.md`](VYONIX_REQUIREMENTS_TRACEABILITY.md); decisões em [`docs/adr/`](docs/adr/README.md).
+
 ## Requisitos
 
 * Para usar: Windows 10 64 bits (1809+) ou Windows 11.

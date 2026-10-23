@@ -66,9 +66,10 @@ def run_config(name: str, screens, index: int) -> dict:
         env.pop(k, None)
     env["QT_SCALE_FACTOR_ROUNDING_POLICY"] = "PassThrough"
     proc = subprocess.run([sys.executable, "-m", "tests.ui_matrix_probe", str(out), str(tmp / "dados"), str(index)],
-                          cwd=tmp, env=env, capture_output=True, text=True, timeout=600)
+                          cwd=tmp, env=env, capture_output=True, text=True, timeout=240)
     data = json.loads(out.read_text(encoding="utf-8")) if out.exists() else {
-        "crash": f"código {proc.returncode}\n{proc.stdout[-2000:]}\n{proc.stderr[-4000:]}"}
+        "crash": f"código {proc.returncode}\n{proc.stdout[-1500:]}\n{proc.stderr[-6000:]}"}
+    data["stderr_tail"] = proc.stderr[-1500:]
     data["config"] = {"name": name, "screens": screens, "open_on": index}
     dest = os.environ.get("VYONIX_UI_MATRIX_OUT")
     if dest:
@@ -79,8 +80,14 @@ def run_config(name: str, screens, index: int) -> dict:
 
 @unittest.skipUnless(HAS_QT, "PySide6 não instalado")
 class UiMatrixTest(unittest.TestCase):
+    crashed: str | None = None          # depois de uma sonda que travou, as demais não rodam (mesma causa)
+
     def check(self, name, screens, index):
+        if UiMatrixTest.crashed:
+            self.skipTest(f"a sonda de {UiMatrixTest.crashed} travou; ver aquele resultado")
         data = run_config(name, screens, index)
+        if "crash" in data and "Timeout" in data["crash"]:
+            UiMatrixTest.crashed = name
         self.assertNotIn("crash", data, data.get("crash"))
         # a configuração foi aplicada de fato (escala e tamanho lógico efetivos)
         eff = data["screens"]
