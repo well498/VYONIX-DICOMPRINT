@@ -38,7 +38,7 @@ React 19 + TypeScript (esbuild), ReportLab, cryptography (Ed25519), PyInstaller,
 
 | Entrega | Situação | Evidência |
 |---|---|---|
-| 1 — DICOM Print estável | Concluída para homologação (r5) + correções da auditoria de 23/10 (r6, não publicada) | Pipeline “Windows release”; “UI Windows”; 301 testes locais |
+| 1 — DICOM Print estável | Concluída para homologação (r5) + correções da auditoria de 23/10 (r6, não publicada) | “Windows release” run 40021144401 (testes, instalador, validação, SBOM); “UI Windows” run 40021144464 (matriz 11/11); 303 testes locais |
 | 2 — Fundação VYONIX | Concluída (Fases 1 e 2 da plataforma) | CI “platform” (69 testes, PostgreSQL 17.11); aceitação DEPLOY 26/0/1 (run 39702093478) |
 | 3 — PACS e Viewer | Pesquisa feita; **aguarda aprovação** do ADR-0012 | — |
 | 4 a 8 | Planejadas | — |
@@ -49,7 +49,7 @@ React 19 + TypeScript (esbuild), ReportLab, cryptography (Ed25519), PyInstaller,
 |---|---|---|---|---|---|---|---|---|---|
 | BKL-01 | Aprovar ADR-0012 (Orthanc + OHIF) e obter parecer sobre a AGPL do plugin DICOMweb | PACS | Essencial | — | Decisão registrada | Licença | **Aguarda aprovação** | Sim | — |
 | BKL-02 | Publicar a revisão r6 do DICOM Print (alterar `RELEASE_TAG`) | Print | Alta | CI verde de r6 | Release com SHA-256 e `Vyonix_Setup.exe` | Baixo | Pronta | Sim (publicação) | Release r5 continua disponível |
-| BKL-03 | SBOM CycloneDX + `pip-audit` + `npm audit` no CI de cada produto | Segurança | Essencial | — | SBOM anexado ao build; vulnerabilidades listadas | Baixo | A fazer | Não | Remover o passo |
+| BKL-03 | SBOM CycloneDX + `pip-audit` no CI (feito); falta `npm audit` da interface web | Segurança | Essencial | — | SBOM anexado ao build; vulnerabilidades listadas | Baixo | Parcial | Não | Remover o passo |
 | BKL-04 | Módulo PACS: `PacsBackend`, instalação do Orthanc pelo DEPLOY, C-ECHO/C-STORE/C-FIND/C-MOVE, QIDO/WADO/STOW pelo CORE, auditoria, declaração de conformidade | PACS | Essencial | BKL-01 | Testes DICOM reais em loopback + CI Windows | Médio | Bloqueada | — | Desinstalar o módulo pelo DEPLOY |
 | BKL-05 | Viewer OHIF servido pelo CORE com autenticação da plataforma | Viewer | Essencial | BKL-04 | Abrir estudo de teste sintético no navegador (Playwright) | Médio | Bloqueada | — | Desativar o módulo |
 | BKL-06 | Qualidade dos estudos (incompletos, corrompidos, duplicados, sem pedido) | PACS | Recomendada | BKL-04 | Testes com estudos sintéticos defeituosos | Baixo | Bloqueada | — | — |
@@ -92,7 +92,9 @@ Entrega 1 contra o Prompt Mestre §13–§21.
 | Sem “Pausar sistema”, “Retomar sistema” e “Abrir log” | Pausa segura no banco (vale para interface e serviço), barra no cabeçalho | `app/services/operation.py`, `app/ui/operation_bar.py`, migração `0008` |
 | Configurações sensíveis aplicadas sem pausa e com reinício imediato dos servidores | Exige pausa; reinício espera as associações terminarem (até 60 s) | `app/ui/pages/settings_page.py`, `app/services/runtime.py` |
 | Trilha de auditoria apagada junto com os eventos operacionais | Retenção própria (`retention.audit_days`, padrão 5 anos) | `app/database/repositories/events_repo.py`, `app/services/retention.py`, `settings_service.py` |
-| Nome comercial `Vyonix_Setup.exe` ausente | Publicado como cópia idêntica na release | `.github/workflows/windows-release.yml` |
+| Nome comercial `Vyonix_Setup.exe` ausente | Publicado como cópia idêntica na release (exercido na próxima publicação) | `.github/workflows/windows-release.yml` |
+| Rolagem horizontal na janela padrão (1280 px), textos cortados, campos espremidos, botões sobre tabela, diálogos maiores que a tela em 1366 × 768 e 150 % | Linhas de botões e filtros em fluxo, rótulos com quebra, listas suspensas compactas, formulários que quebram a linha, grade responsiva (Dashboard, Calibração), área rolável que respeita quebra de linha, diálogos roláveis e dentro da tela | `app/ui/responsive.py`, `app/ui/pages/base.py`, páginas e diálogos |
+| Sem SBOM nem análise de vulnerabilidades | CycloneDX + pip-audit nos dois pipelines Windows; SBOM anexado à release | `tools/sbom_audit.py`, workflows |
 
 **Migrações:** Print `0008_operation_control` (cria `operation_state`; reversão: restaurar o backup automático
 feito antes de migrar — a tabela não altera dados existentes).
@@ -101,5 +103,14 @@ feito antes de migrar — a tabela não altera dados existentes).
 
 **Rollback desta sessão:** `git revert` dos commits de 23/10 no `develop`; a release r5 não foi alterada.
 
-**Próxima tarefa:** BKL-03 (SBOM e vulnerabilidades), sem dependência de aprovação; em seguida BKL-04 quando o
-ADR-0012 for aprovado.
+**Testes e evidências (CI, commit `10abc1b`):**
+
+| Execução | Resultado |
+|---|---|
+| UI Windows — run 40021144464 | Sucesso: matriz 11/11 configurações sem problemas (2 temas × 13 páginas + 6 diálogos cada); contraste medido nos pixels: lista suspensa 16,46:1 / 13,76:1, menu 16,46:1 / 13,76:1, diálogo 15,2:1 / 15,55:1 (claro/escuro); 8 testes de fumaça Qt; 2 testes da barra de operação; 5 de tokens |
+| Windows release — run 40021144401 | Sucesso: todos os testes, PyInstaller, Inno Setup, validação do executável e do instalador; SBOM 41 componentes, 0 vulnerabilidades conhecidas; publicação não executada (r5 já existe) |
+| platform — run 40021144434 | Sucesso |
+| Local (Linux) | 303 testes, 0 falhas, 25 ignorados (Qt/Windows) |
+
+**Próxima tarefa:** BKL-02 (publicar r6) e BKL-01 (aprovar ADR-0012) dependem de aprovação; sem aprovação, seguir com
+`npm audit` (BKL-03) e com os itens de usabilidade da Entrega 1 que a matriz não cobre (revisão visual em monitor real).

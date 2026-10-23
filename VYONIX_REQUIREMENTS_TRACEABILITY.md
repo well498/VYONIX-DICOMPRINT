@@ -15,15 +15,15 @@ As evidências citadas são reproduzíveis: suítes de teste no repositório e e
 | ID | Requisito | Origem | Módulo | Prior. | Situação | Implementação | Testes / evidência | Versão |
 |---|---|---|---|---|---|---|---|---|
 | PRT-01 | Inspecionar o código original, criar versão de referência e testes de regressão antes de mudanças | PM §13 | Print | Essencial | Implementado | `docs/ARQUITETURA.md`; releases r2–r5 | 301 testes locais (`python -m unittest discover -s tests`); pipeline “Windows release” | 1.0.0-r5 |
-| PRT-02 | Menus suspensos legíveis, contraste, fundos escuros, barras de rolagem, diálogos (QComboBox, QAbstractItemView, QScrollBar, QMenu, QDialog, QPalette, QSS) | PM §14 | Print/UI | Essencial | Implementado (aguarda CI) | `app/ui/tokens.py`, `app/ui/theme.py` (ADR-0013) | `tests/test_ui_tokens.py` (local); `tests/test_ui_matrix.py` mede o contraste renderizado (CI “UI Windows”) | r6 (não publicada) |
-| PRT-03 | Testar 1366×768, 1600×900, 1920×1080, 2560×1440, 3840×2160, escalas DPI e múltiplos monitores, sem alterar a resolução | PM §14 | Print/UI | Essencial | Implementado (aguarda CI) | `tests/ui_matrix_probe.py`; `MainWindow.show_fitted(screen)` | 11 configurações × 2 temas × 13 páginas + 6 diálogos (`tests/test_ui_matrix.py`) | r6 |
+| PRT-02 | Menus suspensos legíveis, contraste, fundos escuros, barras de rolagem, diálogos (QComboBox, QAbstractItemView, QScrollBar, QMenu, QDialog, QPalette, QSS) | PM §14 | Print/UI | Essencial | Implementado | `app/ui/tokens.py`, `app/ui/theme.py` (ADR-0013) | `tests/test_ui_tokens.py`; contraste renderizado medido pela matriz: lista suspensa 16,46:1 (claro) e 13,76:1 (escuro), menu idem, diálogo 15,2:1 e 15,55:1 — CI “UI Windows” run 40021144464 | r6 (não publicada) |
+| PRT-03 | Testar 1366×768, 1600×900, 1920×1080, 2560×1440, 3840×2160, escalas DPI e múltiplos monitores, sem alterar a resolução; nada cortado, sobreposto ou fora da tela | PM §14 | Print/UI | Essencial | Implementado | `app/ui/responsive.py` (fluxo, grade responsiva, quebra de rótulos, diálogos roláveis), `app/ui/pages/base.py` (`FitScrollArea`), `MainWindow.show_fitted(screen)` | `tests/test_ui_matrix.py`: 11 configurações (100–200 %, 2 monitores) × 2 temas × 13 páginas + 6 diálogos — 11/11 sem problemas, CI run 40021144464 (a primeira execução encontrou 80 a 106 problemas por configuração) | r6 |
 | PRT-04 | AE Title, portas, recepção DICOM, identificação da origem | PM §15 | Print | Essencial | Implementado | `app/dicom/storage_scp.py`, `routing.py`, `listeners.py` | `tests/test_storage_scp.py`, `test_reception.py`; CI r5 | r5 |
 | PRT-05 | Seleção de impressora, filas, layouts, impressão automática e manual, reimpressão autorizada, erros, histórico | PM §15 | Print | Essencial | Implementado | `app/jobs/`, `app/printing/` | `tests/test_jobs.py`, `test_job_states.py`, `test_windows_printing.py` (Microsoft Print to PDF no CI) | r5 |
 | PRT-06 | Regras por AE/modalidade/impressora/papel/layout/brilho/contraste/gama/cabeçalho/rodapé/imagens vazias | PM §16 | Print | Essencial | Implementado | `app/rules/engine.py`, `app/devices/settings.py` | `tests/test_rules.py`, `test_devices.py` | r5 |
 | PRT-07 | Layouts 1×1, 2×2, 3×3…; 14×17/14×14 → papel; A4, A3, Letter, Legal, Tabloid conforme a impressora | PM §16 | Print | Essencial | Implementado | `app/printing/layout_engine.py`, `paper.py` | `tests/test_layout.py` | r5 |
 | PRT-08 | `header.bmp`/`footer.bmp` 3000×206 sem distorção; A4 e A3 | PM §17 | Print | Essencial | Implementado | `app/printing/templates.py` | `tests/test_layout.py` | r5 |
 | PRT-09 | Calibração brilho/contraste/gama −5 a +5, passo 0,5, pré-visualização, salvar/editar/cancelar/restaurar, por regra, folha 3×3, última imagem como referência, ausência de `last_image.png` | PM §18 | Print | Essencial | Implementado | `app/imaging/tone.py`, `app/ui/pages/device_calibration.py`, `app/printing/calibration_sheet.py` | `tests/test_device_calibration.py`, `test_ui_smoke.py` (Qt real) | r5 |
-| PRT-10 | Pausar/Retomar sistema, Abrir log | PM §19 | Print | Essencial | Implementado | `app/services/operation.py`, `app/ui/operation_bar.py`, migração 0008 | `tests/test_operation.py` (local, 10 testes); `tests/test_ui_operation.py` (CI) | r6 |
+| PRT-10 | Pausar/Retomar sistema, Abrir log | PM §19 | Print | Essencial | Implementado | `app/services/operation.py`, `app/ui/operation_bar.py`, migração 0008 | `tests/test_operation.py` (10 testes); `tests/test_ui_operation.py` (Qt real, CI run 40021144464); pipeline “Windows release” run 40021144401 | r6 |
 | PRT-11 | Visualizar conexões, recebimentos e erros | PM §19 | Print | Essencial | Implementado | Servidor DICOM (associações), Histórico (filtros), Dashboard (falhas recentes) | `tests/test_ui_smoke.py` | r5 |
 | PRT-12 | Configurações sensíveis exigem pausa segura | PM §19 | Print | Essencial | Implementado | `SettingsPage.ensure_safe_pause`; `CoreRuntime.restart_when_idle` (espera até 60 s pelas associações) | `tests/test_operation.py::SafeRestartTest`; `tests/test_ui_operation.py` | r6 |
 | PRT-13 | Registrar origem, destino, formato, regra, resultado, horário e falhas | PM §19 | Print | Essencial | Implementado | `jobs`, `job_history`, `events` (com redação de dados do paciente) | `tests/test_logging_and_redaction.py`, `test_jobs.py` | r5 |
@@ -46,7 +46,7 @@ As evidências citadas são reproduzíveis: suítes de teste no repositório e e
 | FND-09 | Ativação de módulos sem reinstalar | PM §42 | Implementado | `vyonix_deploy/modules.py` | idem (critério 2.9) |
 | FND-10 | Identidade por OpenID Connect/OAuth 2.0 | PM §12 | Planejado (Entrega 6 — portais) | Hoje: sessão própria com MFA | — |
 | FND-11 | Atualizações assinadas | PM §50 | Parcial | Licenças assinadas (Ed25519); instalador sem assinatura de código | Pendente: certificado de assinatura de código (serviço pago — exige aprovação, §59) |
-| FND-12 | Inventário de componentes, SBOM e análise de vulnerabilidades | PM §50 | Planejado (próxima tarefa, BKL-03) | — | — |
+| FND-12 | Inventário de componentes, SBOM e análise de vulnerabilidades | PM §50 | Implementado (Python) | `tools/sbom_audit.py` (CycloneDX + pip-audit) nos pipelines Windows; SBOM anexado à release | Print: 41 componentes, 0 vulnerabilidades conhecidas (run 40021144401); plataforma: 47 componentes, 0 (run 40010347005). Pendente: `npm audit` da interface web |
 
 ### Entregas 3–8 (PM §22–§38, §43, §60)
 
@@ -71,7 +71,7 @@ As evidências citadas são reproduzíveis: suítes de teste no repositório e e
 | SUG-01 | Publicar o instalador também como `Vyonix_Setup.exe` com o mesmo SHA-256 | Recomendada | Implementado no pipeline (ADR-0011) |
 | SUG-02 | Matriz automática de resolução/escala/monitores no CI do Windows | Essencial | Implementado (`ui-windows.yml`) |
 | SUG-03 | Reinício dos servidores DICOM só depois que as associações em andamento terminam | Recomendada | Implementado |
-| SUG-04 | SBOM (CycloneDX) e `pip-audit` em cada build | Essencial | Planejado (BKL-03) |
+| SUG-04 | SBOM (CycloneDX) e `pip-audit` em cada build | Essencial | Implementado (falta `npm audit`) |
 | SUG-05 | Assinatura de código do instalador | Recomendada | Aguarda aprovação (custo do certificado) |
 
 ## 3. Hipóteses pendentes
@@ -86,4 +86,4 @@ As evidências citadas são reproduzíveis: suítes de teste no repositório e e
 
 | Data | Alteração |
 |---|---|
-| 2026-10-23 | Criação a partir do Prompt Mestre v1.0; auditoria da Entrega 1 com as lacunas PRT-02, PRT-03, PRT-10, PRT-12, PRT-14 e PRT-16 corrigidas |
+| 2026-10-23 | Criação a partir do Prompt Mestre v1.0; auditoria da Entrega 1 com as lacunas PRT-02, PRT-03, PRT-10, PRT-12, PRT-14 e PRT-16 corrigidas; FND-12 implementado |
