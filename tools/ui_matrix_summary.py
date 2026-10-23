@@ -25,7 +25,7 @@ def main(folder: str) -> int:
         contr = ", ".join(f"{k} {v['ratio']}:1" for k, v in sorted(d["contrast"].items()))
         issues = d["issues"]
         line = (f"{telas} | janela na tela {d['screen_index'] + 1} | {d['pages']} páginas, "
-                f"{d['dialogs']} diálogos | contraste medido: {contr} | problemas: {len(issues)}")
+                f"{d['dialogs']} diálogos | contraste medido: {contr} | problemas: {len(issues)} | {d.get('seconds', '?')} s")
         print(f"::notice title=Matriz {name}::{esc(line)}")
         if issues:
             print(f"::error title=Matriz {name} ({len(issues)} problemas)::{esc(chr(10).join(issues[:60]))}")

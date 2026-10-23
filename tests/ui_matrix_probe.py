@@ -139,6 +139,8 @@ def _fits(screen, frame, where: str) -> list[str]:
 
 
 def run(out_path: Path, data_dir: Path, screen_index: int) -> dict:
+    import time
+    t0 = time.monotonic()
     from app.ui.qt import QApplication, install_translations, prepare_application
     prepare_application()
     app = QApplication(["vyonix-ui-matrix"])
@@ -253,6 +255,7 @@ def run(out_path: Path, data_dir: Path, screen_index: int) -> dict:
         ctx.close()
     # sem duplicatas, na ordem em que apareceram
     result["issues"] = list(dict.fromkeys(result["issues"]))
+    result["seconds"] = round(time.monotonic() - t0, 1)
     out_path.write_text(json.dumps(result, ensure_ascii=False, indent=1), encoding="utf-8")
     return result
 

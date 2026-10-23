@@ -37,7 +37,7 @@ jobs:
       - name: Instalar dependências
         run: |
           python -m pip install -q --upgrade pip setuptools wheel
-          python -m pip install -q -r requirements-dev.txt
+          python -m pip install -q -r requirements-dev.txt "pytest-timeout>=2.3,<3"
           python -c "import PySide6, PySide6.QtCore as c; print('PySide6', PySide6.__version__, 'Qt', c.qVersion())"
       - name: Testes de interface
         env:
@@ -45,10 +45,14 @@ jobs:
           VYONIX_UI_MATRIX_OUT: ${{ github.workspace }}\dist\ui_matrix
         run: |
           New-Item -ItemType Directory -Force dist | Out-Null
-          python -m pytest tests/test_ui_tokens.py tests/test_ui_operation.py tests/test_ui_matrix.py tests/test_ui_smoke.py -v -ra -o faulthandler_timeout=600 --junitxml=dist\ui.xml 2>&1 | Tee-Object dist\ui.txt
-          $code = $LASTEXITCODE
-          python tools\junit_annotations.py dist\ui.xml
+          $code = 0
+          # cada arquivo separado e com limite por teste: um travamento não esconde os demais resultados
+          foreach ($t in "test_ui_tokens", "test_ui_operation", "test_ui_smoke", "test_ui_matrix") {
+            python -m pytest "tests/$t.py" -v -ra --timeout=420 --timeout-method=thread --junitxml="dist\$t.xml" 2>&1 | Tee-Object "dist\$t.txt"
+            if ($LASTEXITCODE -ne 0) { $code = 1 }
+            python tools\junit_annotations.py "dist\$t.xml"
+            $tail = ((Get-Content "dist\$t.txt" -Tail 40) -join "%0A").Replace("::", ": :")
+            Write-Output "::notice title=$t::$tail"
+          }
           python tools\ui_matrix_summary.py dist\ui_matrix
-          $tail = (Get-Content dist\ui.txt -Tail 30) -join "%0A"
-          Write-Output "::notice title=pytest (final)::$tail"
           exit $code
