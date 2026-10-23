@@ -148,6 +148,9 @@ class RuleDialog(QDialog):
         bb.rejected.connect(self.reject)
         outer.addWidget(bb)
         compact_combo(self.scope, 28)
+        for combo in content.findChildren(QComboBox):          # editores das ações (textos longos)
+            if combo is not self.scope:
+                compact_combo(combo)
         self._content = content
         if rule:
             self._fill(rule)
