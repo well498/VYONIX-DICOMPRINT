@@ -103,7 +103,9 @@ def stylesheet(p: dict[str, str]) -> str:
     QLabel#banner[state="ok"] {{ border-left: 4px solid {p['ok']}; }}
     QLabel#banner[state="warn"] {{ border-left: 4px solid {p['warn']}; }}
     QLabel#banner[state="err"] {{ border-left: 4px solid {p['err']}; }}
-    QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox, QDateEdit, QPlainTextEdit {{ background: {p['input_bg']}; color: {p['text']}; border: 1px solid {p['border_strong']}; border-radius: 5px; padding: 5px 7px; min-height: 20px; }}
+    QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox, QDateEdit, QPlainTextEdit {{ background: {p['input_bg']}; color: {p['text']}; border: 1px solid {p['border_strong']}; border-radius: 5px; padding: 5px 7px; }}
+    QLineEdit, QComboBox {{ min-height: 20px; }}
+    QSpinBox, QDoubleSpinBox, QDateEdit {{ padding: 4px 6px; }}
     QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus, QDateEdit:focus, QPlainTextEdit:focus {{ border: 1px solid {p['accent']}; }}
     QLineEdit[invalid="true"], QSpinBox[invalid="true"], QDoubleSpinBox[invalid="true"] {{ border: 1px solid {p['err']}; }}
     QLineEdit:read-only {{ background: {p['surface_alt']}; }}

@@ -2,9 +2,52 @@
 
 from __future__ import annotations
 
-from app.ui.qt import Qt
+from app.ui.qt import Qt, QtCore
 from app.ui.qt import (QFrame, QLabel, QScrollArea, QSizePolicy, QVBoxLayout,
                                QWidget)
+
+
+class FitScrollArea(QScrollArea):
+    """Área rolável que respeita conteúdo com quebra de linha (altura dependente da largura).
+
+    O ``QScrollArea`` padrão dimensiona o conteúdo pela ``minimumSizeHint``, calculada para uma
+    largura que não é a real; com rótulos que quebram linha, o conteúdo recebia menos altura do que
+    precisava e os widgets se sobrepunham (ex.: botões sobre a tabela de usuários do Reception).
+    Aqui a altura mínima do conteúdo é recalculada para a largura visível a cada redimensionamento
+    e a cada mudança de layout.
+    """
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setWidgetResizable(True)
+        self._fitting = False
+
+    def setWidget(self, widget: QWidget) -> None:  # noqa: N802 - API Qt
+        super().setWidget(widget)
+        widget.installEventFilter(self)
+
+    def eventFilter(self, obj, event) -> bool:  # noqa: N802 - API Qt
+        if obj is self.widget() and event.type() == QtCore.QEvent.Type.LayoutRequest:
+            QtCore.QTimer.singleShot(0, self._fit)
+        return super().eventFilter(obj, event)
+
+    def resizeEvent(self, event) -> None:  # noqa: N802 - API Qt
+        super().resizeEvent(event)
+        self._fit()
+
+    def _fit(self) -> None:
+        w = self.widget()
+        lay = w.layout() if w is not None else None
+        if self._fitting or lay is None or not lay.hasHeightForWidth():
+            return
+        self._fitting = True
+        try:
+            width = max(self.viewport().width(), w.minimumSizeHint().width())
+            need = lay.totalHeightForWidth(width)
+            if need > 0 and w.minimumHeight() != need:
+                w.setMinimumHeight(need)
+        finally:
+            self._fitting = False
 
 
 class Page(QWidget):
@@ -16,8 +59,7 @@ class Page(QWidget):
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
 
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
+        scroll = FitScrollArea()
         scroll.setFrameShape(QFrame.NoFrame)
         outer.addWidget(scroll)
 

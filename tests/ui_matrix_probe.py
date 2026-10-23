@@ -65,6 +65,35 @@ def rendered_contrast(widget) -> dict:
             "text": "#%02X%02X%02X" % best, "size": [w, h]}
 
 
+def culprits(inner, have: int) -> str:
+    """Widgets mais internos cuja largura mínima já passa da área visível (ou contêineres cujos
+    filhos, lado a lado, passam)."""
+    from app.ui.qt import QWidget
+    found = []
+    for wd in inner.findChildren(QWidget):
+        if not wd.isVisibleTo(inner):
+            continue
+        mw = max(wd.minimumSizeHint().width(), wd.minimumWidth())
+        if mw <= have:
+            continue
+        kids = [k for k in wd.findChildren(QWidget) if k.isVisibleTo(inner)
+                and max(k.minimumSizeHint().width(), k.minimumWidth()) > have]
+        if not kids:
+            text = ""
+            for attr in ("text", "currentText", "title"):
+                fn = getattr(wd, attr, None)
+                if callable(fn):
+                    try:
+                        text = fn() or ""
+                    except TypeError:
+                        text = ""
+                    if text:
+                        break
+            text = " ".join(str(text).split())[:60]
+            found.append(f"{type(wd).__name__}{(' “' + text + '”') if text else ''} mín. {mw} px")
+    return "; ".join(found[:4]) or "soma de widgets lado a lado"
+
+
 def layout_issues(root, where: str) -> list[str]:
     """Textos cortados, campos sobrepostos e conteúdo maior que a área rolável."""
     from app.ui.qt import (QAbstractItemView, QCheckBox, QComboBox, QDateEdit, QDoubleSpinBox, QLabel,
@@ -97,7 +126,7 @@ def layout_issues(root, where: str) -> list[str]:
         need, have = inner.minimumSizeHint().width(), scroll.viewport().width()
         if need > have + 1:
             issues.append(f"{where}: conteúdo exige {need} px de largura e a área visível tem {have} px "
-                          "(rolagem horizontal)")
+                          f"(rolagem horizontal) — causa: {culprits(inner, have)}")
 
     widgets = [wd for wd in root.findChildren(QWidget) if isinstance(wd, kinds) and visible(wd)]
     for wd in widgets:

@@ -257,7 +257,13 @@ class SettingsPage(Page):
             return
         if not ensure_admin(self, self.access, "salvar configurações"):
             return
-        if not self.ensure_safe_pause(changes):
+        # valida antes de pedir a pausa: um valor inválido não deve pausar o sistema
+        clean, errors = self.service.validate(changes)
+        if errors:
+            self._save_failed(SettingsValidationError(errors))
+            return
+        current = self.service.get_all()
+        if not self.ensure_safe_pause({k: v for k, v in clean.items() if current.get(k) != v}):
             return
         self._set_busy(True)
         run_async(lambda: self.service.update(changes, actor=current_actor()),

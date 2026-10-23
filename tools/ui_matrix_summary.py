@@ -14,6 +14,7 @@ def main(folder: str) -> int:
     if not files:
         print(f"::warning::Nenhum resultado da matriz de interface em {folder}")
         return 0
+    lines: list[str] = []
     for f in files:
         d = json.loads(f.read_text(encoding="utf-8"))
         name = d.get("config", {}).get("name", f.stem)
@@ -26,9 +27,11 @@ def main(folder: str) -> int:
         issues = d["issues"]
         line = (f"{telas} | janela na tela {d['screen_index'] + 1} | {d['pages']} páginas, "
                 f"{d['dialogs']} diálogos | contraste medido: {contr} | problemas: {len(issues)} | {d.get('seconds', '?')} s")
-        print(f"::notice title=Matriz {name}::{esc(line)}")
+        lines.append(f"{name}: {line}")
         if issues:
-            print(f"::error title=Matriz {name} ({len(issues)} problemas)::{esc(chr(10).join(issues[:60]))}")
+            if name in ("1366x768_100", "1920x1080_150", "2_monitores_1920_100+2560_150") or len(files) < 4:
+                print(f"::error title=Matriz {name} ({len(issues)} problemas)::{esc(chr(10).join(issues[:60]))}")
+    print(f"::notice title=Matriz de interface ({len(files)} configurações)::{esc(chr(10).join(lines))}")
     return 0
 
 

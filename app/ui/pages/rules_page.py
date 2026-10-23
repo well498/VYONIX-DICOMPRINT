@@ -10,9 +10,9 @@ from app.printing import resolver
 from app.printing.paper import LAYOUTS, PAPER_LABELS
 from app.rules.engine import ACTIONS, FIELDS, OPS, SOURCES, Rule, facts_for
 from app.ui.admin import current_actor, ensure_admin
-from app.ui.pages.base import Page, banner
+from app.ui.pages.base import FitScrollArea, Page, banner
 from app.ui.pages.jobs_page import SETTING_LABELS, _fmt
-from app.ui.qt import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QGridLayout,
+from app.ui.qt import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QFrame, QGridLayout,
                        QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPlainTextEdit, QPushButton, QSpinBox, QVBoxLayout,
                        QWidget)
 from app.ui.widgets import button, button_row, fill_table, local_time, make_table, selected_key, status_text
@@ -81,7 +81,15 @@ class RuleDialog(QDialog):
         self.ctx, self.rule, self.saved = ctx, rule, None
         self.setWindowTitle("Editar regra" if rule else "Nova regra")
         self.setMinimumWidth(760)
-        lay = QVBoxLayout(self)
+        outer = QVBoxLayout(self)
+        # conteúdo rolável: em telas pequenas (ex.: 1366 × 768 a 125 %) o diálogo inteiro não cabe
+        content = QWidget()
+        lay = QVBoxLayout(content)
+        lay.setContentsMargins(0, 0, 0, 0)
+        scroll = FitScrollArea()
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setWidget(content)
+        outer.addWidget(scroll, 1)
         form = QFormLayout()
         self.name = QLineEdit()
         self.description = QLineEdit()
@@ -118,21 +126,28 @@ class RuleDialog(QDialog):
         lay.addWidget(title)
         grid = QGridLayout()
         self.actions: dict[str, tuple[QCheckBox, QWidget]] = {}
+        # uma ação por linha: os rótulos longos (ex.: "Parar de avaliar as regras seguintes") eram cortados
+        # em duas colunas na largura mínima do diálogo
         for i, (key, (label, kind)) in enumerate(ACTIONS.items()):
             chk = QCheckBox(label)
             w = self._editor(key, kind)
-            grid.addWidget(chk, i // 2, (i % 2) * 2)
-            grid.addWidget(w, i // 2, (i % 2) * 2 + 1)
+            grid.addWidget(chk, i, 0)
+            grid.addWidget(w, i, 1)
             self.actions[key] = (chk, w)
+        grid.setColumnStretch(1, 1)
         lay.addLayout(grid)
+        lay.addStretch(1)
         self.error = QLabel("")
         self.error.setObjectName("fieldError")
         self.error.setWordWrap(True)
-        lay.addWidget(self.error)
+        outer.addWidget(self.error)
         bb = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
         bb.accepted.connect(self._save)
         bb.rejected.connect(self.reject)
-        lay.addWidget(bb)
+        outer.addWidget(bb)
+        screen = self.screen().availableGeometry() if self.screen() else None
+        if screen is not None:
+            self.resize(min(860, screen.width() - 40), min(content.sizeHint().height() + 120, screen.height() - 60))
         if rule:
             self._fill(rule)
 

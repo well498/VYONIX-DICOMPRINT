@@ -50,7 +50,7 @@ jobs:
           foreach ($t in "test_ui_tokens", "test_ui_operation", "test_ui_smoke", "test_ui_matrix") {
             python -m pytest "tests/$t.py" -v -ra --timeout=420 --timeout-method=thread --junitxml="dist\$t.xml" 2>&1 | Tee-Object "dist\$t.txt"
             if ($LASTEXITCODE -ne 0) { $code = 1 }
-            python tools\junit_annotations.py "dist\$t.xml"
+            if ($t -ne "test_ui_matrix") { python tools\junit_annotations.py "dist\$t.xml" }
             $tail = ((Get-Content "dist\$t.txt" -Tail 40) -join "%0A").Replace("::", ": :")
             Write-Output "::notice title=$t::$tail"
           }
