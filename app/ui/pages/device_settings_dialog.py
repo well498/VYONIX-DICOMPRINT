@@ -11,6 +11,7 @@ from app.core.errors import SettingsValidationError, VyonixError
 from app.devices.settings import DICOM_POLICIES, FIELDS
 from app.imaging import tone
 from app.printing.paper import LAYOUTS, PAPER_LABELS
+from app.ui.responsive import FlowLayout
 from app.ui.admin import current_actor, ensure_admin
 from app.ui.images import to_pixmap
 from app.ui.pages.jobs_page import SETTING_LABELS, _fmt
@@ -128,7 +129,7 @@ class DeviceSettingsDialog(QDialog):
         self.error.setObjectName("fieldError")
         self.error.setWordWrap(True)
         lay.addWidget(self.error)
-        row = QHBoxLayout()
+        row = FlowLayout()
         for text, slot in (("Pré-visualizar página", self.preview_page), ("Duplicar de outro equipamento…", self.copy_from),
                            ("Comparar com…", self.compare)):
             b = QPushButton(text)
@@ -138,8 +139,8 @@ class DeviceSettingsDialog(QDialog):
         bb = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Close)
         bb.accepted.connect(self.save)
         bb.rejected.connect(self.reject)
-        row.addWidget(bb)
         lay.addLayout(row)
+        lay.addWidget(bb)
         self._load_versions()
         self._refresh_result()
 

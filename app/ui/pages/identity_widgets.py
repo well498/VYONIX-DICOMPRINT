@@ -7,6 +7,7 @@ from pathlib import Path
 
 from app.core.errors import VyonixError
 from app.printing import templates as tpl
+from app.ui.responsive import FlowLayout
 from app.ui.admin import current_actor, ensure_admin
 from app.ui.images import to_pixmap
 from app.ui.qt import (QDialog, QDialogButtonBox, QFileDialog, QGroupBox, QHBoxLayout, QLabel, QMessageBox,
@@ -30,20 +31,21 @@ class IdentityBox(QGroupBox):
         self.previews: dict[str, QLabel] = {}
         for kind in ("header", "footer"):
             label = tpl.LABELS[kind]
-            row = QHBoxLayout()
+            row = FlowLayout()
             prev = QLabel("—")
             prev.setMinimumHeight(60)
             prev.setAlignment(Qt.AlignCenter)
             prev.setStyleSheet("border: 1px solid #999;")
             self.previews[kind] = prev
-            row.addWidget(prev, 1)
+            prev.setMinimumWidth(240)
+            lay.addWidget(QLabel(f"<b>{label}</b>"))
+            lay.addWidget(prev)
             for text, slot in ((f"Alterar {label}", lambda k=kind: self.change(k)),
                                (f"Visualizar {label}", lambda k=kind: self.view(k)),
                                (f"Restaurar {label} Original", lambda k=kind: self.restore(k))):
                 b = QPushButton(text)
                 b.clicked.connect(lambda _=False, f=slot: f())
                 row.addWidget(b)
-            lay.addWidget(QLabel(f"<b>{label}</b>"))
             lay.addLayout(row)
         self.refresh()
 
@@ -118,7 +120,7 @@ class BackupBox(QGroupBox):
         self.state = QLabel("—")
         self.state.setWordWrap(True)
         lay.addWidget(self.state)
-        row = QHBoxLayout()
+        row = FlowLayout()
         for text, slot in (("Fazer backup agora", self.backup), ("Abrir pasta de backups", self.open_folder),
                            ("Como restaurar…", self.how_to_restore)):
             b = QPushButton(text)

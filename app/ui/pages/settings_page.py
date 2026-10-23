@@ -6,6 +6,7 @@ import getpass
 from pathlib import Path
 from typing import Any
 
+from app.ui.responsive import FlowLayout
 from app.ui.qt import Signal
 from app.ui.qt import (QApplication, QCheckBox, QInputDialog, QComboBox, QFileDialog, QFormLayout,
                                QGroupBox, QHBoxLayout, QLabel, QLineEdit, QMessageBox,
@@ -74,7 +75,7 @@ class SettingsPage(Page):
         self.admin_state = QLabel("—")
         self.admin_state.setWordWrap(True)
         al.addWidget(self.admin_state)
-        row = QHBoxLayout()
+        row = FlowLayout()
         for text, slot in (("Definir ou alterar senha…", self.set_password),
                            ("Remover senha…", self.clear_password), ("Bloquear agora", self.lock_now)):
             b = QPushButton(text)
@@ -88,7 +89,7 @@ class SettingsPage(Page):
         note.setObjectName("muted")
         self.body.addWidget(note)
 
-        buttons = QHBoxLayout()
+        buttons = FlowLayout()
         self.btn_save = QPushButton("Salvar")
         self.btn_save.setObjectName("primary")
         self.btn_discard = QPushButton("Descartar alterações")

@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime, time
 from pathlib import Path
 
+from app.ui.responsive import FlowLayout
 from app.ui.qt import QDate, Qt
 from app.ui.qt import (QAbstractItemView, QComboBox, QDateEdit, QFileDialog,
                                QHBoxLayout, QHeaderView, QLabel, QLineEdit, QPushButton,
@@ -52,7 +53,7 @@ class HistoryPage(Page):
         # --- Eventos -------------------------------------------------------
         ev = QWidget()
         ev_lay = QVBoxLayout(ev)
-        filters = QHBoxLayout()
+        filters = FlowLayout()
         today = QDate.currentDate()
         self.start = QDateEdit(today.addDays(-7))
         self.end = QDateEdit(today)
@@ -74,7 +75,8 @@ class HistoryPage(Page):
         btn_export = QPushButton("Exportar CSV…")
         for w in (QLabel("De"), self.start, QLabel("até"), self.end, self.category, self.level):
             filters.addWidget(w)
-        filters.addWidget(self.text, 1)
+        self.text.setMinimumWidth(220)
+        filters.addWidget(self.text)
         filters.addWidget(btn_apply)
         filters.addWidget(btn_export)
         ev_lay.addLayout(filters)

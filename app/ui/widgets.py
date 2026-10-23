@@ -53,14 +53,13 @@ def selected_key(table: QTableWidget) -> Any:
     return item.data(Qt.UserRole) if item else None
 
 
-def button_row(*buttons: QPushButton, stretch_at: int | None = None) -> QHBoxLayout:
-    lay = QHBoxLayout()
-    for i, b in enumerate(buttons):
-        if stretch_at is not None and i == stretch_at:
-            lay.addStretch(1)
+def button_row(*buttons: QPushButton, stretch_at: int | None = None):
+    """Linha de botões que quebra para a linha seguinte quando falta largura (``FlowLayout``).
+    ``stretch_at`` é aceito por compatibilidade e ignorado (o fluxo já alinha à esquerda)."""
+    from app.ui.responsive import FlowLayout
+    lay = FlowLayout()
+    for b in buttons:
         lay.addWidget(b)
-    if stretch_at is None:
-        lay.addStretch(1)
     return lay
 
 

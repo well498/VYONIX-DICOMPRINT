@@ -69,6 +69,8 @@ def apply_theme(app: QApplication, setting: str) -> str:
     mode = resolve_mode(app, setting)
     _current = THEMES[mode]
     app.setStyle("Fusion")
+    from app.ui import responsive
+    responsive.install(app)
     app.setPalette(build_palette(_current))
     app.setStyleSheet(stylesheet(_current))
     return mode

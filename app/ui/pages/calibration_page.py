@@ -10,6 +10,7 @@ from app.devices.service import MODALITIES
 from app.imaging.calibration import CalibrationProfile
 from app.printing.profiles import PrintProfile
 from app.services.imaging_service import PATTERN
+from app.ui.responsive import FlowLayout
 from app.ui.admin import current_actor, ensure_admin
 from app.ui.images import to_pixmap
 from app.ui.pages.base import Page, banner
@@ -80,7 +81,7 @@ class CalibrationPage(Page):
         self.adjusted = QLabel()
         for lbl in (self.original, self.adjusted):
             lbl.setAlignment(Qt.AlignCenter)
-            lbl.setMinimumSize(320, 300)
+            lbl.setMinimumSize(220, 220)
             pics.addWidget(lbl, 1)
         pl.addLayout(pics)
         self.compare = QCheckBox("Comparar original e ajustado lado a lado")
@@ -98,7 +99,7 @@ class CalibrationPage(Page):
         self.source = QComboBox()
         self.source.currentIndexChanged.connect(lambda _: self._source_changed())
         sl.addRow("Fonte", self.source)
-        row = QHBoxLayout()
+        row = FlowLayout()
         b = QPushButton("Abrir arquivo DICOM…")
         b.clicked.connect(self.open_file)
         row.addWidget(b)
@@ -152,7 +153,7 @@ class CalibrationPage(Page):
         self.bindings.setWordWrap(True)
         self.bindings.setObjectName("muted")
         fl.addRow("Associado a", self.bindings)
-        buttons = QHBoxLayout()
+        buttons = FlowLayout()
         for text, slot in (("Salvar perfil", self.save_profile), ("Restaurar valores", self.restore),
                            ("Associar…", self.bind), ("Histórico", self.history)):
             b = QPushButton(text)

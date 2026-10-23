@@ -84,8 +84,9 @@ class DeviceDialog(QDialog):
         add(f1, "service", "Serviço DICOM", svc)
         lp = QSpinBox()
         lp.setRange(0, 65535)
-        lp.setSpecialValueText(f"padrão do serviço ({service.default_port('store')} recepção / "
-                               f"{service.default_port('print')} impressão)")
+        lp.setSpecialValueText("padrão do serviço")
+        lp.setToolTip(f"Padrão do serviço: {service.default_port('store')} (recepção) / "
+                      f"{service.default_port('print')} (impressão)")
         add(f1, "listen_port", "Porta do VYONIX", lp)
         mod = QComboBox()
         mod.addItem("—", None)

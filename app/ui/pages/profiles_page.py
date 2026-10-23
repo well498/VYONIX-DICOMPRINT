@@ -15,7 +15,7 @@ from app.printing.profiles import PrintProfile
 from app.ui.admin import current_actor, ensure_admin
 from app.ui.pages.base import Page, banner
 from app.ui.pages.printers_page import PAPER_CHOICES
-from app.ui.qt import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout, QLabel,
+from app.ui.qt import (QGridLayout, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout, QLabel,
                        QLineEdit, QSpinBox, QVBoxLayout, QWidget)
 from app.ui.widgets import button, button_row, fill_table, local_time, make_table, selected_key, status_text
 from app.ui.workers import run_async
@@ -57,10 +57,12 @@ class ProfileDialog(QDialog):
         self.copies = _spin(1, 99)
         self.margins = {k: _spin(0, 60) for k in ("top", "right", "bottom", "left")}
         self.spacing = _spin(0, 30)
-        margins_row = QHBoxLayout()
-        for k, label in (("top", "Topo"), ("right", "Direita"), ("bottom", "Base"), ("left", "Esquerda")):
-            margins_row.addWidget(QLabel(label))
-            margins_row.addWidget(self.margins[k])
+        margins_row = QGridLayout()           # 2 × 2: lado a lado, os quatro campos cortavam os rótulos
+        margins_row.setContentsMargins(0, 0, 0, 0)
+        for i, (k, label) in enumerate((("top", "Topo"), ("right", "Direita"), ("bottom", "Base"),
+                                        ("left", "Esquerda"))):
+            margins_row.addWidget(QLabel(label), i // 2, (i % 2) * 2)
+            margins_row.addWidget(self.margins[k], i // 2, (i % 2) * 2 + 1)
         mw = QWidget()
         mw.setLayout(margins_row)
         self.header = QLineEdit()
