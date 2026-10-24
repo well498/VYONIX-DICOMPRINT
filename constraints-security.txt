@@ -1,5 +1,6 @@
-# Versões mínimas por segurança, aplicadas com "pip install -c constraints-security.txt" nos pipelines.
-# Uma restrição não instala nada: só impede versões vulneráveis quando o pacote entra como dependência.
+# Versões mínimas por segurança. Nos pipelines: "pip install -c constraints-security.txt ..." impede versões
+# vulneráveis quando o pacote entra como dependência; em seguida "pip install --upgrade -r constraints-security.txt"
+# atualiza também os pacotes que já vinham na imagem do runner (ex.: filelock 4.1.1 exigido pelo pipx).
 #
 # filelock: CVE-2026-112906, -112907, -112913, -112914, -112937, -112940 (SoftFileLock 4.1.0 a 4.2.0
 # pode remover a marca de outro processo como "velha"; exige acesso local à pasta da trava).

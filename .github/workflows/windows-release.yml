@@ -54,6 +54,8 @@ jobs:
           & $tools -m pip install -q -r requirements-tools.txt
           python -m pip install --upgrade pip setuptools wheel
           python -m pip install -c constraints-security.txt -r requirements-dev.txt
+          # Pacotes já presentes na imagem do runner (ex.: filelock do pipx) não passam pela restrição acima:
+          python -m pip install -q --upgrade -r constraints-security.txt
           New-Item -ItemType Directory -Force dist\validation, dist\perf | Out-Null
           "Python $(python -c 'import sys; print(sys.version.split()[0])')" | Out-File dist\validation\env.txt -Encoding utf8
           python -m pip freeze | Out-File dist\validation\env.txt -Append -Encoding utf8
@@ -163,7 +165,7 @@ jobs:
           $tag = if (Test-Path RELEASE_TAG) { (Get-Content RELEASE_TAG -Raw).Trim() } else { "v$v" }
           $s = Get-Content dist\release-summary.json -Raw | ConvertFrom-Json
           $notes = @"
-          VYONIX DICOM Print $v — versão para homologação ($($s.phase)).
+          VYONIX DICOM Print $v — Release candidata à homologação — não liberada para uso clínico ($($s.phase)).
           Requisito mínimo: Windows 10 64 bits (1809) ou Windows 11.
           NÃO validada para uso clínico. Declaração de conformidade DICOM de homologação incluída.
 
@@ -190,7 +192,7 @@ jobs:
           $alias = (Get-FileHash dist\installer\Vyonix_Setup.exe -Algorithm SHA256).Hash.ToLower()
           if ($alias -ne $s.installer_sha256.ToLower()) { Write-Host "::error::Vyonix_Setup.exe difere do instalador"; exit 1 }
           gh release delete $tag --yes --cleanup-tag 2>$null
-          gh release create $tag --target "${{ github.sha }}" --prerelease --title "VYONIX DICOM Print $v (homologação)" --notes $notes `
+          gh release create $tag --target "${{ github.sha }}" --prerelease --title "VYONIX DICOM Print $tag (candidata à homologação)" --notes $notes `
             "dist\installer\$($s.installer)" dist\installer\Vyonix_Setup.exe dist\VYONIX_License_Manager.exe dist\installer-lm\VYONIX_License_Manager_Setup.exe `
             dist\VYONIX_License_Server.exe "dist\$($s.zip)" "dist\$($s.lm_zip)" "dist\$($s.ls_zip)" `
             "dist\VYONIX_DICOM_Print_source_$v.zip" `

@@ -4,15 +4,47 @@
 
 ## Natureza desta versão
 
-Versão **{VERSION} para homologação** (revisão 4): as 8 fases do plano, o *prompt mestre atualizado* (equipamentos independentes, calibração visual, teste 3 × 3, BMP) o *prompt mestre definitivo* (licenciamento por computador e instalação, TPM, DEMO de 5 dias, VYONIX Time Integrity e o aplicativo administrativo **VYONIX License Manager**) o *prompt de desenvolvimento* (Regras DICOM por AE Title de destino e porta, sem IP obrigatório, e o painel **VYONIX Reception**) e o *prompt consolidado* (licenciamento comercial por assinatura, **VYONIX License Server** e integração preparada com o Banco Inter). A lista detalhada do que foi implementado e do que está pendente está em *Funcionalidades*.
+**Release candidata à homologação — não liberada para uso clínico.** Versão {VERSION}, revisão 6: correções da
+auditoria de 23/10/2026 sobre a revisão 5 (interface, operação segura, trilha de auditoria) e a contenção do
+incidente de chave INC-2026-10-23. A homologação física (equipamentos DICOM reais, impressoras físicas, Windows 10
+e 11 limpos) segue o roteiro `docs/homologacao/` e ainda não foi executada. A lista detalhada do que foi
+implementado e do que está pendente está em *Funcionalidades*.
 
-São **quatro artefatos independentes**: o instalador comercial `VYONIX_DICOM_Print_Setup_v1.0.0_x64.exe` (para os clientes) e, somente para o fornecedor, `VYONIX_License_Manager.exe` (portátil), `VYONIX_License_Manager_Setup.exe` (instalação opcional) e `VYONIX_License_Server.exe` (servidor central de licenças). O License Manager e o License Server não fazem parte do instalador comercial.
+São **quatro artefatos independentes**: o instalador comercial `VYONIX_DICOM_Print_Setup_v1.0.0_x64.exe` (também
+publicado com o nome comercial `Vyonix_Setup.exe`, mesmo SHA-256) e, somente para o fornecedor,
+`VYONIX_License_Manager.exe` (portátil), `VYONIX_License_Manager_Setup.exe` (instalação opcional) e
+`VYONIX_License_Server.exe` (servidor central de licenças). O License Manager e o License Server não fazem parte do
+instalador comercial.
 
-**Não validada para uso clínico.** A declaração de conformidade DICOM incluída é de homologação.
+A declaração de conformidade DICOM incluída é de homologação. Nenhuma conformidade regulatória é declarada.
 
 ## Requisito mínimo
 
 Windows 10 64 bits (versão 1809 ou posterior) ou Windows 11. O executável usa Python 3.12 e Qt 6.
+
+## Novidades da revisão 6 (auditoria de 23/10/2026)
+
+- **Legibilidade e contraste (WCAG 2.2 AA):** tema escuro com paleta Qt completa; listas suspensas, menus, caixas de
+  mensagem, barras de rolagem e dicas legíveis nos dois temas; verde e âmbar ajustados para 4,5:1 como texto.
+- **Resolução, escala e monitores:** sem rolagem horizontal na janela padrão; linhas de botões e filtros em fluxo,
+  rótulos com quebra, formulários que quebram a linha, grades responsivas (Painel, Calibração), diálogos roláveis e
+  sempre dentro da tela. Verificado automaticamente em 11 configurações (1366 × 768 a 3840 × 2160, 100 % a 200 %,
+  dois monitores) nos dois temas.
+- **Pausar sistema / Retomar sistema / Abrir log** no cabeçalho. A pausa vale para a interface e para o serviço
+  (fica no banco) e é registrada com o motivo na auditoria.
+- **Alterações sensíveis com pausa segura:** salvar configurações de rede DICOM exige pausar; o reinício dos
+  servidores espera as associações em andamento terminarem (até 60 s).
+- **Trilha de auditoria com retenção própria** (`retention.audit_days`, padrão 5 anos), separada da limpeza dos
+  eventos operacionais.
+- **Validação honesta:** verificações que o ambiente de build não consegue comprovar (ex.: TPM real) aparecem como
+  "não verificável neste ambiente", nunca como aprovadas.
+- **Segurança de componentes:** SBOM CycloneDX e análise de vulnerabilidades conhecidas (pip-audit) a cada build,
+  publicados com a release; conferência de que nenhuma dependência vulnerável entra no pacote distribuído.
+- **Incidente de chave INC-2026-10-23:** o produto aceita a restrição de uma chave de emissão comprometida (só os
+  documentos legítimos dela continuam válidos; documentos novos assinados com ela são recusados). A restrição entra
+  em vigor na atualização que trouxer a lista exportada pelo fornecedor e a chave nova.
+- **License Manager:** "Esqueci a senha…" (senha provisória em arquivo, liberada pela frase-senha de uma chave de
+  emissão, com bloqueio após 5 tentativas) e "Exportar documentos legítimos…".
 
 ## Novidades da revisão 4 (licenciamento comercial por assinatura)
 

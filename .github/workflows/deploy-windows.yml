@@ -36,6 +36,8 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -c constraints-security.txt -r requirements-platform.txt pyinstaller==6.16.0 pypdf pytest
+          # Pacotes já presentes na imagem do runner (ex.: filelock do pipx) não passam pela restrição acima:
+          python -m pip install -q --upgrade -r constraints-security.txt
 
       - name: SBOM e vulnerabilidades conhecidas
         run: |

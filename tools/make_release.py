@@ -353,7 +353,7 @@ README = """VYONIX DICOM Print {version}
 Precisão em cada imagem.
 ======================================================================
 
-VERSÃO PARA HOMOLOGAÇÃO ({phase}).
+RELEASE CANDIDATA À HOMOLOGAÇÃO — NÃO LIBERADA PARA USO CLÍNICO ({phase}).
 NÃO VALIDADA PARA USO CLÍNICO. Declaração de conformidade DICOM de homologação incluída.
 
 Conteúdo
