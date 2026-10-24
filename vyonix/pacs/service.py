@@ -606,7 +606,7 @@ def cloud_sync(db, backend: PacsBackend, *, allowed=None, limit: int = 100, max_
                 org = backend.origin(ch.backend_id)
             except FileNotFoundError:
                 continue
-            aet = (org.get("called_aet") or "").upper()
+            aet = (org.get("called_aet") or "").strip().upper()      # AE do DICOM vem com espaços de preenchimento
             tid = route_map.get(aet) if org.get("origin") == "DicomProtocol" else None
             if tid is None:
                 quarantined += 1
