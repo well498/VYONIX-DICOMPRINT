@@ -17,6 +17,11 @@ window.config = {
   showLoadingIndicator: true,
   strictZSpacingForVolumeViewport: true,
   investigationalUseDialog: { option: 'never' },
+  // Sem o tour guiado do primeiro uso (em inglês e sobreposto à imagem). Fase "global" do customizationService
+  // do OHIF 3.13: aplicada depois que as extensões registram as personalizações padrão.
+  customizationService: {
+    global: [{ 'ohif.tours': { $set: [] } }],
+  },
   defaultDataSourceName: 'vyonix',
   dataSources: [
     {

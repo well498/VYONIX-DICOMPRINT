@@ -153,6 +153,9 @@ class ViewerE2E(unittest.TestCase):
             return c && c.width > 0 && c.height > 0;
         }""", timeout=60000)
         page.wait_for_timeout(3000)
+        # O tour guiado do OHIF fica desligado na configuração do VYONIX (viewer/vyonix.js)
+        self.assertEqual(page.locator(".shepherd-modal-is-visible, .shepherd-element").count(), 0,
+                         "o tour guiado do OHIF apareceu (deveria estar desligado em viewer/vyonix.js)")
         before = canvas.screenshot()
         self.assertGreater(self.distinct_levels(before), 4, "viewport sem imagem desenhada")
         self.shot(page, "estudo")
