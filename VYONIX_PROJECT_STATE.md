@@ -174,3 +174,16 @@ credenciais (BLK-12).
 
 **Ponto de retomada:** conferir os runs do commit `8810e40` e seguintes (aceitação 2.9 do PACS e `/viewer/` no
 Windows; `test_dimse_echo_allowed_query_refused` no platform).
+
+### Continuação de 24/10 (08h)
+
+| Entrega | Evidência |
+|---|---|
+| **Ativação do PACS aprovada no Windows** (2.9): Orthanc 1.13.0 como serviço, sem plugins, Core alcançando o motor, porta DICOM 4242 aberta; **Viewer servido pelo Core instalado** com CSP por hash (2.5) | deploy-windows run 40087337898 |
+| Correções no caminho: serviço antes das ACLs; código de direito `RX` (o `R` só falhava no Windows) + teste de códigos conhecidos | runs 40059704391 e 40085298672 (falhas encontradas) |
+| Com o PACS ativado, a atualização falhou (código 5: o motor mantinha `VyonixPlatform.exe` em execução); instalador passa a parar o `VyonixPacsEngine`, reparo/atualização o reiniciam, desinstalação o remove | run 40087337898; `tests_deploy/test_pacs_module.py`; confirmação no Windows pendente (commit `d0e0a29`) |
+| C-STORE no modo cloud por AE Title (BLK-11 resolvido) | `tests_platform/test_pacs.py::CloudRouting` |
+| Tour guiado do OHIF desligado | `viewer/vyonix.js`; ponta a ponta no Chromium |
+
+**Ponto de retomada:** runs do commit `d0e0a29` (deploy-windows: atualização e desinstalação com o PACS ativado; viewer:
+ferramentas janela/nível, zoom, inverter e girar).
