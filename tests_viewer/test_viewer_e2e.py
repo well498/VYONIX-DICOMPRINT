@@ -75,11 +75,12 @@ class ViewerE2E(unittest.TestCase):
                                      password=os.environ.get("VYONIX_TEST_ORTHANC_PASSWORD"))
         n = int(time.time()) % 10**8
         cls.study = uid(n, 7)
+        cls.patient_id = f"VYX-E2E-{n}"
         with db.session(cls.tenant) as s:
             for i in range(1, 6):
                 pacs.ingest(s, cls.backend, make_dicom(study=cls.study, series=uid(n, 7, 1), sop=uid(n, 7, 1, i),
                                                        rows=64, cols=64, fill=i * 600, instance_number=i,
-                                                       patient_id=f"VYX-E2E-{n}", patient_name="VIEWER^SINTETICO"),
+                                                       patient_id=cls.patient_id, patient_name="VIEWER^SINTETICO"),
                             actor="teste")
         cfg = Config(data_dir=cls.tmp / "data", default_organization=cls.code)
         cfg.data_dir.mkdir(parents=True)
@@ -120,9 +121,16 @@ class ViewerE2E(unittest.TestCase):
         ctx = self.browser.new_context(ignore_https_errors=True, viewport={"width": 1600, "height": 900})
         self.addCleanup(ctx.close)
         problems: list[str] = []
+        self.diag: list[str] = []
         page = ctx.new_page()
-        page.on("console", lambda m: problems.append(m.text) if "Content Security Policy" in m.text else None)
-        page.on("pageerror", lambda e: problems.append(f"pageerror: {e}"))
+        page.on("console", lambda m: (problems.append(m.text) if "Content Security Policy" in m.text else None,
+                                      self.diag.append(f"console.{m.type}: {m.text[:300]}")
+                                      if m.type in ("error", "warning") else None))
+        page.on("pageerror", lambda e: self.diag.append(f"pageerror: {str(e)[:300]}"))
+        page.on("response", lambda r: self.diag.append(f"HTTP {r.status} {r.request.method} {r.url[:200]}")
+                if r.status >= 400 else None)
+        page.on("requestfailed", lambda r: self.diag.append(f"falhou {r.method} {r.url[:200]}: {r.failure}"))
+        self.page = page
         r = ctx.request.post(self.base + "/api/v1/auth/login", data={"username": "admin", "password": ADMIN_PW})
         self.assertEqual(r.status, 200, r.text())
 
@@ -133,13 +141,13 @@ class ViewerE2E(unittest.TestCase):
 
         # Lista de estudos (QIDO-RS)
         page.goto(self.base + "/viewer/", wait_until="domcontentloaded")
-        page.get_by_text("VIEWER^SINTETICO", exact=False).first.wait_for(timeout=60000)
+        self.wait(page.get_by_text(self.patient_id, exact=False).first, "lista de estudos com o paciente sintético")
         self.shot(page, "lista")
 
         # Estudo aberto: imagem desenhada no viewport
         page.goto(f"{self.base}/viewer/viewer?StudyInstanceUIDs={self.study}", wait_until="domcontentloaded")
         canvas = page.locator("canvas.cornerstone-canvas").first
-        canvas.wait_for(timeout=90000)
+        self.wait(canvas, "viewport do estudo", 90000)
         page.wait_for_function("""() => {
             const c = document.querySelector('canvas.cornerstone-canvas');
             return c && c.width > 0 && c.height > 0;
@@ -164,6 +172,19 @@ class ViewerE2E(unittest.TestCase):
         with db.session(self.tenant) as s:
             self.assertTrue(audit.query(s, action="pacs.study.open"))
         self.assertEqual([p for p in problems if "Content Security Policy" in p], [], problems)
+
+    def wait(self, locator, what: str, timeout: int = 60000) -> None:
+        from playwright.sync_api import TimeoutError as PwTimeout
+        try:
+            locator.wait_for(timeout=timeout)
+        except PwTimeout:
+            self.shot(self.page, "falha")
+            try:
+                text = self.page.inner_text("body")[:1500]
+            except Exception as exc:  # noqa: BLE001
+                text = f"(sem texto: {exc})"
+            self.fail(f"Não apareceu: {what}. URL: {self.page.url}\nTexto visível: {text!r}\n"
+                      "Diagnóstico do navegador:\n" + "\n".join(self.diag[-40:]))
 
     @staticmethod
     def distinct_levels(png: bytes) -> int:
