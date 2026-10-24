@@ -81,6 +81,7 @@ class MemoryBackend:
         self.log: list[Change] = []
         self.down = False
         self.deleted: list[str] = []
+        self.meta: dict[str, dict] = {}
 
     @staticmethod
     def _id(data: bytes) -> tuple[str, str]:
@@ -107,9 +108,19 @@ class MemoryBackend:
         self.log.append(Change(len(self.log) + 1, bid))
         return StoredRef(bid, sop)
 
-    def receive_cstore(self, data: bytes) -> str:
-        """Simula a chegada por C-STORE direto no motor (vai para ``changes``)."""
-        return self.store(data).backend_id
+    def receive_cstore(self, data: bytes, called_aet: str = "VYONIX_PACS", remote_aet: str = "MODALIDADE") -> str:
+        """Simula a chegada por C-STORE direto no motor (vai para ``changes``), com a origem registrada."""
+        bid = self.store(data).backend_id
+        self.meta[bid] = {"origin": "DicomProtocol", "called_aet": called_aet, "remote_aet": remote_aet,
+                          "remote_ip": "127.0.0.1"}
+        return bid
+
+    def origin(self, backend_id: str) -> dict:
+        self._check()
+        if backend_id not in self.files:
+            raise FileNotFoundError(backend_id)
+        return self.meta.get(backend_id, {"origin": "RestApi", "called_aet": None, "remote_aet": None,
+                                          "remote_ip": None})
 
     def fetch(self, backend_id: str) -> bytes:
         self._check()

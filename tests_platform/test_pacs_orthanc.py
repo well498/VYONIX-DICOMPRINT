@@ -99,6 +99,18 @@ class Orthanc(unittest.TestCase):
             found = pacs.search_studies(s, {"StudyInstanceUID": uid(self.n, 3)})
             self.assertEqual(len(found), 1)
             self.assertEqual(found[0]["00080061"]["Value"], ["CR"])
+            # origem registrada pelo motor: base do roteamento por AE Title no modo cloud
+            from sqlalchemy import select
+            from vyonix.pacs.models import PacsInstance
+            bid = s.execute(select(PacsInstance.backend_id).where(PacsInstance.sop_uid == uid(self.n, 3, 1, 1))).scalar()
+        o = self.b.origin(bid)
+        self.assertEqual((o["origin"], o["called_aet"], o["remote_aet"]), ("DicomProtocol", aet, "VYXMODTEST"))
+
+    def test_origin_of_rest_upload(self):
+        ref = self.b.store(make_dicom(study=uid(self.n, 4), series=uid(self.n, 4, 1), sop=uid(self.n, 4, 1, 1)))
+        o = self.b.origin(ref.backend_id)
+        self.assertEqual(o["origin"], "RestApi")
+        self.assertIsNone(o["called_aet"])
 
 
 if __name__ == "__main__":

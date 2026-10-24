@@ -51,8 +51,18 @@ outros sistemas), WADO-URI, UPS-RS, mídia removível (DICOMDIR) e STOW-RS de me
 
 ### 3.3 Indexação do que chega por C-STORE
 
-O serviço VyonixWorker consulta o registro de mudanças do motor a cada 15 s (modo edge, módulo habilitado e
-licenciado) e indexa cada instância nova com as mesmas validações do STOW-RS (seção 4.1). Instâncias recusadas na
+O serviço VyonixWorker consulta o registro de mudanças do motor a cada 15 s e indexa cada instância nova com as
+mesmas validações do STOW-RS (seção 4.1):
+
+* **Modo edge** (um servidor por organização): tudo vai para a organização do servidor, se o módulo PACS estiver
+  habilitado e licenciado.
+* **Modo cloud** (motor compartilhado): a instância vai para a organização dona do **AE Title chamado** pela
+  modalidade (`CalledAET` registrado pelo motor). Cada organização reserva os seus AE Titles em *Rotas DICOM*
+  (`/api/v1/pacs/routes`, permissão `pacs.admin`); um AE Title pertence a uma só organização no servidor.
+  Instância sem rota, recebida por outro meio que não o DICOM, ou de organização sem módulo ou licença vigente fica
+  em **quarentena**: não é indexada para ninguém e é contada no estado da sincronização. O motor do modo cloud
+  precisa aceitar AE Titles diferentes do seu (`DicomCheckCalledAet: false`); a instalação do modo cloud ainda não é
+  feita pelo DEPLOY. Instâncias recusadas na
 indexação ficam no motor, mas **não** aparecem na pesquisa nem na recuperação e a recusa é auditada.
 
 ## 4. DICOMweb (Core)
@@ -119,6 +129,6 @@ conforme o Specific Character Set do objeto.
 
 ## 7. Pendências para a versão de homologação
 
-C-FIND/C-MOVE pelo Core com autorização; roteamento de C-STORE por AE Title no modo cloud; Modality Worklist e
+C-FIND/C-MOVE pelo Core com autorização; instalação do modo cloud; Modality Worklist e
 MPPS (com o RIS); TLS no DIMSE; teste de interoperabilidade com modalidades e estações reais; revisão desta
 declaração por especialista.

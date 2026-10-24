@@ -73,3 +73,22 @@ class PacsSyncState(TenantMixin, Base):
     __table_args__ = (Index("uq_pacs_sync_backend", "tenant_id", "backend", unique=True), SCHEMA)
     backend: Mapped[str] = mapped_column(String(20), nullable=False)
     last_seq: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+
+
+class PacsAeRoute(TenantMixin, Base):
+    """AE Title chamado pelas modalidades → organização (recepção por C-STORE no modo cloud). Único no servidor."""
+    __tablename__ = "ae_routes"
+    __table_args__ = (Index("uq_pacs_ae_routes_aet", "called_aet", unique=True), SCHEMA)
+    called_aet: Mapped[str] = mapped_column(String(16), nullable=False)
+    description: Mapped[str | None] = mapped_column(String(200))
+    created_by: Mapped[str] = mapped_column(String(120), nullable=False)
+
+
+class PacsCloudSyncState(Base):
+    """Último evento do motor já distribuído às organizações (modo cloud). Só o papel de serviço acessa."""
+    __tablename__ = "cloud_sync_state"
+    __table_args__ = (SCHEMA,)
+    backend: Mapped[str] = mapped_column(String(20), primary_key=True)
+    last_seq: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    quarantined: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0, server_default="0")
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())

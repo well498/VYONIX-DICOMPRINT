@@ -527,3 +527,111 @@ def quality_overview(s: Session, *, limit: int = 100, only_issues: bool = True) 
                         "accession": st.accession, "possibly_incomplete": q["possibly_incomplete"],
                         "reconciled": q["reconciled"], "issues": [i["code"] for i in q["issues"]]})
     return out
+
+
+# --------------------------------------------------------------------------- rotas de AE Title (modo cloud)
+
+AET_RE = __import__("re").compile(r"^[A-Z0-9_\-. ]{1,16}$")
+
+
+def _aet(value: str) -> str:
+    v = (value or "").strip().upper()
+    if not AET_RE.match(v) or v != v.strip():
+        raise ValidationFailed("AE Title inválido: até 16 caracteres (letras, números, espaço, _ - .).")
+    return v
+
+
+def routes(s: Session) -> list[dict]:
+    from vyonix.pacs.models import PacsAeRoute
+    return [{"id": str(r.id), "called_aet": r.called_aet, "description": r.description, "created_by": r.created_by,
+             "created_at": r.created_at.isoformat()}
+            for r in s.execute(select(PacsAeRoute).order_by(PacsAeRoute.called_aet)).scalars()]
+
+
+def add_route(s: Session, called_aet: str, *, description: str | None = None, actor: str, actor_id=None,
+              ip=None) -> dict:
+    """Reserva um AE Title para a organização da sessão. O AE é único no servidor inteiro."""
+    from sqlalchemy.exc import IntegrityError
+    from vyonix.pacs.models import PacsAeRoute
+    aet = _aet(called_aet)
+    r = PacsAeRoute(called_aet=aet, description=(description or "").strip()[:200] or None, created_by=actor[:120])
+    try:
+        with s.begin_nested():
+            s.add(r)
+            s.flush()
+    except IntegrityError as exc:
+        # Não revela qual organização usa o AE (só que ele não está disponível).
+        raise Conflict(f"O AE Title {aet} não está disponível neste servidor.") from exc
+    audit.record(s, actor=actor, actor_id=actor_id, ip=ip, action="pacs.route.add", target_type="ae_route",
+                 target_id=r.id, details={"called_aet": aet})
+    return {"id": str(r.id), "called_aet": aet, "description": r.description}
+
+
+def remove_route(s: Session, route_id: uuid.UUID, *, actor: str, actor_id=None, ip=None) -> None:
+    from vyonix.pacs.models import PacsAeRoute
+    r = s.get(PacsAeRoute, route_id)
+    if r is None:
+        raise NotFound("Rota não encontrada.")
+    aet = r.called_aet
+    s.delete(r)
+    s.flush()
+    audit.record(s, actor=actor, actor_id=actor_id, ip=ip, action="pacs.route.remove", target_type="ae_route",
+                 target_id=route_id, details={"called_aet": aet})
+
+
+def cloud_sync(db, backend: PacsBackend, *, allowed=None, limit: int = 100, max_batches: int = 50) -> dict[str, int]:
+    """Distribui às organizações o que chegou por C-STORE ao motor compartilhado (modo cloud).
+
+    A organização é a dona do AE Title chamado pela modalidade (``CalledAET`` registrado pelo motor). Instâncias
+    sem rota, ou recebidas por outro meio que não o DICOM, ficam em quarentena: não são indexadas para ninguém
+    (continuam só no motor, sem acesso pelo DICOMweb) e entram na contagem. Cada organização só recebe o que foi
+    endereçado ao AE Title dela; nada é indexado "por aproximação". ``allowed(sessão) -> bool`` confere se a
+    organização pode receber (módulo habilitado e licença vigente); sem isso, a instância também fica em quarentena.
+    """
+    from vyonix.pacs.models import PacsAeRoute, PacsCloudSyncState
+    out = {"indexed": 0, "duplicates": 0, "rejected": 0, "quarantined": 0}
+    with db.service_session() as svc:
+        st = svc.get(PacsCloudSyncState, backend.name)
+        if st is None:
+            st = PacsCloudSyncState(backend=backend.name, last_seq=0, quarantined=0)
+            svc.add(st)
+            svc.flush()
+        route_map = {r.called_aet: r.tenant_id for r in svc.execute(select(PacsAeRoute)).scalars()}
+        since = st.last_seq
+    for _ in range(max_batches):
+        changes, last, done = backend.changes(since, limit)
+        quarantined = 0
+        for ch in changes:
+            try:
+                org = backend.origin(ch.backend_id)
+            except FileNotFoundError:
+                continue
+            aet = (org.get("called_aet") or "").upper()
+            tid = route_map.get(aet) if org.get("origin") == "DicomProtocol" else None
+            if tid is None:
+                quarantined += 1
+                continue
+            with db.session(tid) as s:
+                if allowed is not None and not allowed(s):
+                    quarantined += 1
+                    continue
+                if s.execute(select(PacsInstance.id).where(PacsInstance.backend == backend.name,
+                                                           PacsInstance.backend_id == ch.backend_id)).first():
+                    out["duplicates"] += 1
+                    continue
+                try:
+                    with s.begin_nested():
+                        r = ingest(s, backend, backend.fetch(ch.backend_id), actor="pacs-sync", via="dimse")
+                    out["duplicates" if r.duplicate else "indexed"] += 1
+                except InstanceRejected:
+                    out["rejected"] += 1
+                except FileNotFoundError:
+                    continue
+        out["quarantined"] += quarantined
+        since = last
+        with db.service_session() as svc:
+            st = svc.get(PacsCloudSyncState, backend.name)
+            st.last_seq, st.quarantined, st.updated_at = last, st.quarantined + quarantined, utcnow()
+        if done:
+            break
+    return out

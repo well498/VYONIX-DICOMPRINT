@@ -5,6 +5,7 @@ Endpoints usados (documentação oficial da API REST do Orthanc):
 * ``POST /instances`` — guarda um arquivo DICOM (corpo ``application/dicom``);
 * ``GET /instances/{id}/file`` — arquivo original;
 * ``GET /changes?since=N&limit=M`` — instâncias novas (recebidas por C-STORE);
+* ``GET /instances/{id}/metadata?expand`` — origem (CalledAET, RemoteAET, RemoteIP; Orthanc ≥ 1.4);
 * ``DELETE /instances/{id}``.
 """
 
@@ -69,6 +70,15 @@ class OrthancBackend:
         out = [Change(int(c["Seq"]), c["ID"]) for c in j.get("Changes", [])
                if c.get("ChangeType") == "NewInstance" and c.get("ResourceType") == "Instance"]
         return out, int(j.get("Last", since)), bool(j.get("Done", True))
+
+    def origin(self, backend_id: str) -> dict:
+        r = self._req("GET", f"/instances/{backend_id}/metadata", params={"expand": ""})
+        if r.status_code == 404:
+            raise FileNotFoundError(backend_id)
+        r.raise_for_status()
+        m = {k.lower(): v for k, v in r.json().items()}
+        return {"origin": m.get("origin"), "called_aet": (m.get("calledaet") or "").strip() or None,
+                "remote_aet": (m.get("remoteaet") or "").strip() or None, "remote_ip": m.get("remoteip")}
 
     def delete(self, backend_id: str) -> None:
         r = self._req("DELETE", f"/instances/{backend_id}")

@@ -16,7 +16,10 @@ import secrets
 from urllib.parse import quote
 from typing import Iterable
 
+import uuid
+
 from fastapi import APIRouter, Depends, Request
+from pydantic import BaseModel, Field
 from fastapi.responses import JSONResponse, Response
 from starlette.concurrency import run_in_threadpool
 
@@ -314,6 +317,30 @@ def quality_study(study_uid: str, c: Ctx = Depends(needs("pacs.studies.read"))):
 
 # --------------------------------------------------------------------------- administração
 
+class RouteIn(BaseModel):
+    called_aet: str = Field(min_length=1, max_length=16)
+    description: str | None = Field(None, max_length=200)
+
+
+@router.get("/routes")
+def list_routes(c: Ctx = Depends(needs("pacs.admin"))):
+    with c.session() as s:
+        return {"routes": pacs.routes(s), "mode": c.plat.cfg.mode}
+
+
+@router.post("/routes", status_code=201)
+def add_route(body: RouteIn, c: Ctx = Depends(needs("pacs.admin"))):
+    with c.session() as s:
+        return pacs.add_route(s, body.called_aet, description=body.description, **c.actor)
+
+
+@router.delete("/routes/{route_id}", status_code=204)
+def remove_route(route_id: uuid.UUID, c: Ctx = Depends(needs("pacs.admin"))):
+    with c.session() as s:
+        pacs.remove_route(s, route_id, **c.actor)
+    return Response(status_code=204)
+
+
 @router.get("/status")
 def status(c: Ctx = Depends(needs("pacs.admin"))):
     b = backend_for(c.plat)
@@ -330,9 +357,10 @@ def status(c: Ctx = Depends(needs("pacs.admin"))):
 @router.post("/sync")
 def sync(c: Ctx = Depends(needs("pacs.admin"))):
     if not c.plat.edge:
-        # O motor não é multiorganização: o que chega por C-STORE não diz de qual organização é.
-        # O roteamento por AE Title no modo cloud ainda não foi entregue (VYONIX_BLOCKERS / backlog).
-        raise ValidationFailed("A sincronização de C-STORE só é aceita no modo edge (um servidor por organização).")
+        # No modo cloud o motor é compartilhado: a distribuição às organizações é feita pelo VyonixWorker, pelas
+        # rotas de AE Title (/pacs/routes), nunca por uma organização puxando tudo para si.
+        raise ValidationFailed("No modo cloud, os recebimentos por C-STORE são distribuídos automaticamente pelas "
+                               "rotas de AE Title da organização (Rotas DICOM).")
     b = _backend(c)
     with c.session() as s:
         if not registry.is_enabled(s, "pacs"):

@@ -8,6 +8,7 @@ integração com o Orthanc real está em ``test_pacs_orthanc.py``. Dados DICOM s
 from __future__ import annotations
 
 import hashlib
+import uuid
 import shutil
 import tempfile
 import unittest
@@ -483,8 +484,13 @@ class SyncTask(ApiBase):
         with db.session(self.t) as s:
             from vyonix.pacs import service as pacs
             self.assertEqual(len(pacs.search_instances(s, uid(1))), 2)
+        # modo cloud: distribuição pelas rotas de AE Title; sem rota, a instância nova fica em quarentena
         self.plat.cfg.mode = "cloud"
-        self.assertIn("modo cloud", PacsSyncTask(self.plat)()["skipped"])
+        self.b.name = "mem-synctask"
+        self.b.receive_cstore(make_dicom(sop=uid(1, 1, 3), instance_number=3), called_aet="SEM_ROTA")
+        out = PacsSyncTask(self.plat)()
+        self.assertEqual(out["indexed"], 0)
+        self.assertGreaterEqual(out["quarantined"], 1)
 
     def test_failing_task_does_not_stop_worker(self):
         from vyonix.events.worker import Worker
@@ -496,6 +502,86 @@ class SyncTask(ApiBase):
         w = Worker(db, self.plat.bus, periodic=[(1, boom), (1, lambda: calls.append(2))])
         w.run_periodic(now=10.0)
         self.assertEqual(calls, [1, 2])
+
+
+
+class CloudRouting(unittest.TestCase):
+    """Modo cloud (BLK-11): cada C-STORE vai para a organização dona do AE Title chamado; sem rota, quarentena."""
+
+    def setUp(self):
+        import secrets
+        self.a, self.b_org = new_org(db), new_org(db)
+        self.b = MemoryBackend()
+        self.sfx = secrets.token_hex(3).upper()                       # AE Title é único no servidor inteiro
+        self.A, self.B = f"CLIN_A_{self.sfx}", f"CLIN_B_{self.sfx}"
+        self.b.name = f"mem-{self.sfx}"                               # estado da sincronização é por motor
+
+    def add(self, tid, aet):
+        from vyonix.pacs import service as pacs
+        with db.session(tid) as s:
+            return pacs.add_route(s, aet, actor="admin")
+
+    def count(self, tid):
+        from sqlalchemy import func, select
+        from vyonix.pacs.models import PacsInstance
+        with db.session(tid) as s:
+            return s.execute(select(func.count()).select_from(PacsInstance)).scalar()
+
+    def test_routes_are_unique_validated_and_audited(self):
+        from vyonix.errors import Conflict, ValidationFailed
+        from vyonix.pacs import service as pacs
+        self.add(self.a, self.A.lower())                                     # normalizado para maiúsculas
+        with self.assertRaises(Conflict) as cm:
+            self.add(self.b_org, self.A)
+        self.assertNotIn(str(self.a), str(cm.exception))                  # não revela a dona
+        for bad in ("", "X" * 17, "AE*", "AÉ"):
+            with self.assertRaises(ValidationFailed):
+                self.add(self.b_org, bad)
+        with db.session(self.b_org) as s:
+            self.assertEqual(pacs.routes(s), [])                          # B não vê a rota de A
+        with db.session(self.a) as s:
+            r = pacs.routes(s)
+            self.assertEqual([x["called_aet"] for x in r], [self.A])
+            self.assertEqual(len(_audit(s, "pacs.route.add")), 1)
+            pacs.remove_route(s, uuid.UUID(r[0]["id"]), actor="admin")
+            self.assertEqual(pacs.routes(s), [])
+        self.add(self.b_org, self.A)                                  # liberado após a remoção
+
+    def test_distribution_quarantine_and_resume(self):
+        from vyonix.pacs import service as pacs
+        self.add(self.a, self.A)
+        self.add(self.b_org, self.B)
+        self.b.receive_cstore(make_dicom(patient_id="PA-1"), called_aet=self.A)
+        self.b.receive_cstore(make_dicom(study=uid(2), series=uid(2, 1), sop=uid(2, 1, 1), patient_id="PB-1"),
+                              called_aet=self.B.lower())
+        self.b.receive_cstore(make_dicom(study=uid(3), series=uid(3, 1), sop=uid(3, 1, 1)), called_aet="OUTRA")
+        self.b.store(make_dicom(study=uid(4), series=uid(4, 1), sop=uid(4, 1, 1)))   # pela REST, sem AE
+        self.b.log.append(__import__("vyonix.pacs.backend", fromlist=["Change"]).Change(
+            len(self.b.log) + 1, max(self.b.files)))  # a entrada REST também aparece nas mudanças
+        out = pacs.cloud_sync(db, self.b)
+        self.assertEqual((out["indexed"], out["quarantined"]), (2, 3))
+        self.assertEqual((self.count(self.a), self.count(self.b_org)), (1, 1))
+        with db.session(self.a) as s:
+            self.assertEqual([x["00100020"]["Value"][0] for x in pacs.search_studies(s, {})], ["PA-1"])
+        self.assertEqual(pacs.cloud_sync(db, self.b)["indexed"], 0)        # continua do último evento
+        from vyonix.pacs.models import PacsCloudSyncState
+        with db.service_session() as svc:
+            self.assertEqual(svc.get(PacsCloudSyncState, self.b.name).quarantined, 3)
+
+    def test_org_without_module_or_license_gets_nothing(self):
+        from vyonix.pacs import service as pacs
+        self.add(self.a, self.A)
+        self.b.receive_cstore(make_dicom(), called_aet=self.A)
+        out = pacs.cloud_sync(db, self.b, allowed=lambda s: False)
+        self.assertEqual((out["indexed"], out["quarantined"]), (0, 1))
+        self.assertEqual(self.count(self.a), 0)
+
+    def test_app_role_cannot_touch_global_sync_state(self):
+        from sqlalchemy import text
+        from sqlalchemy.exc import ProgrammingError
+        with self.assertRaises(ProgrammingError):
+            with db.session(self.a) as s:
+                s.execute(text("SELECT * FROM pacs.cloud_sync_state")).all()
 
 
 if __name__ == "__main__":

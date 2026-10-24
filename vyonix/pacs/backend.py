@@ -42,6 +42,9 @@ class PacsBackend(Protocol):
     def changes(self, since: int, limit: int = 100) -> tuple[list[Change], int, bool]:
         """Instâncias novas depois de ``since``: (mudanças, último seq, terminou)."""
 
+    def origin(self, backend_id: str) -> dict:
+        """Como a instância chegou: ``origin`` (DicomProtocol, RestApi…), ``called_aet``, ``remote_aet``, ``remote_ip``."""
+
     def delete(self, backend_id: str) -> None:
         """Remove uma instância (usado só para desfazer uma entrada recusada pelo índice)."""
 
