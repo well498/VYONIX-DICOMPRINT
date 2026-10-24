@@ -240,7 +240,8 @@ def _wrap(fn):
 def wado_study_metadata(study_uid: str, request: Request, c: Ctx = Depends(needs("pacs.studies.read"))):
     b, base = _backend(c), _base(request)
     with c.session() as s:
-        pacs.open_study(s, study_uid, actor=c.p.username, actor_id=c.p.user_id, ip=c.ip)
+        pacs.open_study(s, study_uid, actor=c.p.username, actor_id=c.p.user_id, ip=c.ip,
+                        dedup_s=pacs.OPEN_DEDUP_S)
         out = _wrap(lambda: pacs.metadata(s, b, study_uid, base_url=base))
     return _json(out)
 
@@ -250,6 +251,8 @@ def wado_series_metadata(study_uid: str, series_uid: str, request: Request,
                          c: Ctx = Depends(needs("pacs.studies.read"))):
     b, base = _backend(c), _base(request)
     with c.session() as s:
+        pacs.open_study(s, study_uid, actor=c.p.username, actor_id=c.p.user_id, ip=c.ip,
+                        dedup_s=pacs.OPEN_DEDUP_S)
         out = _wrap(lambda: pacs.metadata(s, b, study_uid, series_uid, base_url=base))
     return _json(out)
 

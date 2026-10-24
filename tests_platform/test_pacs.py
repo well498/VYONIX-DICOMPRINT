@@ -303,6 +303,17 @@ class QueryRetrieve(unittest.TestCase):
             pacs.open_study(s, uid(2), actor="medico")
             self.assertTrue(any(a.actor == "medico" for a in _audit(s, "pacs.study.open")))
 
+    def test_viewer_series_by_series_opens_are_deduplicated(self):
+        from vyonix.pacs import service as pacs
+        with self.s() as s:
+            for _ in range(4):                                  # o Viewer pede os metadados série por série
+                pacs.open_study(s, uid(1), actor="radiologista", dedup_s=pacs.OPEN_DEDUP_S)
+            pacs.open_study(s, uid(1), actor="outro", dedup_s=pacs.OPEN_DEDUP_S)
+            pacs.open_study(s, uid(1), actor="radiologista", purpose="retrieve", dedup_s=pacs.OPEN_DEDUP_S)
+            mine = [a for a in _audit(s, "pacs.study.open") if a.actor == "radiologista"]
+            self.assertEqual(sorted(a.details["purpose"] for a in mine), ["retrieve", "viewer"])
+            self.assertEqual(len([a for a in _audit(s, "pacs.study.open") if a.actor == "outro"]), 1)
+
 
 class Api(unittest.TestCase):
     """DICOMweb pela API HTTP: autenticação, permissão, módulo/licença, STOW, QIDO e WADO."""
@@ -388,6 +399,8 @@ class Api(unittest.TestCase):
         self.assertEqual(sorted(self.parts(r)), sorted([a1, a2]))
         r = self.c.get(f"{DW}/studies/{uid(1)}/series/{uid(1, 1)}/instances/{uid(1, 1, 2)}")
         self.assertEqual(self.parts(r), [a2])
+        md = self.c.get(f"{DW}/studies/{uid(1)}/series/{uid(1, 1)}/metadata").json()
+        self.assertEqual(len(md), 2)
         md = self.c.get(f"{DW}/studies/{uid(1)}/metadata").json()
         self.assertTrue(md[0]["7FE00010"]["BulkDataURI"].startswith("http"))
         r = self.c.get(f"{DW}/studies/{uid(1)}/series/{uid(1, 1)}/instances/{uid(1, 1, 1)}/frames/1")

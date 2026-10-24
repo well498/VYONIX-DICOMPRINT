@@ -429,9 +429,25 @@ def frames(s: Session, backend: PacsBackend, study_uid: str, series_uid: str, so
     return media, ts, [all_frames[k - 1] for k in numbers]
 
 
-def open_study(s: Session, study_uid: str, *, actor: str, actor_id=None, ip=None, purpose: str = "viewer") -> PacsStudy:
-    """Registra a abertura do estudo (auditoria de acesso) e devolve o índice dele."""
+OPEN_DEDUP_S = 600
+
+
+def open_study(s: Session, study_uid: str, *, actor: str, actor_id=None, ip=None, purpose: str = "viewer",
+               dedup_s: int | None = None) -> PacsStudy:
+    """Registra a abertura do estudo (auditoria de acesso) e devolve o índice dele.
+
+    ``dedup_s``: não repete o registro se o mesmo usuário abriu o mesmo estudo com a mesma finalidade nesse
+    intervalo (o Viewer pede os metadados série por série)."""
+    from datetime import timedelta
+    from vyonix.audit.models import AuditEntry
     st = study(s, study_uid)
+    if dedup_s:
+        since = utcnow() - timedelta(seconds=dedup_s)
+        recent = s.execute(select(AuditEntry.seq).where(
+            AuditEntry.action == "pacs.study.open", AuditEntry.target_id == str(st.id), AuditEntry.actor == actor[:120],
+            AuditEntry.at >= since, AuditEntry.details["purpose"].as_string() == purpose).limit(1)).first()
+        if recent:
+            return st
     audit.record(s, actor=actor, actor_id=actor_id, ip=ip, action="pacs.study.open", target_type="study",
                  target_id=st.id, details={"purpose": purpose})
     return st
