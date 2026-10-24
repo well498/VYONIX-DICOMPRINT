@@ -20,6 +20,12 @@ Não contém credenciais, chaves privadas nem dados de pacientes.
 
 Nenhum componente está validado para uso clínico. Nenhuma conformidade regulatória é declarada.
 
+**Restrições do proprietário em vigor (24/10/2026):**
+* Testes do DICOM Print somente no ambiente laboratorial offline; nenhum ensaio em campo sem autorização expressa (BLK-13).
+* Recuperação da senha administrativa do License Manager adiada: não redefinir senhas, não excluir contas, não alterar
+  credenciais (BLK-12). Trabalhos que dependem do acesso ao License Manager ficam registrados como pendentes.
+* Preservar as funcionalidades existentes; evitar alterações desnecessárias.
+
 ## 2. Arquitetura (resumo)
 
 * **EDGE** (servidor da clínica, Windows 10 1809+/Server 2019+): VYONIX DICOM Print (Qt + serviço Windows,

@@ -4,6 +4,12 @@ Trilha separada do desenvolvimento (Comando Executivo §8). Estes testes **exige
 feitos no CI. Enquanto não forem executados e registrados, a homologação fica **pendente**. Nenhum deles valida
 uso clínico ou diagnóstico.
 
+> **Local dos ensaios (decisão do proprietário, 24/10/2026):** todos os casos são executados no **ambiente
+> laboratorial offline** (rede isolada, sem internet, equipamentos e impressoras do laboratório, dados fictícios).
+> Ensaio em campo — numa clínica, em equipamento em uso assistencial ou em rede de produção — **só com autorização
+> expressa do proprietário**, registrada antes do ensaio (BLK-13). Para casos que pedem validação online (licença
+> online, License Server), use um License Server do próprio laboratório, também na rede isolada.
+
 * Versão a testar: a release candidata mais recente (rótulo “candidata à homologação — não liberada para uso clínico”).
 * Registro: preencha um formulário por caso (`formularios/HF-NN.md`) e a planilha `registro_resultados.csv`.
 * Evidências: fotos e capturas numa pasta por caso; nunca fotografe dados reais de pacientes (use fantoma ou paciente fictício).
