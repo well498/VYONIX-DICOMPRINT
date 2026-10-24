@@ -1,5 +1,5 @@
 -r requirements-platform.txt
 pytest>=8
-httpx>=0.27,<1
 playwright>=1.48
 pypdf>=5
+pynetdicom>=3.0,<4     # testes do PACS: C-STORE de uma modalidade simulada contra o Orthanc real

@@ -97,8 +97,11 @@ class Architecture(unittest.TestCase):
     def test_every_tenant_table_is_protected_by_rls_in_migration(self):
         from vyonix.db import models  # noqa: F401  (registra todas as tabelas)
         from vyonix.db.base import Base
-        mig = (ROOT / "vyonix/db/migrations/versions/core_0001_core_inicial.py").read_text(encoding="utf-8")
-        listed = set(re.findall(r'"([a-z]+\.[a-z_]+)"', mig.split("TENANT_TABLES = (")[1].split(")")[0]))
+        listed: set[str] = set()
+        for f in (ROOT / "vyonix/db/migrations/versions").glob("*.py"):       # todos os ramos de migração
+            mig = f.read_text(encoding="utf-8")
+            if "TENANT_TABLES = (" in mig:
+                listed |= set(re.findall(r'"([a-z]+\.[a-z_]+)"', mig.split("TENANT_TABLES = (")[1].split(")")[0]))
         tenant_tables = {f"{t.schema}.{t.name}" for t in Base.metadata.tables.values() if "tenant_id" in t.c}
         self.assertEqual(tenant_tables - listed, set(), "tabela com tenant_id sem row level security")
 

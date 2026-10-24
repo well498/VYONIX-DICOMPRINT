@@ -27,6 +27,10 @@ jobs:
       VYONIX_TEST_ADMIN_URL: postgresql://postgres:ci-postgres@127.0.0.1:5432/postgres
       VYONIX_E2E_SHOTS: ${{ github.workspace }}/e2e-shots
       VYONIX_REQUIRE_PYPDF: "1"
+      VYONIX_TEST_ORTHANC_URL: http://127.0.0.1:8042
+      VYONIX_TEST_ORTHANC_USER: vyonix
+      VYONIX_TEST_ORTHANC_PASSWORD: ci-orthanc-only
+      VYONIX_TEST_ORTHANC_DICOM: 127.0.0.1:4242:VYONIXCI
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -40,6 +44,24 @@ jobs:
           python -m pip install --upgrade pip
           pip install -c constraints-security.txt -r requirements-platform-dev.txt
           python -m playwright install --with-deps chromium
+      - name: Orthanc (pacote da distribuição, só o núcleo, sem plugins)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq orthanc
+          sudo systemctl stop orthanc || true
+          mkdir -p "$RUNNER_TEMP/orthanc"
+          cat > "$RUNNER_TEMP/orthanc/ci.json" <<JSON
+          {"Name": "VYONIX-CI", "StorageDirectory": "$RUNNER_TEMP/orthanc/db", "IndexDirectory": "$RUNNER_TEMP/orthanc/db",
+           "HttpPort": 8042, "DicomPort": 4242, "DicomAet": "VYONIXCI", "RemoteAccessAllowed": false,
+           "AuthenticationEnabled": true, "RegisteredUsers": {"vyonix": "ci-orthanc-only"}, "Plugins": [],
+           "DicomAlwaysAllowStore": true, "DicomCheckCalledAet": false}
+          JSON
+          nohup Orthanc "$RUNNER_TEMP/orthanc/ci.json" > "$RUNNER_TEMP/orthanc/log.txt" 2>&1 &
+          for i in $(seq 1 30); do curl -sf -u vyonix:ci-orthanc-only http://127.0.0.1:8042/system && break; sleep 1; done
+          v=$(curl -sf -u vyonix:ci-orthanc-only http://127.0.0.1:8042/system | python -c "import json,sys; j=json.load(sys.stdin); print(j['Version'])")
+          plugins=$(curl -sf -u vyonix:ci-orthanc-only http://127.0.0.1:8042/plugins)
+          echo "::notice title=Orthanc::versão $v; plugins carregados: $plugins"
+          test "$plugins" = "[]"
       - name: Versão do PostgreSQL
         run: echo "::notice title=PostgreSQL::$(psql "$VYONIX_TEST_ADMIN_URL" -tAc 'SHOW server_version')"
       - name: Interface web (TypeScript estrito + empacotamento)

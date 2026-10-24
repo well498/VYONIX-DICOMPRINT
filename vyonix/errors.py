@@ -39,3 +39,8 @@ class NotLicensed(VyonixError):
 
 class Locked(VyonixError):
     status, code = 423, "locked"
+
+
+class Unavailable(VyonixError):
+    """Dependência externa (ex.: motor de armazenamento DICOM) não configurada ou sem resposta."""
+    status, code = 503, "unavailable"
