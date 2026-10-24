@@ -548,7 +548,23 @@ $ap = $r | Get-NetFirewallApplicationFilter
         import socket
         with socket.create_connection(("127.0.0.1", 4242), timeout=5):
             pass
-        return f"{msg}; Core: {st['engine'].get('version')} alcançável; porta DICOM 4242 aberta"
+        # consulta/recuperação pelo Core (C-FIND/C-MOVE): porta 4243 escutando e estação não cadastrada recusada
+        deadline = time.monotonic() + 60
+        while True:
+            try:
+                with socket.create_connection(("127.0.0.1", 4243), timeout=5):
+                    break
+            except OSError:
+                if time.monotonic() > deadline:
+                    raise
+                time.sleep(2)
+        from pynetdicom import AE
+        qae = AE(ae_title="CI_SEM_CADASTRO")
+        qae.add_requested_context("1.2.840.10008.1.1")
+        qa = qae.associate("127.0.0.1", 4243, ae_title="VYONIX_QR")
+        assert not qa.is_established, "consulta DICOM aceitou estação não cadastrada"
+        return (f"{msg}; Core: {st['engine'].get('version')} alcançável; porta DICOM 4242 aberta; consulta DICOM 4243 "
+                "escutando e recusando estação não cadastrada")
 
     # ---------------------------------------------------------------- 2.8 atualização
     @check("2.8", "Atualização: backup antes da migração; dados e configurações preservados")
