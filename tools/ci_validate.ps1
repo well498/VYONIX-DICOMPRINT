@@ -41,9 +41,13 @@ New-Item -ItemType Directory -Force -Path $Work | Out-Null
 
 $results = New-Object System.Collections.Generic.List[object]
 
+# status: "aprovado" | "nao_verificavel" | "falhou". "Não verificável" = o comportamento do programa foi
+# conferido, mas o ambiente não permite comprovar o requisito (ex.: sem TPM real): não conta como aprovado
+# e não interrompe o pipeline.
 function Add-Result([string]$Id, [string]$Area, [string]$Name, [bool]$Ok, [string]$Detail) {
-    $results.Add([ordered]@{ id = $Id; area = $Area; name = $Name; ok = $Ok; detail = $Detail })
-    $mark = if ($Ok) { "PASS" } else { "FAIL" }
+    $status = if (-not $Ok) { "falhou" } elseif ($Detail -like "NÃO VERIFICÁVEL*") { "nao_verificavel" } else { "aprovado" }
+    $results.Add([ordered]@{ id = $Id; area = $Area; name = $Name; ok = $Ok; status = $status; detail = $Detail })
+    $mark = @{ aprovado = "PASS"; nao_verificavel = "N/V "; falhou = "FAIL" }[$status]
     Write-Host "[$mark] $Id $Name - $Detail"
 }
 
@@ -494,7 +498,10 @@ $payload = [ordered]@{
 $payload | ConvertTo-Json -Depth 6 | Out-File (Join-Path $OutDir "results.json") -Encoding utf8
 
 $failed = @($results | Where-Object { -not $_.ok })
-Write-Host "`n$($results.Count - $failed.Count)/$($results.Count) verificações aprovadas."
+$nv = @($results | Where-Object { $_.status -eq "nao_verificavel" })
+$passed = $results.Count - $failed.Count - $nv.Count
+Write-Host "`n$passed aprovadas, $($nv.Count) não verificáveis neste ambiente, $($failed.Count) falhas (de $($results.Count))."
+foreach ($n in $nv) { Write-Host "::warning title=$($n.id) não verificável::$($n.detail)" }
 if ($failed.Count -gt 0) {
     foreach ($f in $failed) { Write-Host "::error title=$($f.id) $($f.name)::$($f.detail)" }
     exit 1

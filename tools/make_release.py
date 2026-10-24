@@ -168,7 +168,8 @@ def matrix(title: str, intro: str, items, junit: dict, by_id: dict) -> list[str]
         cases = [c for c in junit["cases"] if any(re.search(p, c["name"], re.I) for p in pats)]
         ok_cases = [c for c in cases if c["status"] == "aprovado"]
         ci = [by_id[i] for i in ci_ids if i in by_id]
-        ci_txt = ", ".join(f"{r['id']} {'aprovado' if r['ok'] else 'FALHOU'}" for r in ci) or "—"
+        ci_txt = ", ".join(f"{r['id']} {dict(aprovado='aprovado', nao_verificavel='não verificável', falhou='FALHOU')[v_status(r)]}"
+                           for r in ci) or "—"
         not_verifiable = any("NÃO VERIFICÁVEL" in (r.get("detail") or "") for r in ci)
         failed = any(c["status"] in ("falhou", "erro") for c in cases) or any(not r["ok"] for r in ci)
         if failed:
@@ -176,7 +177,7 @@ def matrix(title: str, intro: str, items, junit: dict, by_id: dict) -> list[str]
         elif not ok_cases and not ci:
             sit = "**Sem evidência**"
         elif not_verifiable:
-            sit = "Aprovado em simulação; hardware real indisponível no CI"
+            sit = "Comportamento verificado em simulação; **não verificável** com hardware real no CI"
         else:
             sit = "Aprovado"
         lines.append(f"| {num} | {name} | {len(ok_cases)}/{len(cases)} | {ci_txt} | {sit} |")
@@ -245,11 +246,24 @@ def perf_section(perf: dict | None) -> list[str]:
     return out + [""]
 
 
+def v_status(r: dict) -> str:
+    """Situação de uma verificação: resultados antigos (sem ``status``) são reclassificados pelo detalhe."""
+    if r.get("status"):
+        return r["status"]
+    if not r["ok"]:
+        return "falhou"
+    return "nao_verificavel" if "NÃO VERIFICÁVEL" in (r.get("detail") or "") else "aprovado"
+
+
+V_LABEL = {"aprovado": "Aprovado", "nao_verificavel": "**Não verificável neste ambiente**", "falhou": "**FALHOU**"}
+
+
 def validation_report(version: str, commit: str, build_date: str, installer: Path,
                       digest: str, junit: dict, validation: dict, env_text: str,
                       perf: dict | None = None) -> str:
     v_results = validation["results"]
-    v_ok = sum(1 for r in v_results if r["ok"])
+    v_ok = sum(1 for r in v_results if v_status(r) == "aprovado")
+    v_nv = sum(1 for r in v_results if v_status(r) == "nao_verificavel")
     t = junit["totals"]
     lines = [
         "# Relatório de Validação",
@@ -266,7 +280,8 @@ def validation_report(version: str, commit: str, build_date: str, installer: Pat
         "|---|---|",
         f"| Testes automatizados (pytest) | {t['aprovado']} aprovados, {t['falhou']} falhas, "
         f"{t['erro']} erros, {t['ignorado']} ignorados (total {junit['total']}) |",
-        f"| Validação do executável e do instalador | {v_ok} de {len(v_results)} verificações aprovadas |",
+        f"| Validação do executável e do instalador | {v_ok} aprovadas, {v_nv} não verificáveis neste ambiente, "
+        f"{len(v_results) - v_ok - v_nv} falhas (de {len(v_results)}) |",
         f"| Instalador | `{installer.name}` ({mb(installer)}) |",
         f"| SHA-256 do instalador | `{digest}` |",
         "",
@@ -284,7 +299,7 @@ def validation_report(version: str, commit: str, build_date: str, installer: Pat
               "| ID | Área | Verificação | Resultado | Evidência |", "|---|---|---|---|---|"]
     for r in v_results:
         lines.append(f"| {r['id']} | {r['area']} | {md_escape(r['name'])} | "
-                     f"{'Aprovado' if r['ok'] else '**FALHOU**'} | {md_escape(r['detail'])} |")
+                     f"{V_LABEL[v_status(r)]} | {md_escape(r['detail'])} |")
     by_id = {r["id"]: r for r in v_results}
     lines += matrix("## 3A. Matriz dos 30 testes do licenciamento comercial por assinatura",
                     "Prompt consolidado, seção 22. License Manager e License Server reais (HTTPS local com "
@@ -585,7 +600,8 @@ def main() -> int:
     summary = {"installer": installer.name, "installer_sha256": digest, **lm, **ls,
                "installer_size": installer.stat().st_size, "zip": zip_path.name,
                "zip_sha256": sha256(zip_path), "zip_size": zip_path.stat().st_size,
-               "tests": junit["totals"], "validation_passed": sum(r["ok"] for r in validation["results"]),
+               "tests": junit["totals"], "validation_passed": sum(v_status(r) == "aprovado" for r in validation["results"]),
+               "validation_not_verifiable": sum(v_status(r) == "nao_verificavel" for r in validation["results"]),
                "validation_total": len(validation["results"]), "phase": PHASE}
     (a.out / "release-summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
     print(json.dumps(summary, indent=2))

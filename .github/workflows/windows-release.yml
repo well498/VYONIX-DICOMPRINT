@@ -172,7 +172,7 @@ jobs:
           License Server (servidor central): VYONIX_License_Server.exe — SHA-256 $($s.ls_exe_sha256)
           O License Manager e o License Server são administrativos: NÃO distribuir aos clientes.
           Testes automatizados: $($s.tests.aprovado) aprovados, $($s.tests.falhou) falhas, $($s.tests.ignorado) ignorados
-          Validação do executável/instalador: $($s.validation_passed)/$($s.validation_total)
+          Validação do executável/instalador: $($s.validation_passed) aprovadas, $($s.validation_not_verifiable) não verificáveis neste ambiente (ex.: TPM real), de $($s.validation_total)
           Commit: ${{ github.sha }}
           "@
           # Uma release publicada nunca é substituída por um push comum (os SHA-256 já entregues continuam
