@@ -167,11 +167,59 @@ class ViewerE2E(unittest.TestCase):
         self.assertNotEqual(before, after, "a navegação entre imagens não mudou o viewport")
         self.shot(page, "navegacao")
 
+        # Ferramentas básicas (sem validação clínica): cada ação deve mudar o que está desenhado
+        self.check_tools(page, canvas)
+
         # Auditoria da abertura e política de conteúdo
         from vyonix.audit import service as audit
         with db.session(self.tenant) as s:
             self.assertTrue(audit.query(s, action="pacs.study.open"))
         self.assertEqual([p for p in problems if "Content Security Policy" in p], [], problems)
+
+    def drag(self, page, canvas, dx: int, dy: int) -> None:
+        b = canvas.bounding_box()
+        x, y = b["x"] + b["width"] / 2, b["y"] + b["height"] / 2
+        page.mouse.move(x, y)
+        page.mouse.down()
+        for k in range(1, 11):
+            page.mouse.move(x + dx * k / 10, y + dy * k / 10)
+        page.mouse.up()
+        page.wait_for_timeout(800)
+
+    def tool(self, page, names: list[str]):
+        """Botão da barra do OHIF pelo ``data-cy`` (nomes da versão 3.x); falha com a lista do que existe."""
+        for n in names:
+            loc = page.locator(f'[data-cy="{n}"]').first
+            if loc.count():
+                return loc
+        found = page.eval_on_selector_all("[data-cy]", "els => els.map(e => e.getAttribute('data-cy'))")
+        self.fail(f"Botão {names} não encontrado na barra do Viewer. data-cy disponíveis: {sorted(set(found))[:80]}")
+
+    def check_tools(self, page, canvas) -> None:
+        steps = []
+        before = canvas.screenshot()
+        self.drag(page, canvas, 120, 60)                               # janela/nível: ferramenta padrão
+        after = canvas.screenshot()
+        self.assertNotEqual(before, after, "arrastar com a ferramenta padrão (janela/nível) não mudou a imagem")
+        steps.append("janela/nível")
+        self.tool(page, ["Zoom"]).click()
+        before = canvas.screenshot()
+        self.drag(page, canvas, 0, -120)
+        after = canvas.screenshot()
+        self.assertNotEqual(before, after, "zoom não mudou a imagem")
+        steps.append("zoom")
+        for item, label in (("invert", "inverter"), ("rotate-right", "girar")):
+            # "Mais ferramentas" (OHIF 3.13: seção MoreTools do toolbarButtonsCustomization)
+            before = canvas.screenshot()                              # antes de abrir o menu (que pode cobrir a imagem)
+            self.tool(page, ["MoreTools-split-button-secondary"]).click()
+            self.tool(page, [item]).click()
+            page.keyboard.press("Escape")                             # garante o menu fechado antes de comparar
+            page.mouse.move(1, 1)
+            page.wait_for_timeout(800)
+            self.assertNotEqual(before, canvas.screenshot(), f"{label} não mudou a imagem")
+            steps.append(label)
+        self.shot(page, "ferramentas")
+        self.tools_checked = steps
 
     def wait(self, locator, what: str, timeout: int = 60000) -> None:
         from playwright.sync_api import TimeoutError as PwTimeout
