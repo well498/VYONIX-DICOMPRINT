@@ -86,6 +86,7 @@ class CoreDatabaseStep(Step):
                 urls = role_urls(ctx)
                 out["migrations"] = migrate.current(urls["owner"])
                 out["heads"] = migrate.heads(PREFIX)
+                out["up_to_date"] = migrate.up_to_date(out["migrations"], PREFIX)
                 from vyonix.db.session import Database
                 from vyonix.tenancy import service as tenancy
                 d = Database(urls["app"], service_url=urls["service"])
@@ -107,7 +108,7 @@ class CoreDatabaseStep(Step):
     def check(self, ctx: Context) -> bool:
         o = self.observe(ctx)
         return bool(o.get("config_current") and o.get("database") and o.get("organization")
-                    and o.get("migrations") and sorted(o["migrations"]) == sorted(o.get("heads") or []))
+                    and o.get("migrations") and o.get("up_to_date"))
 
     def capture(self, ctx: Context) -> dict:
         o = self.observe(ctx)

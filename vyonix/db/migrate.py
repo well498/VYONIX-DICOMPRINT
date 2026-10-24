@@ -45,3 +45,36 @@ def heads(prefix: str = "vyonix") -> list[str]:
     """Revisões finais conhecidas por esta versão do código (o banco deve estar nelas)."""
     from alembic.script import ScriptDirectory
     return list(ScriptDirectory.from_config(alembic_config("", prefix)).get_heads())
+
+
+def applied(current_revs: list[str], prefix: str = "vyonix") -> set[str]:
+    """Todas as revisões já aplicadas, a partir das gravadas na tabela de versões.
+
+    O Alembic grava só as revisões "de ponta": uma revisão que é ancestral ou dependência (``depends_on``)
+    de outra aplicada não aparece (ex.: com ``pacs_0001`` dependendo de ``core_0001``, a tabela tem só
+    ``pacs_0001``). Aqui o grafo é percorrido pelas revisões anteriores e pelas dependências."""
+    from alembic.script import ScriptDirectory
+    script = ScriptDirectory.from_config(alembic_config("", prefix))
+    seen: set[str] = set()
+    stack = list(current_revs)
+    while stack:
+        rid = stack.pop()
+        if not rid or rid in seen:
+            continue
+        rev = script.get_revision(rid)
+        if rev is None:
+            continue
+        seen.add(rev.revision)
+        for attr in (rev.down_revision, rev.dependencies):
+            if not attr:
+                continue
+            for x in ((attr,) if isinstance(attr, str) else attr):
+                r = script.get_revision(x)          # aceita identificador ou rótulo de ramo
+                if r is not None:
+                    stack.append(r.revision)
+    return seen
+
+
+def up_to_date(current_revs: list[str], prefix: str = "vyonix") -> bool:
+    """O banco tem todas as revisões finais desta versão do código (nada a migrar)."""
+    return bool(current_revs) and set(heads(prefix)) <= applied(current_revs, prefix)
