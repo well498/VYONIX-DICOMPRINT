@@ -38,7 +38,7 @@ jobs:
       - name: Dependências Python
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements-platform-dev.txt
+          pip install -c constraints-security.txt -r requirements-platform-dev.txt
           python -m playwright install --with-deps chromium
       - name: Versão do PostgreSQL
         run: echo "::notice title=PostgreSQL::$(psql "$VYONIX_TEST_ADMIN_URL" -tAc 'SHOW server_version')"

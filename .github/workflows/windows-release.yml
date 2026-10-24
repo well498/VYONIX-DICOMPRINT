@@ -53,7 +53,7 @@ jobs:
           "TOOLS_PY=$tools" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
           & $tools -m pip install -q -r requirements-tools.txt
           python -m pip install --upgrade pip setuptools wheel
-          python -m pip install -r requirements-dev.txt
+          python -m pip install -c constraints-security.txt -r requirements-dev.txt
           New-Item -ItemType Directory -Force dist\validation, dist\perf | Out-Null
           "Python $(python -c 'import sys; print(sys.version.split()[0])')" | Out-File dist\validation\env.txt -Encoding utf8
           python -m pip freeze | Out-File dist\validation\env.txt -Append -Encoding utf8
@@ -130,6 +130,8 @@ jobs:
       - name: Validar executável e instalador
         run: |
           $inst = (Get-ChildItem dist\installer\*.exe | Select-Object -First 1).FullName
+          & $env:TOOLS_PY tools/bundle_vuln_check.py dist\sbom\vyonix-dicom-print.vulnerable.json dist\Vyonix
+          if ($LASTEXITCODE -ne 0) { exit 1 }
           & $env:TOOLS_PY tools/scan_private_keys.py dist\Vyonix dist\installer dist\installer-lm dist\VYONIX_License_Manager.exe dist\VYONIX_License_Server.exe | Tee-Object dist\validation\private-key-scan.txt
           if ($LASTEXITCODE -ne 0) { exit 1 }
           .\tools\ci_validate.ps1 -Installer $inst -Version "${{ steps.ver.outputs.APP_VERSION }}" -OutDir dist\validation `

@@ -35,7 +35,7 @@ jobs:
       - name: Dependências
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements-platform.txt pyinstaller==6.16.0 pypdf pytest
+          pip install -c constraints-security.txt -r requirements-platform.txt pyinstaller==6.16.0 pypdf pytest
 
       - name: SBOM e vulnerabilidades conhecidas
         run: |
@@ -97,6 +97,9 @@ jobs:
 
       - name: Nenhuma chave privada no pacote
         run: python tools/scan_private_keys.py dist/VyonixPlatform dist/installer-platform
+
+      - name: Dependências vulneráveis no pacote distribuído
+        run: python tools/bundle_vuln_check.py dist/sbom/vyonix-platform.vulnerable.json dist/VyonixPlatform
 
       - name: DICOM Print (release publicada, para o teste de coexistência)
         env:

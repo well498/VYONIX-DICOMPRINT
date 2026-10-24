@@ -55,10 +55,40 @@ def main(product_python: str, out_dir: str, name: str) -> int:
     print(f"::notice title=SBOM {name}::{components} componentes no SBOM CycloneDX; {len(pinned)} pacotes "
           f"auditados; {len(vulns)} vulnerabilidade(s) conhecida(s)"
           + (f"; não auditados: {', '.join(skipped)}" if skipped else ""))
+    dependents = _dependents(product_python, sorted({p for p, _v, _x in vulns}))
     for pkg, ver, v in vulns[:40]:
         fix = ", ".join(v.get("fix_versions") or []) or "sem correção publicada"
-        print(f"::warning title=Vulnerabilidade {pkg} {ver}::{esc(v.get('id', '?') + ' — corrigida em: ' + fix)}")
+        who = ", ".join(dependents.get(pkg.lower(), [])) or "nenhum pacote do ambiente (instalado diretamente ou pela imagem)"
+        print(f"::warning title=Vulnerabilidade {pkg} {ver}::{esc(v.get('id', '?') + ' - corrigida em: ' + fix + ' - exigido por: ' + who)}")
+    (out / f"{name}.vulnerable.json").write_text(json.dumps(
+        {"packages": sorted({p for p, _v, _x in vulns}), "dependents": dependents}, ensure_ascii=False, indent=1),
+        encoding="utf-8")
     return 0
+
+
+_DEPENDENTS = r"""
+import json, re, sys
+from importlib import metadata
+want = {w.lower().replace("_", "-") for w in sys.argv[1:]}
+out = {w: [] for w in want}
+for d in metadata.distributions():
+    for req in d.requires or []:
+        n = re.split(r"[ ;<>=!~\[(]", req, 1)[0].lower().replace("_", "-")
+        if n in want and "extra ==" not in req:
+            out[n].append(f"{d.metadata['Name']} {d.version}")
+print(json.dumps(out))
+"""
+
+
+def _dependents(product_python: str, packages: list[str]) -> dict[str, list[str]]:
+    """Quem, no ambiente do produto, exige cada pacote vulnerável (para saber de onde ele vem)."""
+    if not packages:
+        return {}
+    r = subprocess.run([product_python, "-c", _DEPENDENTS, *packages], capture_output=True, text=True)
+    try:
+        return json.loads(r.stdout)
+    except ValueError:
+        return {}
 
 
 if __name__ == "__main__":
