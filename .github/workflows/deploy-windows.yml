@@ -16,13 +16,31 @@ concurrency:
   cancel-in-progress: true
 
 env:
+  OHIF_TAG: v3.13.13
   PG_VERSION: "17.11"
   ORTHANC_VERSION: "1.13.0"
   ORTHANC_SHA256: ""
   PG_URLS: "https://get.enterprisedb.com/postgresql/postgresql-17.11-1-windows-x64-binaries.zip https://sbp.enterprisedb.com/getfile.jsp?fileid=1260616"
 
 jobs:
+  viewer:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Compilar o Viewer (OHIF ${{ env.OHIF_TAG }})
+        run: tools/build_viewer.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: viewer-dist-deploy
+          path: viewer/dist/
+          retention-days: 3
+
   deploy:
+    needs: viewer
     runs-on: windows-2022
     timeout-minutes: 120
     steps:
@@ -81,6 +99,17 @@ jobs:
           if ($v -notmatch [regex]::Escape($env:PG_VERSION)) { throw "versão inesperada: $v" }
           "PostgreSQL: $v; zip SHA-256 $sha" | Tee-Object -FilePath "dist\VyonixPlatform\pgsql\ORIGEM.txt"
           Write-Host "::notice title=PostgreSQL embutido::$v (zip SHA-256 $sha)"
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: viewer-dist-deploy
+          path: dist/VyonixPlatform/_internal/viewer
+      - name: Viewer no pacote
+        shell: pwsh
+        run: |
+          if (-not (Test-Path dist\VyonixPlatform\_internal\viewer\index.html)) { throw "Viewer ausente do pacote" }
+          $n = (Get-ChildItem dist\VyonixPlatform\_internal\viewer -Recurse -File).Count
+          Write-Host "::notice title=Viewer no pacote::$n arquivos; $(Get-Content dist\VyonixPlatform\_internal\viewer\ORIGEM.txt)"
 
       - name: Orthanc ${{ env.ORTHANC_VERSION }} (binário oficial, só o núcleo, sem plugins)
         shell: pwsh

@@ -514,6 +514,19 @@ $ap = $r | Get-NetFirewallApplicationFilter
         assert r["refused_without_license"], "habilitou sem licença"
         return json.dumps(r, ensure_ascii=False)[:800]
 
+    @check("2.5", "VYONIX VIEWER (OHIF) servido pelo Core instalado, com política de conteúdo própria")
+    def _():
+        port = state.get("port", 8444)
+        api = Api(port)
+        req = urllib.request.Request(api.base.replace("/api/v1", "") + "/viewer/", headers={"User-Agent": "CI"})
+        with api.op.open(req, timeout=20) as r:
+            body, csp = r.read().decode("utf-8", "replace"), r.headers.get("Content-Security-Policy", "")
+        assert r.status == 200 and "<html" in body.lower(), r.status
+        assert "'wasm-unsafe-eval'" in csp and "'sha256-" in csp and "frame-ancestors 'none'" in csp, csp
+        assert "'unsafe-inline'" not in csp.split("script-src", 1)[1].split(";", 1)[0], csp
+        n = csp.count("'sha256-")
+        return f"/viewer/ 200; CSP com {n} hash(es) de script"
+
     @check("2.9", "Ativação do módulo PACS: motor DICOM (Orthanc sem plugins) como serviço, Core configurado e habilitado")
     def _():
         sh([sys.executable, ROOT / "tools" / "ci_activation.py", "--out", OUT, "--module", "pacs"], timeout=900,

@@ -42,27 +42,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
-      - name: OHIF ${{ env.OHIF_TAG }} (código-fonte oficial)
-        run: |
-          git clone --depth 1 --branch "$OHIF_TAG" https://github.com/OHIF/Viewers.git "$RUNNER_TEMP/ohif"
-          cd "$RUNNER_TEMP/ohif"
-          echo "::notice title=OHIF::$(git rev-parse HEAD) ($OHIF_TAG); licença: $(head -1 LICENSE)"
-          cp "$GITHUB_WORKSPACE/viewer/vyonix.js" platform/app/public/config/vyonix.js
-          corepack enable
-          pnpm install --frozen-lockfile
-      - name: Compilar o Viewer
-        working-directory: ${{ runner.temp }}/ohif
-        env:
-          NODE_ENV: production
-          APP_CONFIG: config/vyonix.js
-          PUBLIC_URL: /viewer/
-          QUICK_BUILD: "false"
-        run: |
-          cd platform/app
-          npx cross-env NODE_OPTIONS=--max-old-space-size=12288 rspack build --config .webpack/webpack.pwa.js
-          mkdir -p "$GITHUB_WORKSPACE/viewer/dist"
-          cp -r dist/. "$GITHUB_WORKSPACE/viewer/dist/"
-          echo "::notice title=Viewer::$(du -sh "$GITHUB_WORKSPACE/viewer/dist" | cut -f1), $(find "$GITHUB_WORKSPACE/viewer/dist" -type f | wc -l) arquivos"
+      - name: Compilar o Viewer (OHIF ${{ env.OHIF_TAG }}, código-fonte oficial)
+        run: tools/build_viewer.sh
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
