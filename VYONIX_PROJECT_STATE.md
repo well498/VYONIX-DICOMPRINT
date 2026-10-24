@@ -207,4 +207,4 @@ laboratório (rede isolada, impressora física e modalidades de teste).
 | C-FIND/C-MOVE (Study Root) pelo Core, nós DICOM por organização, porta 4243 pelo DEPLOY | platform run 40092073102 (131/0/0, inclui `test_pacs_qr.py`); deploy-windows run 40092073108: 28/0/1; Windows release run 40092073124: sucesso |
 | Medição de distância no Viewer | viewer run 40092073131 (3/3) |
 
-**Ponto de retomada:** confirmar a aceitação 2.9 estendida (porta 4243 recusando estação não cadastrada) no run do commit seguinte.
+Aceitação 2.9 estendida confirmada no Windows (run 40094435865, 2ª tentativa: 28/0/1): "consulta DICOM 4243 escutando e recusando estação não cadastrada". A 1ª tentativa falhou no download do Orthanc (site indisponível; mesmo SHA-256 na 2ª); o passo passou a tentar 3 vezes e a anotar o motivo (commit `c5ee2bd`).
