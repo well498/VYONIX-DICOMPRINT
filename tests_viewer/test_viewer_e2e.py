@@ -38,6 +38,26 @@ def setUpModule():
     db = require_db()
 
 
+class OutageSwitch:
+    """Interruptor de queda em volta do motor REAL (Orthanc): com ``down`` ligado, toda chamada falha como falharia
+    com o motor parado. Só para o teste de falha de comunicação."""
+
+    def __init__(self, real) -> None:
+        self.real, self.down, self.name = real, False, real.name
+
+    def __getattr__(self, attr):
+        fn = getattr(self.real, attr)
+        if not callable(fn):
+            return fn
+
+        def call(*a, **kw):
+            if self.down:
+                from vyonix.pacs.backend import BackendUnavailable
+                raise BackendUnavailable("motor DICOM parado (teste de queda)")
+            return fn(*a, **kw)
+        return call
+
+
 def free_port() -> int:
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
@@ -83,10 +103,17 @@ class ViewerE2E(unittest.TestCase):
                                                        pixel_spacing=(0.5, 0.5),
                                                        patient_id=cls.patient_id, patient_name="VIEWER^SINTETICO"),
                             actor="teste")
+            for i in range(1, 4):                              # segunda série: outro conteúdo (gradiente invertido)
+                pacs.ingest(s, cls.backend, make_dicom(study=cls.study, series=uid(n, 7, 2), sop=uid(n, 7, 2, i),
+                                                       rows=64, cols=64, fill=3000 - i * 400, instance_number=i,
+                                                       series_number=2, pixel_spacing=(0.5, 0.5),
+                                                       patient_id=cls.patient_id, patient_name="VIEWER^SINTETICO"),
+                            actor="teste")
         cfg = Config(data_dir=cls.tmp / "data", default_organization=cls.code)
         cfg.data_dir.mkdir(parents=True)
         plat = build(cfg, licensing=lic, db=db)
-        plat.options["pacs_backend"] = cls.backend
+        cls.switch = OutageSwitch(cls.backend)
+        plat.options["pacs_backend"] = cls.switch
         cert, key = ensure_tls(cfg)
         cls.port = free_port()
         cls.server = uvicorn.Server(uvicorn.Config(create_app(plat, viewer_dist=DIST), host="127.0.0.1",
@@ -179,6 +206,77 @@ class ViewerE2E(unittest.TestCase):
         with db.session(self.tenant) as s:
             self.assertTrue(audit.query(s, action="pacs.study.open"))
         self.assertEqual([p for p in problems if "Content Security Policy" in p], [], problems)
+
+    def session_page(self):
+        ctx = self.browser.new_context(ignore_https_errors=True, viewport={"width": 1600, "height": 900})
+        self.addCleanup(ctx.close)
+        self.diag = []
+        page = ctx.new_page()
+        page.on("console", lambda m: self.diag.append(f"console.{m.type}: {m.text[:300]}")
+                if m.type in ("error", "warning") else None)
+        page.on("pageerror", lambda e: self.diag.append(f"pageerror: {str(e)[:300]}"))
+        page.on("response", lambda r: self.diag.append(f"HTTP {r.status} {r.request.method} {r.url[:200]}")
+                if r.status >= 400 else None)
+        r = ctx.request.post(self.base + "/api/v1/auth/login", data={"username": "admin", "password": ADMIN_PW})
+        self.assertEqual(r.status, 200, r.text())
+        self.page = page
+        return page
+
+    def open_study(self, page):
+        page.goto(f"{self.base}/viewer/viewer?StudyInstanceUIDs={self.study}", wait_until="domcontentloaded")
+        canvas = page.locator("canvas.cornerstone-canvas").first
+        self.wait(canvas, "viewport do estudo", 90000)
+        page.wait_for_function("""() => {
+            const c = document.querySelector('canvas.cornerstone-canvas');
+            return c && c.width > 0 && c.height > 0;
+        }""", timeout=60000)
+        page.wait_for_timeout(3000)
+        return canvas
+
+    def test_multi_series_navigation(self):
+        """Estudo com duas séries: o painel lista as duas; carregar cada série muda o viewport."""
+        page = self.session_page()
+        canvas = self.open_study(page)
+        thumbs = page.locator('[data-cy="study-browser-thumbnail"], [data-cy="study-browser-thumbnail-no-image"]')
+        self.wait(thumbs.nth(1), "duas séries no painel do estudo")
+        self.assertEqual(thumbs.count(), 2)
+        series1 = canvas.screenshot()
+        page.locator('[data-series="2"]').first.dblclick()
+        page.wait_for_timeout(3000)
+        series2 = canvas.screenshot()
+        self.assertNotEqual(series1, series2, "carregar a série 2 não mudou o viewport")
+        self.assertGreater(self.distinct_levels(series2), 4, "série 2 sem imagem desenhada")
+        page.locator('[data-series="1"]').first.dblclick()
+        page.wait_for_timeout(3000)
+        self.assertNotEqual(canvas.screenshot(), series2, "voltar para a série 1 não mudou o viewport")
+        self.shot(page, "duas-series")
+
+    def test_engine_outage_and_recovery(self):
+        """Motor parado: a lista de estudos continua (vem do índice); abrir o estudo recebe 503 sem quebrar a página;
+        motor de volta: o estudo abre e a imagem é desenhada."""
+        page = self.session_page()
+        self.switch.down = True
+        try:
+            page.goto(self.base + "/viewer/", wait_until="domcontentloaded")
+            self.wait(page.get_by_text(self.patient_id, exact=False).first, "lista de estudos com o motor parado")
+            statuses = []
+            page.on("response", lambda r: statuses.append(r.status) if "/metadata" in r.url else None)
+            page.goto(f"{self.base}/viewer/viewer?StudyInstanceUIDs={self.study}", wait_until="domcontentloaded")
+            for _ in range(60):
+                if 503 in statuses:
+                    break
+                page.wait_for_timeout(500)
+            self.assertIn(503, statuses, "metadados com o motor parado deveriam responder 503")
+            # a página continua de pé (erros internos do OHIF ficam no diagnóstico; o código do OHIF não é alterado)
+            self.assertGreater(page.evaluate("document.querySelector('#root')?.childElementCount ?? 0"), 0,
+                               "o Viewer deixou de ser exibido com o motor parado\n" + "\n".join(self.diag[-20:]))
+            self.shot(page, "motor-parado")
+        finally:
+            self.switch.down = False
+        page.reload(wait_until="domcontentloaded")
+        canvas = self.open_study(page)
+        self.assertGreater(self.distinct_levels(canvas.screenshot()), 4, "sem imagem depois da volta do motor")
+        self.shot(page, "motor-de-volta")
 
     def drag(self, page, canvas, dx: int, dy: int) -> None:
         b = canvas.bounding_box()
