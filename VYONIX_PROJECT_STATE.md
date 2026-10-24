@@ -51,7 +51,7 @@ React 19 + TypeScript (esbuild), ReportLab, cryptography (Ed25519), PyInstaller,
 | BKL-01 | ADR-0012 revisada e aceita (sem plugins AGPL). Fica a revisão jurídica da distribuição do Orthanc (BLK-07) | PACS | Essencial | — | Decisão registrada | Licença | Concluída (revisão jurídica em BLK-07) | Sim (BLK-07) | — |
 | BKL-02 | Publicar a revisão r6 do DICOM Print (alterar `RELEASE_TAG`) | Print | Alta | CI verde de r6 | Release com SHA-256 e `Vyonix_Setup.exe` | Baixo | Pronta | Sim (publicação) | Release r5 continua disponível |
 | BKL-03 | SBOM CycloneDX + `pip-audit` no CI (feito); falta `npm audit` da interface web | Segurança | Essencial | — | SBOM anexado ao build; vulnerabilidades listadas | Baixo | Parcial | Não | Remover o passo |
-| BKL-04 | Módulo PACS. **Feito:** `PacsBackend`/Orthanc REST, índice com RLS (`pacs_0001`), STOW/QIDO/WADO-RS, SHA-256 na entrada e na saída, sincronização de C-STORE (modo edge), auditoria, evento. **Falta:** instalação do Orthanc pelo DEPLOY, C-FIND/C-MOVE/C-GET pelo CORE, roteamento por AE Title no modo cloud, MWL/MPPS, declaração de conformidade | PACS | Essencial | — | Testes com Orthanc real no CI; DEPLOY no Windows | Médio | Em andamento | — | Desabilitar o módulo (dados preservados); `alembic downgrade pacs@base` |
+| BKL-04 | Módulo PACS. **Feito:** `PacsBackend`/Orthanc REST, índice com RLS (`pacs_0001`), STOW/QIDO/WADO-RS, SHA-256 na entrada e na saída, sincronização de C-STORE (modo edge), auditoria, evento, motor como serviço e ativação pelo DEPLOY (validação no Windows em andamento). **Falta:** C-FIND/C-MOVE/C-GET pelo CORE, roteamento por AE Title no modo cloud, MWL/MPPS, declaração de conformidade | PACS | Essencial | — | Testes com Orthanc real no CI; DEPLOY no Windows | Médio | Em andamento | — | Desabilitar o módulo (dados preservados); `alembic downgrade pacs@base` |
 | BKL-05 | Viewer OHIF 3.13 servido pelo CORE (mesma origem, cookie da sessão) apontando para `/api/v1/pacs/dicomweb` | Viewer | Essencial | BKL-04 (API pronta) | Abrir estudo sintético no Chromium (Playwright) e navegar entre imagens | Médio | Próxima — o build do OHIF precisa ser feito no CI (o registro npm não é alcançável neste ambiente) | — | Desativar o módulo |
 | BKL-06 | Qualidade dos estudos. **Feito:** recusa de arquivo não DICOM, truncado, sem UIDs, UID inválido, sem Patient ID, conteúdo divergente com o mesmo SOP UID, Patient ID divergente no mesmo estudo; reenvio idempotente; corrupção no motor detectada na recuperação. **Falta:** transferência incompleta (série esperada × recebida), estudos sem pedido no painel | PACS | Recomendada | BKL-04 | Testes com estudos sintéticos defeituosos | Baixo | Parcial | — | — |
 | BKL-07 | Assinatura de código dos instaladores | Segurança | Recomendada | Certificado (pago) | Instaladores assinados verificados no CI | Baixo | Aguarda aprovação | Sim (custo) | — |
@@ -117,3 +117,37 @@ feito antes de migrar — a tabela não altera dados existentes).
 
 **Próxima tarefa:** BKL-02 (publicar r6) e BKL-01 (aprovar ADR-0012) dependem de aprovação; sem aprovação, seguir com
 `npm audit` (BKL-03) e com os itens de usabilidade da Entrega 1 que a matriz não cobre (revisão visual em monitor real).
+
+## 10. Registro da sessão de 2026-10-24 (Comando Executivo e Comando de Retomada)
+
+**Entregas desta sessão:**
+
+| Prioridade | Entrega | Arquivos | Evidência |
+|---|---|---|---|
+| 1 — chaves | Ferramenta do passo 4 do incidente (aplica chave pública nova + restrição da comprometida em `keys.py`, valida e recusa material privado) | `tools/apply_key_rotation.py` | `tests/test_key_rotation_tool.py` (License Manager real: legítima aceita, forjada recusada, 9 recusas de entrada) |
+| 2 — vulnerabilidades | `filelock` 4.1.1 vem do `pipx` da imagem do runner, **não** entra no pacote distribuído; atualizado no ambiente de build dos 5 pipelines | `constraints-security.txt`, workflows | Windows release run 40057755638: "filelock NÃO está no pacote distribuído"; SBOM do Print 41 componentes, 0 vulnerabilidades (run 40058503963) |
+| 2 — varredura de chaves | Falso positivo em `certifi/cacert.pem` (o pacote da plataforma passou a levar httpx) corrigido; caminhos acusados viram anotação | `tools/scan_private_keys.py` | `tests/test_scan_private_keys.py`; varredura do `cacert.pem` real sem acusação |
+| 3 — r6 | Notas da revisão 6, rótulo "Release candidata à homologação — não liberada para uso clínico" na release e no LEIA-ME, etapa do programa atualizada. **Publicação não feita** (BLK-05) | `docs/release/Notas_da_Versao.md`, `windows-release.yml`, `app/__init__.py`, `tools/make_release.py` | Windows release run 40058503963 (commit `5182d87`): sucesso; TPM "não verificável"; release r5 não substituída |
+| 5 — PACS | Primeira entrega vertical (receber → validar → armazenar → indexar → pesquisar → recuperar → metadados/frames → auditar); qualidade do estudo | `vyonix/pacs/`, `vyonix/api/routes_pacs.py`, `pacs_0001` | platform run 40058503989: **94 testes, 0 pulados, 0 falhas**, PostgreSQL 17.11 e Orthanc real 1.12.2 (pacote Ubuntu) |
+| 5 — PACS no servidor | Motor Orthanc 1.13.0 oficial como serviço supervisionado `VyonixPacsEngine`; ativação pelo DEPLOY (configuração, ACL, serviço, firewall da porta DICOM, Core) | `vyonix/pacs/engine_host.py`, `vyonix_deploy/steps/pacs.py`, `deploy-windows.yml` | `tests_deploy/test_pacs_module.py` (4, local); `tests_platform/test_pacs_engine.py` (binário real, CI); aceitação 2.9 do PACS no Windows (CI) |
+| 5 — Viewer | OHIF v3.13.13 compilado sem alterações no CI e servido em `/viewer/` com CSP por hash | `vyonix/api/viewer.py`, `viewer/vyonix.js`, `viewer.yml` | Compilação: sucesso (216 MB, 322 arquivos). Ponta a ponta no Chromium: **ainda falhando** (lista de estudos não exibiu o estudo; diagnóstico detalhado adicionado) |
+
+**Ponto de retomada:** conferir os runs do commit `5650627` (platform com `test_pacs_engine`; viewer com diagnóstico do
+navegador; deploy-windows com o `Orthanc.exe` 1.13.0 e a aceitação 2.9 do PACS). Fixar `ORTHANC_SHA256` em
+`deploy-windows.yml` com o valor anotado pelo primeiro download. Corrigir o ponta a ponta do Viewer a partir do
+diagnóstico.
+
+**Comandos de teste locais** (Linux, PostgreSQL 16 em 55432):
+
+```
+. /home/claude/vendor/platform_env.sh && . /home/claude/vendor/env.sh
+export PYTHONPATH=.:$PLATPATH:$VYPATH VYONIX_TEST_ADMIN_URL=postgresql://postgres@127.0.0.1:55432/postgres
+python3 -m unittest discover -s tests -t .            # 317+ testes (26 pulados: Qt/Windows)
+python3 -m unittest discover -s tests_platform -t .   # Orthanc real e OHIF só no CI
+python3 -m unittest discover -s tests_deploy -t .
+```
+
+**Aprovações pendentes (inalteradas):** publicar r6 (BLK-05); rotação da chave e comunicação aos clientes (BLK-01,
+depende do fornecedor gerar `vyx-2026-02`); destruir as cópias de chave da sessão de desenvolvimento (irreversível);
+certificado de assinatura de código (BLK-08); especialista regulatório (BLK-06); revisão jurídica da distribuição do
+Orthanc (BLK-07).
