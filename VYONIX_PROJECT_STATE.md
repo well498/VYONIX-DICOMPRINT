@@ -181,7 +181,7 @@ Windows; `test_dimse_echo_allowed_query_refused` no platform).
 |---|---|
 | **Ativação do PACS aprovada no Windows** (2.9): Orthanc 1.13.0 como serviço, sem plugins, Core alcançando o motor, porta DICOM 4242 aberta; **Viewer servido pelo Core instalado** com CSP por hash (2.5) | deploy-windows run 40087337898 |
 | Correções no caminho: serviço antes das ACLs; código de direito `RX` (o `R` só falhava no Windows) + teste de códigos conhecidos | runs 40059704391 e 40085298672 (falhas encontradas) |
-| Com o PACS ativado, a atualização falhou (código 5: o motor mantinha `VyonixPlatform.exe` em execução); instalador passa a parar o `VyonixPacsEngine`, reparo/atualização o reiniciam, desinstalação o remove | run 40087337898; `tests_deploy/test_pacs_module.py`; confirmação no Windows pendente (commit `d0e0a29`) |
+| Com o PACS ativado, a atualização falhou (código 5: o motor mantinha `VyonixPlatform.exe` em execução); instalador passa a parar o `VyonixPacsEngine`, reparo/atualização o reiniciam, desinstalação o remove | **deploy-windows run 40089461650: aceitação 28 aprovados, 0 reprovados, 1 não executado** (impressão de teste no DICOM Print — exige impressora física) |
 | C-STORE no modo cloud por AE Title (BLK-11 resolvido) | `tests_platform/test_pacs.py::CloudRouting` |
 | Tour guiado do OHIF desligado | `viewer/vyonix.js`; ponta a ponta no Chromium |
 
@@ -192,6 +192,7 @@ ferramentas janela/nível, zoom, inverter e girar).
 
 | Entrega | Evidência |
 |---|---|
+| Aceitação completa no Windows com o PACS ativado (instalar, ativar PACS, Viewer, atualizar, reparar, restaurar, desinstalar) | deploy-windows run 40089461650: 28/0/1; Windows release run 40089461683: sucesso |
 | `2598bc9` e `7d09fcb` confirmados no remoto (ancestrais de `d0e0a29`, head remota); viewer run 40089461632 aprovado depois de `7d09fcb` — o tour não bloqueia mais o zoom | `gh api compare`; run 40089461632 (3/3) |
 | Isolamento do PACS cloud: 8 cenários de ataque e erro; encontrou e corrigiu AE Title com espaços de preenchimento indo para a quarentena | `tests_platform/test_pacs_cloud_isolation.py` (8/8 local) |
 | Medição de distância (Length) no ponta a ponta do Viewer | `tests_viewer/test_viewer_e2e.py` (confirmação no CI pendente) |
