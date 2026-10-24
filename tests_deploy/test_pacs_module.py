@@ -106,6 +106,23 @@ class PacsModuleTest(unittest.TestCase):
                 self.assertGreater(i, svc_at, st.id)
         self.assertNotIn("pacs.engine.config", [s.id for s in activation_steps(self.ctx, "print")])
 
+    def test_every_permission_uses_a_known_right(self):
+        """Os direitos são traduzidos só no Windows; um código desconhecido reverteu a ativação (run 40085298672)."""
+        from vyonix_deploy.modules import activation_steps
+        from vyonix_deploy.plans import install_steps
+        from vyonix_deploy.steps.files import RIGHTS, AclGrantStep, AclStep
+        steps = activation_steps(self.ctx, "pacs") + install_steps(self.ctx)
+        checked = 0
+        for st in steps:
+            if isinstance(st, AclStep):
+                for acct, right in st.grants:
+                    self.assertIn(right, RIGHTS, f"{st.id}: {acct} → {right}")
+                    checked += 1
+            elif isinstance(st, AclGrantStep):
+                self.assertIn(st.right, RIGHTS, st.id)
+                checked += 1
+        self.assertGreater(checked, 10)
+
     def test_engine_service_refuses_plugins(self):
         from vyonix.pacs.engine_host import EngineProcess
         b = self.binary()

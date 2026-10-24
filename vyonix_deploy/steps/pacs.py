@@ -218,7 +218,7 @@ def engine_steps(ctx: Context) -> list[Step]:
                     service_binpath(p.install_dir, "pacs-engine", p.data_dir)),
         AclStep("pacs.storage", storage_dir(ctx), "imagens do PACS", [(SYSTEM, "F"), (ADMINS, "F"), (svc, "M")]),
         AclStep("pacs.config", config_file(ctx).parent, "configuração do motor DICOM",
-                [(SYSTEM, "F"), (ADMINS, "F"), (svc, "R")]),
+                [(SYSTEM, "F"), (ADMINS, "F"), (svc, "RX")]),
         DirectoryStep("logs", p.data_dir / "logs", "de registros do VYONIX"),
         AclGrantStep("logs.pacs", p.data_dir / "logs", "registros", svc, "M"),
         FirewallRuleStep("pacs-dicom", "PACS DICOM", DICOM_PORT, str(binary(ctx)), ctx.cfg.firewall_sources),
