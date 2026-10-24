@@ -11,3 +11,4 @@ license_admin/keys/
 *.key
 dist/
 web/node_modules
+viewer/dist/

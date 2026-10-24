@@ -82,7 +82,8 @@ def client_ip(request: Request) -> str:
     return request.client.host if request.client else "?"
 
 
-def create_app(plat: Platform, *, cookie_secure: bool = True, web_dist: Path | None = None) -> FastAPI:
+def create_app(plat: Platform, *, cookie_secure: bool = True, web_dist: Path | None = None,
+               viewer_dist: Path | None = None) -> FastAPI:
     app = FastAPI(title="VYONIX Core", version=__version__, docs_url=None, redoc_url=None, openapi_url=None)
     app.state.plat = plat
     app.state.cookie_secure = cookie_secure
@@ -121,6 +122,9 @@ def create_app(plat: Platform, *, cookie_secure: bool = True, web_dist: Path | N
             db_ok = False
         return JSONResponse({"status": "ok" if db_ok else "degraded", "database": db_ok, "version": __version__,
                              "mode": plat.cfg.mode}, status_code=200 if db_ok else 503)
+
+    from vyonix.api import viewer
+    viewer.mount(app, viewer_dist)
 
     dist = web_dist or WEB_DIST
     if (dist / "index.html").exists():

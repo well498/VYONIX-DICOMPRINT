@@ -9,8 +9,8 @@ Registro dos impedimentos (Comando Executivo de continuidade, §4). Um bloqueio 
 * **Aprovação:** depende de decisão expressa do responsável.
 * **Técnico:** a equipe resolve sozinha.
 
-* **Atualizado em:** 2026-10-23
-* **Bloqueios abertos:** 9. **Resolvidos neste dia:** 3.
+* **Atualizado em:** 2026-10-24
+* **Bloqueios abertos:** 11. **Resolvidos:** 3.
 
 ## Abertos
 
@@ -25,6 +25,8 @@ Registro dos impedimentos (Comando Executivo de continuidade, §4). Um bloqueio 
 | BLK-07 | Revisão jurídica da distribuição do Orthanc (GPLv3) com o produto comercial | PACS | Aprovação · médio | Obrigação de licença | Advogado | Responsável | **Sim** (custo externo) | Desenvolvimento e testes internos do PACS (ADR-0012) | Parecer favorável ou decisão de outro motor |
 | BLK-08 | Assinatura de código dos instaladores | Todos | Aprovação · médio | Requer certificado pago | Compra do certificado | Responsável | **Sim** (custo) | Builds sem assinatura | Certificado disponível como segredo do CI |
 | BLK-09 | Credenciais do sandbox do Banco Inter | Comercial | Externo · médio | Sem acesso ao sandbox | Credenciais do Inter | Responsável | Não | Testes com a reprodução local da API | Teste no sandbox registrado |
+| BLK-10 | Build do Viewer OHIF não pode ser feito neste ambiente de desenvolvimento | Viewer | Técnico · médio | O registro npm não é alcançável daqui (DNS) | Job de CI que baixa e compila o OHIF 3.13 | Desenvolvimento | Não | API DICOMweb, testes do PACS, todo o resto | Pacote do OHIF gerado e testado no CI |
+| BLK-11 | Recepção por C-STORE no modo cloud não sabe a organização de destino | PACS | Técnico · médio | O Orthanc não é multiorganização | Mapeamento AE Title → organização no CORE | Desenvolvimento | Não | Modo edge (uma organização por servidor) | Roteamento implementado e testado; até lá a API recusa a sincronização no modo cloud |
 
 ## Resolvidos
 

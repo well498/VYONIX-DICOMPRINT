@@ -56,12 +56,26 @@ jobs:
            "AuthenticationEnabled": true, "RegisteredUsers": {"vyonix": "ci-orthanc-only"}, "Plugins": [],
            "DicomAlwaysAllowStore": true, "DicomCheckCalledAet": false}
           JSON
-          nohup Orthanc "$RUNNER_TEMP/orthanc/ci.json" > "$RUNNER_TEMP/orthanc/log.txt" 2>&1 &
-          for i in $(seq 1 30); do curl -sf -u vyonix:ci-orthanc-only http://127.0.0.1:8042/system && break; sleep 1; done
-          v=$(curl -sf -u vyonix:ci-orthanc-only http://127.0.0.1:8042/system | python -c "import json,sys; j=json.load(sys.stdin); print(j['Version'])")
-          plugins=$(curl -sf -u vyonix:ci-orthanc-only http://127.0.0.1:8042/plugins)
-          echo "::notice title=Orthanc::versão $v; plugins carregados: $plugins"
-          test "$plugins" = "[]"
+          ORTHANC_BIN=$(command -v Orthanc || ls /usr/sbin/Orthanc)
+          echo "::notice title=Orthanc binário::$ORTHANC_BIN $(dpkg-query -W -f='${Version}' orthanc)"
+          nohup "$ORTHANC_BIN" "$RUNNER_TEMP/orthanc/ci.json" > "$RUNNER_TEMP/orthanc/log.txt" 2>&1 &
+          ok=0
+          for i in $(seq 1 60); do
+            if curl -sf -u vyonix:ci-orthanc-only http://127.0.0.1:8042/system > "$RUNNER_TEMP/orthanc/system.json"; then ok=1; break; fi
+            sleep 1
+          done
+          if [ "$ok" != 1 ]; then
+            echo "::error title=Orthanc não respondeu::$(tail -c 1500 "$RUNNER_TEMP/orthanc/log.txt" | tr '\n' ' ')"
+            exit 1
+          fi
+          curl -sf -u vyonix:ci-orthanc-only http://127.0.0.1:8042/plugins > "$RUNNER_TEMP/orthanc/plugins.json"
+          python3 - "$RUNNER_TEMP/orthanc" <<'PY'
+          import json, sys, pathlib
+          d = pathlib.Path(sys.argv[1])
+          sysinfo, plugins = json.loads((d / "system.json").read_text()), json.loads((d / "plugins.json").read_text())
+          print(f"::notice title=Orthanc::versão {sysinfo.get('Version')}, API {sysinfo.get('ApiVersion')}, plugins {plugins}")
+          assert plugins == [], f"plugins carregados: {plugins}"
+          PY
       - name: Versão do PostgreSQL
         run: echo "::notice title=PostgreSQL::$(psql "$VYONIX_TEST_ADMIN_URL" -tAc 'SHOW server_version')"
       - name: Interface web (TypeScript estrito + empacotamento)

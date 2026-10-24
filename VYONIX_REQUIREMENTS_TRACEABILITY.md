@@ -52,10 +52,13 @@ As evidências citadas são reproduzíveis: suítes de teste no repositório e e
 
 | ID | Requisito | Origem | Situação |
 |---|---|---|---|
-| PAC-01 | PACS: recepção, armazenamento, indexação, pesquisa, importação/exportação, distribuição, acesso, auditoria, backup, retenção, monitoramento; C-ECHO/C-STORE/C-FIND/C-MOVE/C-GET/MWL/MPPS/QIDO/WADO/STOW; declaração de conformidade | PM §22 | Aguarda aprovação (ADR-0012: motor e revisão jurídica da AGPL) |
-| VIE-01 | Viewer: séries, miniaturas, W/L, zoom, pan, rotação, inversão, medições, ROI, comparação, sincronização, hanging protocols, metadados, exportação | PM §23 | Aguarda aprovação (ADR-0012) |
+| PAC-01 | PACS: recepção, armazenamento, indexação, pesquisa, importação/exportação, distribuição, acesso, auditoria, backup, retenção, monitoramento; C-ECHO/C-STORE/C-FIND/C-MOVE/C-GET/MWL/MPPS/QIDO/WADO/STOW; declaração de conformidade | PM §22 | **Parcial.** Implementado: recepção (STOW-RS e C-STORE no Orthanc + sincronização no modo edge), validação, armazenamento, índice por organização (RLS), pesquisa QIDO-RS, recuperação WADO-RS (instância, série, estudo, metadados, frames), SHA-256 na entrada e na saída, auditoria de entrada, recusa e abertura — `vyonix/pacs`, `vyonix/api/routes_pacs.py`, migração `pacs_0001`; testes `tests_platform/test_pacs.py` (17) e `test_pacs_orthanc.py` (Orthanc real no CI). Falta: C-FIND/C-MOVE/C-GET/MWL/MPPS pelo CORE, instalação pelo DEPLOY, backup, retenção, monitoramento, declaração de conformidade |
+| PAC-02 | Integridade: nunca sobrescrever instância indexada; detectar divergência de conteúdo e corrupção | PM §24–§25 | Implementado — `pacs.service.ingest/_verified`; testes de recusa, idempotência e corrupção |
+| PAC-03 | Isolamento entre organizações com motor compartilhado | PM §9, §50 | Implementado — índice com RLS, motor sem acesso direto, conteúdo divergente recusado; `test_tenant_isolation`; C-STORE só no modo edge |
+| PAC-04 | Suspensão comercial não bloqueia dados existentes | Restrição do projeto | Implementado — leitura exige só permissão; entrada exige módulo e licença; `test_permissions_and_read_without_license` |
+| VIE-01 | Viewer: séries, miniaturas, W/L, zoom, pan, rotação, inversão, medições, ROI, comparação, sincronização, hanging protocols, metadados, exportação | PM §23 | Planejado — API DICOMweb que o OHIF consome pronta (metadados com `BulkDataURI`, frames nativos e encapsulados); OHIF ainda não integrado (BKL-05) |
 | INT-01 | Integridade paciente–atendimento–pedido–accession–UIDs–laudo; correção controlada; sem mescla por nome | PM §24 | Parcial — `vyonix/clinical` (mescla reversível com justificativa, reconciliação por accession) — `tests_platform/test_clinical.py` |
-| QLD-01 | Detecção de transferências incompletas, corrompidos, duplicidades, séries inesperadas, estudos sem pedido | PM §25 | Planejado (Entrega 3) |
+| QLD-01 | Detecção de transferências incompletas, corrompidos, duplicidades, séries inesperadas, estudos sem pedido | PM §25 | Parcial — corrompidos, duplicidades e divergências recusados ou detectados; transferência incompleta e estudos sem pedido ainda não |
 | RIS-01 | RIS e Central de Exames; ciclo de vida do exame | PM §27–§29 | Planejado (Entrega 4) |
 | REP-01 | Telelaudo, achados críticos | PM §30–§31 | Planejado (Entrega 5) |
 | HIS-01 | HIS Connect (HL7 v2/FHIR) | PM §32 | Planejado |
@@ -78,7 +81,7 @@ As evidências citadas são reproduzíveis: suítes de teste no repositório e e
 
 | ID | Hipótese | Como confirmar |
 |---|---|---|
-| HIP-01 | O uso do plugin DICOMweb (AGPL) sem modificação, em processo separado, não obriga a abrir o código do VYONIX | Parecer jurídico (ADR-0012) |
+| HIP-01 | Distribuir o Orthanc (GPLv3, sem plugins, processo separado e sem modificação) não obriga a abrir o código do VYONIX | Parecer jurídico (BLK-07) |
 | HIP-02 | Nenhum cliente precisa de Windows 7 | Levantamento comercial (ADR-0010) |
 | HIP-03 | O índice SQLite interno do Orthanc atende o volume inicial das clínicas | Teste de carga na Entrega 3 (PM §61) |
 
@@ -87,3 +90,4 @@ As evidências citadas são reproduzíveis: suítes de teste no repositório e e
 | Data | Alteração |
 |---|---|
 | 2026-10-23 | Criação a partir do Prompt Mestre v1.0; auditoria da Entrega 1 com as lacunas PRT-02, PRT-03, PRT-10, PRT-12, PRT-14 e PRT-16 corrigidas; FND-12 implementado |
+| 2026-10-24 | PACS: primeira entrega vertical — PAC-01 parcial, PAC-02 a PAC-04 implementados, QLD-01 parcial, VIE-01 com a API pronta |

@@ -92,7 +92,13 @@ class StorageSCPTest(TempDirTestCase):
         self.assertIn("2 duplicada(s)", complete[0].message)
         # Nenhum dado de paciente no evento
         self.assertNotIn("SINTETICO", " ".join(e.message for e in complete))
+        # O evento assoc.complete é gravado antes do estado do equipamento (mesma thread do
+        # servidor, logo depois); espera o estado em vez de ler no mesmo instante.
+        end = time.monotonic() + 5.0
         dev = self.ctx.devices.get(self.device.id)
+        while dev.comm_status != "ok" and time.monotonic() < end:
+            time.sleep(0.05)
+            dev = self.ctx.devices.get(self.device.id)
         self.assertIsNotNone(dev.last_seen_at)
         self.assertEqual(dev.comm_status, "ok")
         # Nenhum arquivo temporário sobrando
