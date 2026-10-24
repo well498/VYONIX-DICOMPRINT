@@ -80,6 +80,7 @@ class ViewerE2E(unittest.TestCase):
             for i in range(1, 6):
                 pacs.ingest(s, cls.backend, make_dicom(study=cls.study, series=uid(n, 7, 1), sop=uid(n, 7, 1, i),
                                                        rows=64, cols=64, fill=i * 600, instance_number=i,
+                                                       pixel_spacing=(0.5, 0.5),
                                                        patient_id=cls.patient_id, patient_name="VIEWER^SINTETICO"),
                             actor="teste")
         cfg = Config(data_dir=cls.tmp / "data", default_organization=cls.code)
@@ -221,8 +222,38 @@ class ViewerE2E(unittest.TestCase):
             page.wait_for_timeout(800)
             self.assertNotEqual(before, canvas.screenshot(), f"{label} não mudou a imagem")
             steps.append(label)
+        self.check_length(page, canvas)
+        steps.append("medição de distância")
         self.shot(page, "ferramentas")
         self.tools_checked = steps
+
+    def check_length(self, page, canvas) -> None:
+        """Medição de distância (Length, ferramenta principal de MeasurementTools no OHIF 3.13). As imagens têm
+        Pixel Spacing de 0,5 mm; o painel de medições deve mostrar o valor em mm."""
+        import re
+        mm = re.compile(r"\d+(?:[.,]\d+)?\s*mm")
+        before = page.get_by_text(mm).count()
+        self.tool(page, ["MeasurementTools-split-button-primary", "Length"]).click()
+        b = canvas.bounding_box()
+        x0, y0 = b["x"] + b["width"] * 0.35, b["y"] + b["height"] * 0.5
+        page.mouse.click(x0, y0)
+        page.mouse.click(x0 + b["width"] * 0.3, y0)
+        page.wait_for_timeout(1000)
+        # Modo padrão (longitudinal): a primeira medição pergunta se a série deve ser acompanhada
+        prompt = page.get_by_role("button", name="Yes")
+        if prompt.count():
+            prompt.first.click()
+            page.wait_for_timeout(1000)
+        deadline = 30
+        while page.get_by_text(mm).count() <= before and deadline:
+            page.wait_for_timeout(1000)
+            deadline -= 1
+        if page.get_by_text(mm).count() <= before:
+            self.wait(page.locator("text=__nunca__"), "valor da medição em mm (nenhum novo valor apareceu)", 1000)
+        values = page.get_by_text(mm).all_inner_texts()
+        # 30 % da largura do viewport, 64 px de imagem com 0,5 mm: valor positivo e plausível (até 32 mm)
+        nums = [float(m.replace(",", ".")) for t in values for m in re.findall(r"(\d+(?:[.,]\d+)?)\s*mm", t)]
+        self.assertTrue(any(0 < n <= 32.5 for n in nums), f"valores medidos: {values}")
 
     def wait(self, locator, what: str, timeout: int = 60000) -> None:
         from playwright.sync_api import TimeoutError as PwTimeout
