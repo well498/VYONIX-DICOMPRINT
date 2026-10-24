@@ -199,3 +199,12 @@ ferramentas janela/nível, zoom, inverter e girar).
 
 Restrições mantidas: r6 não publicada; sem ensaio em campo; recuperação de senha do License Manager adiada; DICOM Print em
 laboratório (rede isolada, impressora física e modalidades de teste).
+
+### Continuação de 24/10 (09h)
+
+| Entrega | Evidência |
+|---|---|
+| C-FIND/C-MOVE (Study Root) pelo Core, nós DICOM por organização, porta 4243 pelo DEPLOY | platform run 40092073102 (131/0/0, inclui `test_pacs_qr.py`); deploy-windows run 40092073108: 28/0/1; Windows release run 40092073124: sucesso |
+| Medição de distância no Viewer | viewer run 40092073131 (3/3) |
+
+**Ponto de retomada:** confirmar a aceitação 2.9 estendida (porta 4243 recusando estação não cadastrada) no run do commit seguinte.
