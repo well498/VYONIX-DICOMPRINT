@@ -51,6 +51,10 @@ def engine_config(ctx: Context, password: str) -> dict:
         "AuthenticationEnabled": True, "RegisteredUsers": {USER: password},
         "DicomServerEnabled": True, "DicomAet": AET, "DicomPort": DICOM_PORT, "DicomCheckCalledAet": True,
         "DicomAlwaysAllowStore": True, "DicomAlwaysAllowEcho": True,
+        # Consulta/recuperação DIMSE direto no motor passaria por fora da autorização e do isolamento do Core:
+        # desligadas explicitamente e nenhuma modalidade cadastrada (o acesso às imagens é pelo DICOMweb do Core).
+        "DicomAlwaysAllowFind": False, "DicomAlwaysAllowFindWorklist": False, "DicomAlwaysAllowGet": False,
+        "DicomAlwaysAllowMove": False, "DicomModalities": {},
         "OverwriteInstances": False, "Plugins": [], "LoadPrivateDictionary": True,
         "StableAge": 60, "SaveJobs": True, "DeidentifyLogs": True,
     }

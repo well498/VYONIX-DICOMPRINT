@@ -43,7 +43,9 @@ class EngineHost(unittest.TestCase):
             "Name": "VYONIX teste", "StorageDirectory": st, "IndexDirectory": st, "HttpPort": self.http,
             "RemoteAccessAllowed": False, "AuthenticationEnabled": True, "RegisteredUsers": {"vyonix": "s3nha-teste"},
             "DicomAet": "VYONIX_PACS", "DicomPort": self.dicom, "DicomCheckCalledAet": True, "Plugins": [],
-            "OverwriteInstances": False}), encoding="utf-8")
+            "OverwriteInstances": False, "DicomAlwaysAllowStore": True, "DicomAlwaysAllowEcho": True,
+            "DicomAlwaysAllowFind": False, "DicomAlwaysAllowGet": False, "DicomAlwaysAllowMove": False,
+            "DicomModalities": {}}), encoding="utf-8")
 
     def engine(self):
         from vyonix.pacs.engine_host import EngineProcess
@@ -75,6 +77,32 @@ class EngineHost(unittest.TestCase):
         e2.start()
         self.assertEqual(self.backend().fetch(ref.backend_id), data)       # índice e arquivo preservados
         e2.stop()
+
+    def test_dimse_echo_allowed_query_refused(self):
+        """Mesmas regras DIMSE da configuração gerada pelo DEPLOY: C-ECHO aceito; C-FIND de AE não cadastrado
+        recusado (consulta só pelo DICOMweb do Core, com autorização e isolamento)."""
+        from pydicom.dataset import Dataset
+        from pynetdicom import AE
+        e = self.engine()
+        e.start()
+        ae = AE(ae_title="VYXTESTQR")
+        ae.add_requested_context("1.2.840.10008.1.1")
+        ae.add_requested_context("1.2.840.10008.5.1.4.1.2.2.1")          # Study Root Q/R FIND
+        assoc = ae.associate("127.0.0.1", self.dicom, ae_title="VYONIX_PACS")
+        self.assertTrue(assoc.is_established)
+        try:
+            self.assertEqual(assoc.send_c_echo().Status, 0x0000)
+            q = Dataset()
+            q.QueryRetrieveLevel, q.StudyInstanceUID, q.PatientID = "STUDY", "", ""
+            try:
+                statuses = [st.Status for st, _ in assoc.send_c_find(q, "1.2.840.10008.5.1.4.1.2.2.1") if st]
+            except ValueError:                                          # contexto de consulta recusado pelo motor
+                statuses = []
+        finally:
+            assoc.release()
+        # recusa = status de falha ou associação abortada pelo motor (lista vazia); nunca sucesso nem resultados
+        self.assertNotIn(0x0000, statuses)
+        self.assertNotIn(0xFF00, statuses)                                  # nenhuma resposta "pendente"
 
     def test_crash_is_detected(self):
         e = self.engine()

@@ -157,3 +157,20 @@ python3 -m unittest discover -s tests_deploy -t .
 depende do fornecedor gerar `vyx-2026-02`); destruir as cópias de chave da sessão de desenvolvimento (irreversível);
 certificado de assinatura de código (BLK-08); especialista regulatório (BLK-06); revisão jurídica da distribuição do
 Orthanc (BLK-07).
+
+### Continuação de 24/10 (manhã)
+
+| Entrega | Evidência |
+|---|---|
+| Aceitação 2.9 do PACS no Windows revertia em "Permissões de imagens do PACS": a conta virtual do serviço era usada antes de o serviço existir. Serviço registrado antes das ACLs + teste da ordem | run 40059704391 (falha encontrada); `tests_deploy/test_pacs_module.py` |
+| `ORTHANC_SHA256` fixado (`2D507DF9…C424`, medido no primeiro download) | run 40059704391 |
+| Página **Imagens** na interface web (pesquisa, estado do armazenamento, qualidade, link para o Viewer) | `test_e2e_web.py::test_4_images_flow` (Chromium, local): 4/4 aprovados; revisão visual da captura |
+| Consulta/recuperação DIMSE (C-FIND/C-MOVE/C-GET) desligada explicitamente no motor | `tests_deploy/test_pacs_module.py`; `test_pacs_engine.py::test_dimse_echo_allowed_query_refused` (binário real, CI) |
+| Declaração de conformidade DICOM do PACS (preliminar) | `docs/release/Declaracao_Conformidade_DICOM_PACS.md` |
+
+Restrições do proprietário em vigor: DICOM Print só no laboratório offline; nenhum ensaio em campo sem autorização
+expressa (BLK-13); recuperação de senha do License Manager adiada, sem redefinições, exclusões de conta ou mudanças de
+credenciais (BLK-12).
+
+**Ponto de retomada:** conferir os runs do commit `8810e40` e seguintes (aceitação 2.9 do PACS e `/viewer/` no
+Windows; `test_dimse_echo_allowed_query_refused` no platform).

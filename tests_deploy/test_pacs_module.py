@@ -51,6 +51,9 @@ class PacsModuleTest(unittest.TestCase):
         self.assertFalse(cfg["RemoteAccessAllowed"])
         self.assertTrue(cfg["AuthenticationEnabled"])
         self.assertFalse(cfg["OverwriteInstances"])
+        for k in ("DicomAlwaysAllowFind", "DicomAlwaysAllowGet", "DicomAlwaysAllowMove", "DicomAlwaysAllowFindWorklist"):
+            self.assertFalse(cfg[k], k)                                   # Q/R DIMSE fora do Core: desligado
+        self.assertEqual(cfg["DicomModalities"], {})
         pw = SecretStore(self.paths.data_dir).get(pacs.SECRET).decode()
         self.assertEqual(cfg["RegisteredUsers"], {pacs.USER: pw})
         self.assertGreaterEqual(len(pw), 24)
