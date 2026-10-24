@@ -70,9 +70,25 @@ def process_batch(db, bus: Bus, limit: int = 50) -> int:
 
 
 class Worker:
-    def __init__(self, db, bus: Bus, *, poll_s: float = 5.0) -> None:
+    """Processa a outbox e executa tarefas periódicas (``periodic``: lista de (intervalo em s, função))."""
+
+    def __init__(self, db, bus: Bus, *, poll_s: float = 5.0, periodic=None) -> None:
         self.db, self.bus, self.poll_s = db, bus, poll_s
         self.stop = threading.Event()
+        self.periodic = [[float(i), fn, 0.0] for i, fn in (periodic or [])]
+
+    def run_periodic(self, now: float | None = None) -> None:
+        import time
+        now = time.monotonic() if now is None else now
+        for task in self.periodic:
+            interval, fn, last = task
+            if now - last < interval:
+                continue
+            task[2] = now
+            try:
+                fn()
+            except Exception:  # noqa: BLE001 - uma tarefa com falha não para as outras nem a outbox
+                log.exception("Falha na tarefa periódica %s", getattr(fn, "__name__", fn))
 
     def run_forever(self) -> None:
         import psycopg
@@ -85,6 +101,7 @@ class Worker:
                     listener.execute(f"LISTEN {CHANNEL}")
                 while process_batch(self.db, self.bus):
                     pass
+                self.run_periodic()
                 for _ in listener.notifies(timeout=self.poll_s, stop_after=1):
                     break
             except Exception:  # noqa: BLE001 - o processador não pode morrer

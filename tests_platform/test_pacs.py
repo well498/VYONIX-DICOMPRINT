@@ -315,8 +315,8 @@ class QueryRetrieve(unittest.TestCase):
             self.assertEqual(len([a for a in _audit(s, "pacs.study.open") if a.actor == "outro"]), 1)
 
 
-class Api(unittest.TestCase):
-    """DICOMweb pela API HTTP: autenticação, permissão, módulo/licença, STOW, QIDO e WADO."""
+class ApiBase(unittest.TestCase):
+    """Plataforma real (API, licenciamento, banco) com o dublê de motor; sem testes próprios."""
 
     def setUp(self):
         from fastapi.testclient import TestClient
@@ -366,6 +366,9 @@ class Api(unittest.TestCase):
     def parts(resp) -> list[bytes]:
         from vyonix.api.routes_pacs import parse_multipart
         return parse_multipart(resp.content, resp.headers["content-type"])
+
+class Api(ApiBase):
+    """DICOMweb pela API HTTP: autenticação, permissão, módulo/licença, STOW, QIDO e WADO."""
 
     def test_vertical_slice_over_dicomweb(self):
         self.c = self.login()
@@ -453,6 +456,46 @@ class Api(unittest.TestCase):
         self.assertFalse(self.c.get("/api/v1/pacs/status").json()["engine"]["reachable"])
         self.plat.options.pop("pacs_backend")
         self.assertEqual(self.c.get(f"/api/v1/pacs/dicomweb/studies/{uid(1)}").status_code, 503)
+
+
+
+class SyncTask(ApiBase):
+    """Sincronização periódica no worker (modo edge): só com motor, módulo habilitado e licença."""
+
+    def test_runs_only_when_allowed_and_indexes_cstore(self):
+        from vyonix.events.worker import Worker
+        from vyonix.pacs.sync_task import PacsSyncTask
+        task = PacsSyncTask(self.plat)
+        self.b.receive_cstore(make_dicom())
+        self.assertIn("não habilitado", task()["skipped"])
+        self.c = self.login()
+        self.license_and_enable()
+        out = task()
+        self.assertEqual(out["indexed"], 1)
+        self.assertEqual(task()["indexed"], 0)                        # continua do último evento
+        self.b.down = True
+        self.assertIn("indisponível", task()["skipped"])
+        self.b.down = False
+        self.b.receive_cstore(make_dicom(sop=uid(1, 1, 2), instance_number=2))
+        w = Worker(db, self.plat.bus, periodic=[(15, task)])
+        w.run_periodic(now=100.0)
+        w.run_periodic(now=105.0)                                     # antes do intervalo: não repete
+        with db.session(self.t) as s:
+            from vyonix.pacs import service as pacs
+            self.assertEqual(len(pacs.search_instances(s, uid(1))), 2)
+        self.plat.cfg.mode = "cloud"
+        self.assertIn("modo cloud", PacsSyncTask(self.plat)()["skipped"])
+
+    def test_failing_task_does_not_stop_worker(self):
+        from vyonix.events.worker import Worker
+        calls = []
+
+        def boom():
+            calls.append(1)
+            raise RuntimeError("falha simulada da tarefa")
+        w = Worker(db, self.plat.bus, periodic=[(1, boom), (1, lambda: calls.append(2))])
+        w.run_periodic(now=10.0)
+        self.assertEqual(calls, [1, 2])
 
 
 if __name__ == "__main__":
