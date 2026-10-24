@@ -69,7 +69,7 @@ def _passphrase(cfg: dict, data: Path) -> str:
 
 
 def build_core(data: Path, cfg: dict, *, with_signer: bool = True):
-    from app.licensing.keys import KEY_SCOPES, PUBLIC_KEYS
+    from app.licensing.keys import KEY_SCOPES, PUBLIC_KEYS, RESTRICTED_KEYS
     from license_server.core import ServerCore, load_signer
     signer = None
     if with_signer:
@@ -98,6 +98,7 @@ def build_core(data: Path, cfg: dict, *, with_signer: bool = True):
             base_url=inter.get("base_url") or "https://cdpj.partners.bancointer.com.br",
             account=inter.get("account"), ca_file=inter.get("ca_file")))
     return ServerCore(data, signer=signer, license_keys=dict(PUBLIC_KEYS), license_key_scopes=dict(KEY_SCOPES),
+                      restricted_keys=dict(RESTRICTED_KEYS),
                       provider=provider, webhook_secret=cfg.get("webhook_secret", ""),
                       session_minutes=int(cfg.get("session_minutes", 30)))
 

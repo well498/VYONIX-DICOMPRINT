@@ -10,7 +10,16 @@ VYONIX License Server assina somente autorizações de uso (validação online);
 revalidações nem listas de revogação — o vazamento dessa chave não permite criar licenças.
 
 A chave de homologação ``hml-2026`` (formato 1) foi retirada: suas licenças não são aceitas.
+
+Chave comprometida (procedimento de incidente, ``docs/security/``): sem invalidar os clientes, a chave
+entra em ``RESTRICTED_KEYS`` com a lista dos SHA-256 dos documentos que ela realmente assinou (exportada
+pelo License Manager em Segurança → Chaves de emissão → "Exportar documentos legítimos"). A partir da
+versão que traz a lista, um documento novo assinado por essa chave — mesmo com assinatura válida — é
+recusado; os documentos legítimos continuam aceitos até serem substituídos pelos da chave nova.
+Hashes não são segredo: podem ficar no código.
 """
+
+import hashlib
 
 PUBLIC_KEYS: dict[str, str] = {
     # vyx-2026-01 — VYONIX License Manager — impressão digital 44DE:3181:0922:95DC:C478:0FDC
@@ -23,3 +32,24 @@ KEY_SCOPES: dict[str, tuple[str, ...]] = {
     "vyx-2026-01": ("license", "authorization", "revalidation", "revocation"),
     "vyx-srv-2026-01": ("authorization",),
 }
+
+# chave → SHA-256 (hex) do conteúdo assinado (``SignedDoc.signed``) de cada documento legítimo.
+# Vazio = nenhuma chave sob restrição.
+RESTRICTED_KEYS: dict[str, frozenset[str]] = {}
+
+
+def signed_digest(signed: bytes) -> str:
+    return hashlib.sha256(signed).hexdigest()
+
+
+def key_policy_error(key_id: str, signed: bytes,
+                     restricted: dict[str, frozenset[str]] | None = None) -> str | None:
+    """Motivo da recusa quando a chave está sob restrição e o documento não é um dos legítimos."""
+    table = RESTRICTED_KEYS if restricted is None else restricted
+    allowed = table.get(key_id)
+    if allowed is None:
+        return None
+    if signed_digest(signed) in allowed:
+        return None
+    return (f"A chave {key_id} foi retirada por segurança e este documento não consta da lista de documentos "
+            "legítimos emitidos por ela. Peça ao fornecedor um documento emitido com a chave atual.")

@@ -350,6 +350,61 @@ class LicenseManager:
         return (f'    # {key_id} — impressão digital {crypto.fingerprint(r["public_hex"])}\n'
                 f'    "{key_id}": "{r["public_hex"]}",\n')
 
+    # ------------------------------------------------------------------ incidente: chave comprometida
+    _SIGNED_SOURCES = (("license", "SELECT license_id AS ref, document FROM licenses"),
+                       ("revocation", "SELECT CAST(id AS TEXT) AS ref, document FROM revocation_lists"),
+                       ("revalidation", "SELECT request_id AS ref, document FROM revalidations"),
+                       ("authorization", "SELECT authorization_id AS ref, document FROM com_authorizations"))
+
+    def legit_documents(self, key_id: str) -> list[dict]:
+        """Documentos que esta instalação do License Manager assinou com ``key_id`` (com o SHA-256 do
+        conteúdo assinado). É a lista que o produto aceita de uma chave colocada sob restrição."""
+        c = self.db.conn()
+        out: list[dict] = []
+        for kind, sql in self._SIGNED_SOURCES:
+            try:
+                rows = c.execute(sql).fetchall()
+            except Exception:  # noqa: BLE001 - tabela ausente num banco antigo
+                continue
+            for r in rows:
+                if not r["document"]:
+                    continue
+                try:
+                    doc = F.parse_signed(r["document"], tuple(F.SCOPE_OF_FORMAT))
+                except F.FormatError:
+                    continue
+                if doc.key_id == key_id:
+                    out.append({"kind": kind, "ref": r["ref"], "sha256": hashlib.sha256(doc.signed).hexdigest()})
+        return out
+
+    def export_key_restriction(self, user: User, key_id: str, dest: Path) -> dict:
+        """Grava a lista de documentos legítimos de ``key_id`` (JSON e trecho para ``app/licensing/keys.py``).
+        Contém só identificadores e hashes — nenhum segredo nem dado pessoal."""
+        user.require("keys")
+        if self.db.conn().execute("SELECT 1 FROM signing_keys WHERE key_id = ?", (key_id,)).fetchone() is None:
+            raise LMError("Chave não encontrada.")
+        docs = self.legit_documents(key_id)
+        manifest = {"format": "vyonix-keyrestriction/1", "key_id": key_id, "generated_at": iso_now(),
+                    "instance_id": self._meta("instance_id"), "count": len(docs), "documents": docs}
+        dest = Path(dest)
+        dest.mkdir(parents=True, exist_ok=True)
+        stamp = utcnow().strftime("%Y%m%d-%H%M%S")
+        jpath = dest / f"VYONIX_restricao_{key_id}_{stamp}.json"
+        jpath.write_text(json.dumps(manifest, ensure_ascii=False, indent=1), encoding="utf-8")
+        hashes = sorted({d["sha256"] for d in docs})
+        lines = [f'    # {key_id}: {len(hashes)} documento(s) legítimo(s) — exportado em {manifest["generated_at"]}',
+                 f'    "{key_id}": frozenset({{']
+        lines += [f'        "{h}",' for h in hashes]
+        lines.append("    }),")
+        ppath = dest / f"VYONIX_restricao_{key_id}_{stamp}.py.txt"
+        ppath.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        self._audit(user.username, "key.restriction_export", key_id, {"documents": len(docs)})
+        return {"json": jpath, "snippet": ppath, "count": len(docs), "hashes": hashes}
+
+    def _meta(self, key: str) -> str | None:
+        r = self.db.conn().execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()
+        return r["value"] if r else None
+
     def export_key_backup(self, user: User, key_id: str, passphrase: str, dest: Path) -> Path:
         """Backup protegido da chave: PKCS#8 cifrado (a frase-senha é conferida antes)."""
         user.require("keys")

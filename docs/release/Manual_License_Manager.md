@@ -87,6 +87,17 @@ Quando o VYONIX suspende as funções por data/hora inconsistente ou registros d
 3. A nova chave pública é incluída no produto e distribuída em uma **atualização oficial**. Mantenha a chave antiga na lista para que as licenças existentes continuem válidas.
 4. Depois que os clientes atualizarem, **Tornar ativa** a nova chave; a anterior pode ser *aposentada* (não emite mais; licenças já emitidas continuam válidas enquanto a chave pública constar do produto).
 
+### 9.1 Chave comprometida
+
+Se a frase-senha ou o backup de uma chave vazar, siga `docs/security/` (procedimento de incidente):
+
+1. Gere a chave nova **neste computador** e guarde a frase-senha num cofre de senhas.
+2. Selecione a chave antiga e use **Exportar documentos legítimos…**. O arquivo JSON lista os hashes de tudo o que
+   ela assinou, sem segredos nem dados de clientes.
+3. Envie ao desenvolvimento a chave pública nova e esse JSON. A atualização seguinte do produto aceita a chave nova
+   e, da chave antiga, só os documentos da lista: licenças forjadas com ela passam a ser recusadas.
+4. Depois de distribuir a atualização, torne a chave nova ativa e aposente a antiga.
+
 ## 10. Clientes e LGPD
 
 Cadastre apenas os dados necessários ao contrato (nome/razão social, CNPJ/CPF, responsável, contato, cidade/UF). A licença leva somente o nome do cliente. **Anonimizar (LGPD)** remove definitivamente os dados pessoais e mantém o histórico técnico das licenças sem identificação.

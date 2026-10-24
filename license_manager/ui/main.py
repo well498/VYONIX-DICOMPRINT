@@ -587,6 +587,7 @@ class SecurityPage(Page):
                                btn("Tornar ativa", lambda: self.status("active")), btn("Aposentar",
                                                                                        lambda: self.status("retired")),
                                btn("Exportar chave pública…", self.export_pub),
+                               btn("Exportar documentos legítimos…", self.export_restriction),
                                btn("Backup protegido da chave…", self.backup_key),
                                btn("Alterar frase-senha…", self.change_pass), btn("Bloquear agora", self.lock)))
         note = QLabel("Rotação: a chave nova só é aceita pelo VYONIX DICOM Print depois de ser incluída na lista de "
@@ -665,6 +666,21 @@ class SecurityPage(Page):
         if path:
             Path(path).write_text(line, encoding="utf-8")
         info(self, "Linha copiada (formato de app/licensing/keys.py do VYONIX DICOM Print):\n\n" + line)
+
+    def export_restriction(self) -> None:
+        """Incidente: lista dos documentos que a chave selecionada realmente assinou (hashes), para que o
+        produto passe a recusar qualquer outro documento dessa chave."""
+        kid = selected(self.keys)
+        if not kid:
+            return
+        try:
+            r = self.w.lm.export_key_restriction(self.w.user, kid, self.w.lm.paths.exports_dir)
+        except Exception as exc:  # noqa: BLE001
+            error(self, exc)
+            return
+        info(self, f"{r['count']} documento(s) legítimo(s) da chave {kid}.\n\nArquivos (sem segredos):\n"
+                   f"{r['json']}\n{r['snippet']}\n\nEnvie o arquivo .json ao desenvolvimento para incluir a "
+                   "restrição numa atualização do produto.")
 
     def backup_key(self) -> None:
         kid = selected(self.keys)

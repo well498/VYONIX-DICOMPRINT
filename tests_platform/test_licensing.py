@@ -168,6 +168,21 @@ class LicensingV3(Base):
             with db.session(new_org(db)) as s:
                 lic2.install(s, newer["document"], actor="x")
 
+    def test_restricted_key_refuses_forged_document(self):
+        """Incidente de chave: com a chave sob restrição, só os documentos legítimos dela passam."""
+        from vyonix.errors import ValidationFailed
+        from vyonix_protocol import formats as F
+        lic = self.issue("annual")
+        key_id = json.loads(lic["document"])["key_id"]
+        out = self.lm.export_key_restriction(self.admin, key_id, self.tmp / "exp")
+        self.lic.restricted_keys = {key_id: frozenset(out["hashes"])}
+        payload = dict(F.parse_signed(lic["document"], F.LICENSE_FORMAT).payload)
+        payload["expires_at"] = "2099-12-31T23:59:59Z"
+        _k, forged = self.lm._sign_doc(F.LICENSE_FORMAT, payload)
+        with self.assertRaisesRegex(ValidationFailed, "retirada por segurança"):
+            self.apply(forged)
+        self.apply(lic["document"])
+
     def test_limits(self):
         from vyonix.errors import NotLicensed
         with db.session(self.t) as s:                      # sem licença: limite de instalação

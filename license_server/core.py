@@ -85,7 +85,8 @@ def utcnow() -> datetime:
 
 class ServerCore:
     def __init__(self, data_dir: Path, *, signer: tuple[str, Any] | None, license_keys: dict[str, str],
-                 license_key_scopes: dict[str, tuple[str, ...]] | None = None, clock: Callable[[], datetime] = utcnow,
+                 license_key_scopes: dict[str, tuple[str, ...]] | None = None,
+                 restricted_keys: dict[str, frozenset[str]] | None = None, clock: Callable[[], datetime] = utcnow,
                  provider=None, webhook_secret: str = "", session_minutes: int = 30) -> None:
         self.data_dir = Path(data_dir)
         self.db = Database(self.data_dir / "license_server.db")
@@ -93,6 +94,7 @@ class ServerCore:
         self.signer = signer                        # (key_id, Ed25519PrivateKey)
         self.license_keys = license_keys
         self.license_key_scopes = license_key_scopes or {}
+        self.restricted_keys: dict[str, frozenset[str]] = dict(restricted_keys or {})
         self.clock = clock
         self.provider = provider
         self.webhook_secret = webhook_secret
@@ -205,6 +207,10 @@ class ServerCore:
             raise ServerError(400, f"Licença assinada por chave não reconhecida ({doc.key_id}).")
         if not verify_ed25519(key, doc.signed, doc.signature):
             raise ServerError(400, "Assinatura da licença inválida.")
+        allowed = self.restricted_keys.get(doc.key_id)
+        if allowed is not None and hashlib.sha256(doc.signed).hexdigest() not in allowed:
+            raise ServerError(400, f"A chave {doc.key_id} foi retirada por segurança e esta licença não consta da "
+                                   "lista de documentos legítimos dela.")
         errors = F.validate_license_payload(doc.payload)
         if errors or doc.payload.get("product_id") != F.PRODUCT_ID:
             raise ServerError(400, "Licença inválida: " + "; ".join(errors or ["produto"]))

@@ -44,7 +44,7 @@ from app.licensing import tpm as tpm_mod
 from app.licensing.demo import DemoService, fmt_remaining
 from app.licensing.hardware import HardwareProfile, HardwareProvider
 from app.licensing.installation import InstallationManager
-from app.licensing.keys import KEY_SCOPES, PUBLIC_KEYS
+from app.licensing.keys import KEY_SCOPES, PUBLIC_KEYS, key_policy_error
 from app.licensing.subscription import CONNECTIVITY_LABELS, AuthorizationBook, Commercial, history_add
 from app.licensing.time_integrity import TimeIntegrity, TimeStatus
 from app.licensing.vault import Vault
@@ -123,6 +123,7 @@ class LicenseService:
         self.demo = demo
         self.public_keys = PUBLIC_KEYS if public_keys is None else public_keys
         self.key_scopes = KEY_SCOPES if key_scopes is None else key_scopes
+        self.restricted_keys = None              # None = ``keys.RESTRICTED_KEYS`` (testes podem substituir)
         self.authorizations = AuthorizationBook(vault, db)
         self._last_commercial: str | None = None
         self.enforced = enforced_default() if enforced is None else enforced
@@ -193,6 +194,9 @@ class LicenseService:
                                   "emitido pelo VYONIX License Manager oficial.")
         if not verify_ed25519(key, doc.signed, doc.signature):
             raise ValidationError("Assinatura digital inválida: o documento foi alterado ou não é autêntico.")
+        why = key_policy_error(doc.key_id, doc.signed, self.restricted_keys)
+        if why:
+            raise ValidationError(why)
         scope = F.SCOPE_OF_FORMAT.get(fmt)
         if scope not in self.key_scopes.get(doc.key_id, F.ALL_SCOPES):
             raise ValidationError(f"A chave {doc.key_id} não está autorizada a emitir este tipo de documento.")

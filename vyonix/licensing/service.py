@@ -64,7 +64,7 @@ from app.core.errors import ValidationError as _PrintValidationError
 from app.licensing import tpm as tpm_mod
 from app.licensing.hardware import HardwareProvider
 from app.licensing.installation import InstallationManager
-from app.licensing.keys import KEY_SCOPES, PUBLIC_KEYS
+from app.licensing.keys import KEY_SCOPES, PUBLIC_KEYS, key_policy_error
 from app.licensing.subscription import CONNECTIVITY_LABELS, AuthorizationBook
 from app.licensing.time_integrity import SystemClock, TimeIntegrity
 from app.licensing.vault import FileBackend, RegistryBackend, Vault, machine_sealer
@@ -150,6 +150,7 @@ class Licensing:
         self.time = machine.time
         self.public_keys = PUBLIC_KEYS if public_keys is None else public_keys
         self.key_scopes = KEY_SCOPES if key_scopes is None else key_scopes
+        self.restricted_keys = None              # None = ``keys.RESTRICTED_KEYS``
         self.mode = mode
         self.authorizations = AuthorizationBook(machine.vault, _NoSqliteHistory())
         self._settings = settings or (lambda k: None)
@@ -221,6 +222,9 @@ class Licensing:
             raise ValidationFailed(f"Documento assinado por uma chave desconhecida ({doc.key_id or '—'}).")
         if not verify_ed25519(key, doc.signed, doc.signature):
             raise ValidationFailed("Assinatura digital inválida: o documento foi alterado ou não é autêntico.")
+        why = key_policy_error(doc.key_id, doc.signed, self.restricted_keys)
+        if why:
+            raise ValidationFailed(why)
         if F.SCOPE_OF_FORMAT.get(fmt) not in self.key_scopes.get(doc.key_id, F.ALL_SCOPES):
             raise ValidationFailed(f"A chave {doc.key_id} não está autorizada a emitir este tipo de documento.")
         if doc.payload.get("product_id") != F.PRODUCT_ID:
