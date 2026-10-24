@@ -217,6 +217,73 @@ class LicenseManager:
                       (hash_password(new), user_id))
             self._audit(user.username, "user.reset_password", name, None, c)
 
+    # ------------------------------------------------------------------ recuperação de acesso
+    RECOVER_MAX_FAILED = 5
+    RECOVER_LOCK_MINUTES = 15
+
+    def recover_admin(self, username: str, key_passphrase: str) -> tuple[str, Path]:
+        """Recuperação de acesso de um administrador que esqueceu a senha.
+
+        Prova de posse: a frase-senha precisa abrir uma das chaves de emissão guardadas neste banco
+        (PKCS#8 cifrado — a mesma verificação de ``unlock_key``). Sem chave cadastrada não há
+        recuperação. Gera uma **senha provisória** aleatória, que obriga a troca no próximo acesso,
+        e a grava num arquivo TXT na pasta de dados do License Manager. Nada é apagado. Tentativas
+        erradas bloqueiam a recuperação por 15 minutos depois de 5 erros; tudo fica na auditoria.
+        Retorna (senha provisória, arquivo TXT).
+        """
+        c = self.db.conn()
+        meta = {r["key"]: r["value"] for r in c.execute(
+            "SELECT key, value FROM meta WHERE key IN ('recover_failed', 'recover_locked_until')")}
+        locked = meta.get("recover_locked_until")
+        if locked and datetime.fromisoformat(locked) > utcnow():
+            raise AuthError("Recuperação bloqueada temporariamente por tentativas incorretas. Tente mais tarde.")
+        if (username or "").strip():
+            target = c.execute("SELECT * FROM users WHERE username = ?", (username.strip(),)).fetchone()
+        else:                               # usuário esquecido também: o administrador mais antigo
+            target = c.execute("SELECT * FROM users WHERE role = 'admin' ORDER BY id LIMIT 1").fetchone()
+        keys = c.execute("SELECT key_id, private_pem FROM signing_keys ORDER BY id").fetchall()
+        if not keys:
+            raise LMError("Não há chave de emissão neste banco: não é possível comprovar a posse para recuperar o "
+                          "acesso.")
+        opened = None
+        for k in keys:
+            try:
+                crypto.private_from_pem(bytes(k["private_pem"]), (key_passphrase or "").encode("utf-8"))
+                opened = k["key_id"]
+                break
+            except (ValueError, TypeError):
+                continue
+        if opened is None or target is None or target["role"] != "admin":
+            failed = int(meta.get("recover_failed", "0")) + 1
+            lock = (utcnow() + timedelta(minutes=self.RECOVER_LOCK_MINUTES)).isoformat() \
+                if failed >= self.RECOVER_MAX_FAILED else None
+            with self.db.tx() as tx:
+                tx.execute("INSERT OR REPLACE INTO meta(key, value) VALUES ('recover_failed', ?)",
+                           ("0" if lock else str(failed),))
+                if lock:
+                    tx.execute("INSERT OR REPLACE INTO meta(key, value) VALUES ('recover_locked_until', ?)", (lock,))
+                self._audit(username or "?", "user.recover_failed", username or None, {"locked": bool(lock)}, tx)
+            raise AuthError("Usuário administrador ou frase-senha da chave incorretos."
+                            + (" Recuperação bloqueada por 15 minutos." if lock else ""))
+        provisional = _provisional_password()
+        with self.db.tx() as tx:
+            tx.execute("UPDATE users SET pw_hash = ?, must_change = 1, failed = 0, locked_until = NULL, active = 1 "
+                       "WHERE id = ?", (hash_password(provisional), target["id"]))
+            tx.execute("DELETE FROM meta WHERE key IN ('recover_failed', 'recover_locked_until')")
+            self._audit(f"recuperação (chave {opened})", "user.recover_admin", target["username"],
+                        {"key_id": opened}, tx)
+        stamp = utcnow().astimezone().strftime("%Y%m%d-%H%M%S")
+        dest = self.paths.root / f"VYONIX_LM_senha_provisoria_{stamp}.txt"
+        dest.write_text(
+            "VYONIX License Manager — senha provisória\r\n\r\n"
+            f"Usuário: {target['username']}\r\n"
+            f"Senha provisória: {provisional}\r\n"
+            f"Gerada em: {utcnow().astimezone().strftime('%d/%m/%Y %H:%M')}\r\n\r\n"
+            "Entre com esta senha: o programa exige uma senha nova no primeiro acesso.\r\n"
+            "Depois de trocar, APAGUE este arquivo. A recuperação ficou registrada na auditoria.\r\n",
+            encoding="utf-8-sig")
+        return provisional, dest
+
     # ------------------------------------------------------------------ chaves de emissão
     def keys(self) -> list[dict]:
         rows = [dict(r) for r in self.db.conn().execute(
@@ -1015,3 +1082,15 @@ class LicenseManager:
 
 
 __all__ = ["LicenseManager", "LMError", "AuthError", "PermissionDenied", "RequestInfo", "User"]
+
+
+def _provisional_password() -> str:
+    """Senha provisória aleatória que atende à política (maiúsculas, minúsculas e números)."""
+    alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789"
+    while True:
+        pw = "".join(secrets.choice(alphabet) for _ in range(14))
+        try:
+            validate_password(pw)
+            return pw
+        except AuthError:
+            continue

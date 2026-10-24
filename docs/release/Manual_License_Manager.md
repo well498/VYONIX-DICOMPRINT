@@ -27,6 +27,19 @@ Somente licenças assinadas por uma chave cuja parte pública está embutida no 
 - **Backup protegido da chave:** Segurança → **Backup protegido da chave…** grava o PEM cifrado; guarde a frase-senha separada do arquivo, fora deste computador.
 - **Auditoria:** todas as operações (acessos, emissões, reativações, revogações, chaves, usuários, backups) ficam registradas em cadeia — cada registro contém o resumo do anterior. **Histórico e auditoria → Verificar integridade** aponta registros alterados fora do aplicativo.
 
+### 3.1 Esqueci a senha de acesso
+
+Na tela de acesso, clique em **Esqueci a senha…** e informe a **frase-senha da chave de emissão** (não a senha de
+acesso). Preencha o usuário administrador ou deixe em branco para recuperar o primeiro administrador cadastrado.
+Se a frase-senha abrir uma das chaves guardadas no banco, o License Manager gera uma **senha provisória** e a grava
+em `VYONIX_LM_senha_provisoria_<data>.txt`, na pasta de dados do programa; o arquivo é aberto no Bloco de Notas.
+Entre com a senha provisória, defina uma nova em **Segurança → Minha senha** e **apague o arquivo**.
+
+* Nada é apagado: clientes, licenças, chaves e auditoria permanecem.
+* A frase-senha da chave nunca é gravada no arquivo.
+* Cinco frases-senha erradas bloqueiam a recuperação por 15 minutos; tentativas e recuperações ficam na auditoria.
+* Sem a frase-senha da chave não há recuperação: guarde-a num cofre de senhas, separada deste computador.
+
 ## 4. Fluxo de ativação offline
 
 1. O cliente instala o VYONIX DICOM Print; o programa gera o Hardware ID e o Installation ID.

@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QDateEdit, QDialog, QDialog
 from vyonix_protocol import formats as F
 
 from license_manager.service import LMError
-from license_manager.ui.common import error, fill, info, table, when
+from license_manager.ui.common import ask_secret, error, fill, info, table, when
 
 TPM_TEXT = {"verified": "assinada pelo TPM do computador (prova verificada)", "absent": "computador sem TPM disponível",
             "invalid": "ASSINATURA DO TPM INVÁLIDA — confirme a origem da solicitação",
@@ -79,9 +79,35 @@ class LoginDialog(QDialog):
         form.addRow("Senha", self.pw)
         lay.addLayout(form)
         bb = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        forgot = bb.addButton("Esqueci a senha…", QDialogButtonBox.ResetRole)
+        forgot.clicked.connect(self.recover)
         bb.accepted.connect(self._ok)
         bb.rejected.connect(self.reject)
         lay.addWidget(bb)
+
+    def recover(self, *, passphrase: str | None = None) -> str | None:
+        """Gera uma senha provisória num TXT, comprovando a posse pela frase-senha da chave de emissão."""
+        if passphrase is None:
+            passphrase = ask_secret(
+                self, "Recuperar acesso",
+                "Recuperação do administrador.\n\nInforme a frase-senha da CHAVE DE EMISSÃO (não a senha de acesso).\n"
+                "Usuário: o preenchido acima; em branco = o primeiro administrador.\n\nFrase-senha da chave:")
+            if not passphrase:
+                return None
+        try:
+            _pw, path = self.lm.recover_admin(self.username.text(), passphrase)
+        except Exception as exc:  # noqa: BLE001
+            error(self, exc)
+            return None
+        info(self, f"Senha provisória gravada em:\n{path}\n\nAbra o arquivo, entre com a senha e defina uma nova. "
+                   "Depois apague o arquivo.", "Recuperar acesso")
+        try:
+            import os
+            if hasattr(os, "startfile"):
+                os.startfile(str(path))  # noqa: S606 - abre o TXT no Bloco de Notas
+        except OSError:
+            pass
+        return str(path)
 
     def _ok(self) -> None:
         try:
