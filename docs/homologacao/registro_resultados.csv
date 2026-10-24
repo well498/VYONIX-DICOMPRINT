@@ -1,0 +1,15 @@
+﻿caso;teste;data;executor;versao;sha256_instalador;computador;equipamento_impressora;resultado;evidencias;falhas
+HF-01;Instalação limpa no Windows 10;;;;;;;Pendente;;
+HF-02;Instalação limpa no Windows 11 e atualização r5 → candidata;;;;;;;Pendente;;
+HF-03;Recepção de uma modalidade real;;;;;;;Pendente;;
+HF-04;Erros de comunicação;;;;;;;Pendente;;
+HF-05;Impressão física — layouts e papel;;;;;;;Pendente;;
+HF-06;Escala física e margens;;;;;;;Pendente;;
+HF-07;Calibração no papel (folha 3×3);;;;;;;Pendente;;
+HF-08;Qualidade da imagem impressa;;;;;;;Pendente;;
+HF-09;Pausar e retomar com equipamento real;;;;;;;Pendente;;
+HF-10;Reinicialização do Windows;;;;;;;Pendente;;
+HF-11;Recuperação após falha;;;;;;;Pendente;;
+HF-12;Licenciamento em computador real;;;;;;;Pendente;;
+HF-13;Interface em monitor real;;;;;;;Pendente;;
+HF-14;Desinstalação e reinstalação;;;;;;;Pendente;;

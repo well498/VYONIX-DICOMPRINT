@@ -1,5 +1,7 @@
 # Roteiro de Testes Manuais (equipamentos DICOM e impressoras reais)
 
+> O plano de homologação física com formulários de registro (HF-01 a HF-14) está em `docs/homologacao/`. Este roteiro continua valendo como lista de verificação detalhada.
+
 **VYONIX DICOM Print {VERSION}**
 
 > Este roteiro é **separado** dos testes automatizados (ver *Relatório de Validação*). Ele cobre o que só pode ser verificado na instalação real — equipamentos DICOM, impressoras físicas e avaliação visual no papel. Preencha **Resultado** (Aprovado / Reprovado / Não aplicável), **Data**, **Responsável** e **Observações**. Nenhum item abaixo foi executado pelo fornecedor nesta compilação.
