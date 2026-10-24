@@ -10,7 +10,7 @@ Registro dos impedimentos (Comando Executivo de continuidade, §4). Um bloqueio 
 * **Técnico:** a equipe resolve sozinha.
 
 * **Atualizado em:** 2026-10-24
-* **Bloqueios abertos:** 11. **Resolvidos:** 3.
+* **Bloqueios abertos:** 10. **Resolvidos:** 4.
 
 ## Abertos
 
@@ -25,7 +25,6 @@ Registro dos impedimentos (Comando Executivo de continuidade, §4). Um bloqueio 
 | BLK-07 | Revisão jurídica da distribuição do Orthanc (GPLv3) com o produto comercial | PACS | Aprovação · médio | Obrigação de licença | Advogado | Responsável | **Sim** (custo externo) | Desenvolvimento e testes internos do PACS (ADR-0012); o pacote de CI já leva o `Orthanc.exe` oficial com LEIA-ME de origem, indicação do código-fonte e texto da GPLv3 | Parecer favorável ou decisão de outro motor |
 | BLK-08 | Assinatura de código dos instaladores | Todos | Aprovação · médio | Requer certificado pago | Compra do certificado | Responsável | **Sim** (custo) | Builds sem assinatura | Certificado disponível como segredo do CI |
 | BLK-09 | Credenciais do sandbox do Banco Inter | Comercial | Externo · médio | Sem acesso ao sandbox | Credenciais do Inter | Responsável | Não | Testes com a reprodução local da API | Teste no sandbox registrado |
-| BLK-10 | Build do Viewer OHIF não pode ser feito neste ambiente de desenvolvimento | Viewer | Técnico · médio | O registro npm não é alcançável daqui (DNS) | Job de CI que baixa e compila o OHIF 3.13 | Desenvolvimento | Não | API DICOMweb, testes do PACS, todo o resto | Pacote do OHIF gerado e testado no CI |
 | BLK-11 | Recepção por C-STORE no modo cloud não sabe a organização de destino | PACS | Técnico · médio | O Orthanc não é multiorganização | Mapeamento AE Title → organização no CORE | Desenvolvimento | Não | Modo edge (uma organização por servidor) | Roteamento implementado e testado; até lá a API recusa a sincronização no modo cloud |
 
 ## Resolvidos
@@ -35,3 +34,4 @@ Registro dos impedimentos (Comando Executivo de continuidade, §4). Um bloqueio 
 | BLK-R1 | A Entrega 3 dependia da aprovação do ADR-0012 (AGPL do plugin DICOMweb) | ADR-0012 revisada: sem plugins AGPL, com o DICOMweb implementado no CORE. Ficou só a revisão da distribuição (BLK-07), que não bloqueia o desenvolvimento | `docs/adr/ADR-0012.md` |
 | BLK-R2 | O TPM "não verificável" contava como aprovado | Situação própria "não verificável" na validação, no relatório e nas notas da release | Commit `e6920eb`; `tests/test_validation_status.py` |
 | BLK-R3 | `filelock` 4.1.1 com 6 alertas no ambiente de build da plataforma | Restrição `filelock>=4.2.1` nos pipelines; a auditoria mostra quem exige o pacote e confere se ele entra no pacote | Commit `91057f3`. CI: o `filelock` 4.1.1 vinha do `pipx` da imagem do runner e **não** está no pacote distribuído (run 40057755638); atualizado também no ambiente de build (commit `53711c9`) |
+| BLK-R4 | O OHIF não podia ser compilado no ambiente de desenvolvimento (registro npm inacessível) | Compilação do OHIF v3.13.13 no CI (`tools/build_viewer.sh`), usada pelo `viewer.yml` e pelo `deploy-windows.yml` | viewer run 40059704370 |
