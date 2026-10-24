@@ -250,7 +250,8 @@ class ViewerE2E(unittest.TestCase):
             deadline -= 1
         if page.get_by_text(mm).count() <= before:
             self.wait(page.locator("text=__nunca__"), "valor da medição em mm (nenhum novo valor apareceu)", 1000)
-        values = page.get_by_text(mm).all_inner_texts()
+        # o rótulo da medição sobre a imagem é <text> de SVG: innerText vem nulo, textContent não
+        values = [t for t in (loc.text_content() for loc in page.get_by_text(mm).all()) if t]
         # 30 % da largura do viewport, 64 px de imagem com 0,5 mm: valor positivo e plausível (até 32 mm)
         nums = [float(m.replace(",", ".")) for t in values for m in re.findall(r"(\d+(?:[.,]\d+)?)\s*mm", t)]
         self.assertTrue(any(0 < n <= 32.5 for n in nums), f"valores medidos: {values}")

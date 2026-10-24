@@ -341,6 +341,36 @@ def remove_route(route_id: uuid.UUID, c: Ctx = Depends(needs("pacs.admin"))):
     return Response(status_code=204)
 
 
+class NodeIn(BaseModel):
+    ae_title: str = Field(min_length=1, max_length=16)
+    host: str | None = Field(None, max_length=64)
+    port: int | None = Field(None, ge=1, le=65535)
+    description: str | None = Field(None, max_length=200)
+    can_query: bool = True
+    can_receive: bool = False
+
+
+@router.get("/nodes")
+def list_nodes(c: Ctx = Depends(needs("pacs.admin"))):
+    with c.session() as s:
+        return {"nodes": pacs.nodes(s), "qr": {"port": c.plat.cfg.extra.get("pacs_qr_port"),
+                                              "ae_title": c.plat.cfg.extra.get("pacs_qr_aet", "VYONIX_QR")}}
+
+
+@router.post("/nodes", status_code=201)
+def add_node(body: NodeIn, c: Ctx = Depends(needs("pacs.admin"))):
+    with c.session() as s:
+        return pacs.add_node(s, body.ae_title, host=body.host, port=body.port, description=body.description,
+                             can_query=body.can_query, can_receive=body.can_receive, **c.actor)
+
+
+@router.delete("/nodes/{node_id}", status_code=204)
+def remove_node(node_id: uuid.UUID, c: Ctx = Depends(needs("pacs.admin"))):
+    with c.session() as s:
+        pacs.remove_node(s, node_id, **c.actor)
+    return Response(status_code=204)
+
+
 @router.get("/status")
 def status(c: Ctx = Depends(needs("pacs.admin"))):
     b = backend_for(c.plat)

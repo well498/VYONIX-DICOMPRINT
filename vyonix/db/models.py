@@ -7,7 +7,7 @@ from vyonix.clinical.models import (Encounter, Order, Patient, PatientIdentifier
 from vyonix.events.models import InboxEntry, OutboxEvent  # noqa: F401
 from vyonix.licensing.models import Entitlement, LicenseDocument  # noqa: F401
 from vyonix.modules.models import ModuleState  # noqa: F401
-from vyonix.pacs.models import (PacsAeRoute, PacsCloudSyncState, PacsInstance, PacsSeries,  # noqa: F401
+from vyonix.pacs.models import (PacsAeRoute, PacsCloudSyncState, PacsDicomNode, PacsInstance, PacsSeries,  # noqa: F401
                                 PacsStudy, PacsSyncState)
 from vyonix.settings.models import Setting, SettingHistory  # noqa: F401
 from vyonix.tenancy.models import Installation, Organization, Site  # noqa: F401

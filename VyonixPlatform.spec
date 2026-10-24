@@ -24,10 +24,11 @@ datas = [
     (str(WEB), "web"),
 ]
 hidden = (collect_submodules("uvicorn") + collect_submodules("vyonix") + collect_submodules("vyonix_deploy")
-          + collect_submodules("alembic") + collect_submodules("pydicom.encaps") + ["psycopg_binary", "sqlalchemy.dialects.postgresql.psycopg",
+          + collect_submodules("alembic") + collect_submodules("pydicom.encaps") + collect_submodules("pynetdicom") + ["psycopg_binary", "sqlalchemy.dialects.postgresql.psycopg",
                                              "win32timezone", "win32serviceutil", "servicemanager"])
-# pydicom entra no pacote: o VYONIX PACS valida e lê DICOM no Core (sem numpy; frames saem como estão).
-excludes = ["PySide6", "PySide2", "tkinter", "numpy", "pynetdicom", "license_manager",
+# pydicom e pynetdicom entram no pacote: o VYONIX PACS valida e lê DICOM e serve C-FIND/C-MOVE no Core
+# (sem numpy; frames saem como estão).
+excludes = ["PySide6", "PySide2", "tkinter", "numpy", "license_manager",
             "license_server", "vyonix_commercial.engine", "vyonix_commercial.billing", "vyonix_commercial.schema",
             "app.ui", "app.dicom", "app.service", "app.database", "app.printing", "pytest"]
 

@@ -9,7 +9,7 @@ from __future__ import annotations
 import uuid
 from datetime import date, datetime
 
-from sqlalchemy import BigInteger, Date, DateTime, ForeignKey, Index, Integer, String, Uuid, func
+from sqlalchemy import BigInteger, Boolean, Date, DateTime, ForeignKey, Index, Integer, String, Uuid, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from vyonix.db.base import Base, TenantMixin
@@ -92,3 +92,16 @@ class PacsCloudSyncState(Base):
     last_seq: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     quarantined: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0, server_default="0")
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
+class PacsDicomNode(TenantMixin, Base):
+    """Estação, modalidade ou PACS da organização: pode consultar (C-FIND/C-MOVE) e/ou receber (destino de C-MOVE)."""
+    __tablename__ = "dicom_nodes"
+    __table_args__ = (Index("uq_pacs_dicom_nodes_aet", "tenant_id", "ae_title", unique=True), SCHEMA)
+    ae_title: Mapped[str] = mapped_column(String(16), nullable=False)
+    host: Mapped[str | None] = mapped_column(String(64))
+    port: Mapped[int | None] = mapped_column(Integer)
+    description: Mapped[str | None] = mapped_column(String(200))
+    can_query: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    can_receive: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_by: Mapped[str] = mapped_column(String(120), nullable=False)

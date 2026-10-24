@@ -170,6 +170,7 @@ def uninstall_steps(ctx: Context) -> list[Step]:
             ServiceRemovedStep(pg.SERVICE),
             RuleRemovedStep("core-https", "Core HTTPS", ctx.cfg.https_port),
             RuleRemovedStep("pacs-dicom", "PACS DICOM", pacs.DICOM_PORT),
+            RuleRemovedStep("pacs-qr", "PACS consulta DICOM", pacs.QR_PORT),
             ShortcutsRemovedStep(ctx.cfg.https_port, p.install_dir / "vyonix-deploy.exe", p.reports)]
 
 

@@ -635,3 +635,88 @@ def cloud_sync(db, backend: PacsBackend, *, allowed=None, limit: int = 100, max_
         if done:
             break
     return out
+
+
+# --------------------------------------------------------------------------- nós DICOM (consulta/recuperação)
+
+def _node_out(n) -> dict:
+    return {"id": str(n.id), "ae_title": n.ae_title, "host": n.host, "port": n.port, "description": n.description,
+            "can_query": n.can_query, "can_receive": n.can_receive}
+
+
+def nodes(s: Session) -> list[dict]:
+    from vyonix.pacs.models import PacsDicomNode
+    return [_node_out(n) for n in s.execute(select(PacsDicomNode).order_by(PacsDicomNode.ae_title)).scalars()]
+
+
+def add_node(s: Session, ae_title: str, *, host: str | None = None, port: int | None = None,
+             description: str | None = None, can_query: bool = True, can_receive: bool = False, actor: str,
+             actor_id=None, ip=None) -> dict:
+    """Cadastra uma estação/modalidade da organização. Destino de C-MOVE exige endereço e porta."""
+    import ipaddress
+    from sqlalchemy.exc import IntegrityError
+    from vyonix.pacs.models import PacsDicomNode
+    aet = _aet(ae_title)
+    h = (host or "").strip() or None
+    if h:
+        try:
+            ipaddress.ip_address(h)
+        except ValueError as exc:
+            raise ValidationFailed("Endereço IP inválido (use o IP da estação, sem nome de máquina).") from exc
+    if port is not None and not 1 <= int(port) <= 65535:
+        raise ValidationFailed("Porta inválida (1–65535).")
+    if can_receive and (not h or not port):
+        raise ValidationFailed("Para receber imagens (destino de C-MOVE), informe o IP e a porta da estação.")
+    if not can_query and not can_receive:
+        raise ValidationFailed("Marque ao menos uma permissão: consultar ou receber.")
+    n = PacsDicomNode(ae_title=aet, host=h, port=int(port) if port else None,
+                      description=(description or "").strip()[:200] or None, can_query=bool(can_query),
+                      can_receive=bool(can_receive), created_by=actor[:120])
+    try:
+        with s.begin_nested():
+            s.add(n)
+            s.flush()
+    except IntegrityError as exc:
+        raise Conflict(f"Já existe um nó DICOM com o AE Title {aet} nesta organização.") from exc
+    audit.record(s, actor=actor, actor_id=actor_id, ip=ip, action="pacs.node.add", target_type="dicom_node",
+                 target_id=n.id, details={"ae_title": aet, "host": h, "port": n.port, "can_query": n.can_query,
+                                          "can_receive": n.can_receive})
+    return _node_out(n)
+
+
+def remove_node(s: Session, node_id: uuid.UUID, *, actor: str, actor_id=None, ip=None) -> None:
+    from vyonix.pacs.models import PacsDicomNode
+    n = s.get(PacsDicomNode, node_id)
+    if n is None:
+        raise NotFound("Nó DICOM não encontrado.")
+    aet = n.ae_title
+    s.delete(n)
+    s.flush()
+    audit.record(s, actor=actor, actor_id=actor_id, ip=ip, action="pacs.node.remove", target_type="dicom_node",
+                 target_id=node_id, details={"ae_title": aet})
+
+
+def node_for(s: Session, ae_title: str, *, address: str | None = None, query: bool = False,
+             receive: bool = False):
+    """Nó da organização com o AE Title e a permissão pedida; se o nó tiver IP cadastrado, o endereço precisa conferir."""
+    from vyonix.pacs.models import PacsDicomNode
+    n = s.execute(select(PacsDicomNode).where(PacsDicomNode.ae_title == (ae_title or "").strip().upper())
+                  ).scalar_one_or_none()
+    if n is None or (query and not n.can_query) or (receive and not n.can_receive):
+        return None
+    if query and n.host and address and n.host != address:
+        return None
+    return n
+
+
+def instances_for_retrieve(s: Session, level: str, study_uid: str, series_uid: str | None = None,
+                           sop_uids: list[str] | None = None) -> list[PacsInstance]:
+    st = study(s, study_uid)
+    q = select(PacsInstance).join(PacsSeries, PacsSeries.id == PacsInstance.series_id).where(
+        PacsInstance.study_id == st.id)
+    if level in ("SERIES", "IMAGE") and series_uid:
+        q = q.where(PacsSeries.series_uid == series_uid)
+    if level == "IMAGE" and sop_uids:
+        q = q.where(PacsInstance.sop_uid.in_(sop_uids))
+    return list(s.execute(q.order_by(PacsSeries.series_number.nulls_last(), PacsInstance.instance_number.nulls_last())
+                          ).scalars())

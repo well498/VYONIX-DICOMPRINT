@@ -37,6 +37,7 @@ class Runner:
         self.server = None
         self.worker = None
         self.engine = None
+        self.qr = None
         self.thread: threading.Thread | None = None
 
     def start(self) -> None:
@@ -62,6 +63,15 @@ class Runner:
                                                         ssl_certfile=cert, ssl_keyfile=key, log_config=None,
                                                         server_header=False, proxy_headers=False))
             self.thread = threading.Thread(target=self.server.run, name="vyonix-core", daemon=True)
+            qr_port = cfg.extra.get("pacs_qr_port")
+            if qr_port:                                    # consulta/recuperação DICOM do PACS (C-FIND/C-MOVE)
+                from vyonix.pacs.dimse_qr import QRServer
+                self.qr = QRServer(plat, port=int(qr_port), ae_title=cfg.extra.get("pacs_qr_aet", "VYONIX_QR"))
+                try:
+                    self.qr.start()
+                except OSError:
+                    logging.getLogger("vyonix").exception("Consulta/recuperação DICOM não iniciou (porta %s)", qr_port)
+                    self.qr = None
         else:
             from vyonix.events.worker import Worker
             from vyonix.pacs.sync_task import INTERVAL_S, PacsSyncTask
@@ -76,6 +86,8 @@ class Runner:
             self.worker.stop.set()
         if self.engine is not None:
             self.engine.stop()
+        if self.qr is not None:
+            self.qr.stop()
         if self.thread is not None:
             self.thread.join(timeout)
 

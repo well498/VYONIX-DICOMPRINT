@@ -23,6 +23,8 @@ SECRET = "pacs_orthanc_password"
 HTTP_PORT = 8042
 DICOM_PORT = 4242
 AET = "VYONIX_PACS"
+QR_PORT = 4243           # consulta/recuperação DICOM (C-FIND/C-MOVE) servida pelo Core
+QR_AET = "VYONIX_QR"
 
 
 def storage_dir(ctx: Context) -> Path:
@@ -61,7 +63,8 @@ def engine_config(ctx: Context, password: str) -> dict:
 
 
 def core_settings() -> dict:
-    return {"pacs_orthanc_url": f"http://127.0.0.1:{HTTP_PORT}", "pacs_orthanc_username": USER}
+    return {"pacs_orthanc_url": f"http://127.0.0.1:{HTTP_PORT}", "pacs_orthanc_username": USER,
+            "pacs_qr_port": QR_PORT, "pacs_qr_aet": QR_AET}
 
 
 class EngineConfigStep(Step):
@@ -222,6 +225,7 @@ def engine_steps(ctx: Context) -> list[Step]:
         DirectoryStep("logs", p.data_dir / "logs", "de registros do VYONIX"),
         AclGrantStep("logs.pacs", p.data_dir / "logs", "registros", svc, "M"),
         FirewallRuleStep("pacs-dicom", "PACS DICOM", DICOM_PORT, str(binary(ctx)), ctx.cfg.firewall_sources),
+        FirewallRuleStep("pacs-qr", "PACS consulta DICOM", QR_PORT, str(p.core_exe), ctx.cfg.firewall_sources),
         ServiceRunningStep(SERVICE, "VYONIX PACS (motor DICOM)", probe=engine_probe, timeout=120),
         CoreSettingsStep(),
     ]

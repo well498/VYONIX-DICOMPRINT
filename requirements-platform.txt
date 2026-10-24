@@ -12,3 +12,4 @@ reportlab>=4.2          # relatório PDF do VYONIX DEPLOY
 pywin32>=306; sys_platform == "win32"
 pydicom>=3.0,<4          # VYONIX PACS (leitura e validação DICOM)
 httpx>=0.27,<1           # VYONIX PACS (API REST do Orthanc)
+pynetdicom>=3.0,<4       # VYONIX PACS (consulta/recuperação DICOM C-FIND/C-MOVE pelo Core)
