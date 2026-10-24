@@ -93,8 +93,11 @@ Se a frase-senha ou o backup de uma chave vazar, siga `docs/security/` (procedim
 
 1. Gere a chave nova **neste computador** e guarde a frase-senha num cofre de senhas.
 2. Selecione a chave antiga e use **Exportar documentos legítimos…**. O arquivo JSON lista os hashes de tudo o que
-   ela assinou, sem segredos nem dados de clientes.
-3. Envie ao desenvolvimento a chave pública nova e esse JSON. A atualização seguinte do produto aceita a chave nova
+   ela assinou, sem segredos nem dados de clientes. Depois dessa exportação, **não emita mais nada com a chave
+   antiga**: o que for emitido depois não estará na lista e será recusado pela atualização.
+3. Use **Exportar chave pública…** na chave nova e envie ao desenvolvimento esse arquivo e o JSON (nenhum dos dois
+   é segredo; nunca envie o backup da chave nem a frase-senha). O desenvolvimento aplica os dois com
+   `tools/apply_key_rotation.py`, que recusa qualquer arquivo com material de chave privada. A atualização seguinte do produto aceita a chave nova
    e, da chave antiga, só os documentos da lista: licenças forjadas com ela passam a ser recusadas.
 4. Depois de distribuir a atualização, torne a chave nova ativa e aposente a antiga.
 

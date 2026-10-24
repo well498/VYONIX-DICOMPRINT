@@ -74,7 +74,8 @@ jobs:
           d = pathlib.Path(sys.argv[1])
           sysinfo, plugins = json.loads((d / "system.json").read_text()), json.loads((d / "plugins.json").read_text())
           print(f"::notice title=Orthanc::versão {sysinfo.get('Version')}, API {sysinfo.get('ApiVersion')}, plugins {plugins}")
-          assert plugins == [], f"plugins carregados: {plugins}"
+          extra = [p for p in plugins if p != "explorer.js"]   # explorer.js = extensão embutida da Orthanc Explorer, não é plugin
+          assert extra == [], f"plugins carregados: {extra}"
           PY
       - name: Versão do PostgreSQL
         run: echo "::notice title=PostgreSQL::$(psql "$VYONIX_TEST_ADMIN_URL" -tAc 'SHOW server_version')"
