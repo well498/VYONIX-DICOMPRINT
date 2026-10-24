@@ -119,9 +119,17 @@ jobs:
           $url = "https://orthanc.uclouvain.be/downloads/windows-64/orthanc/$env:ORTHANC_VERSION/Orthanc.exe"
           $dst = "dist\VyonixPlatform\orthanc"
           New-Item -ItemType Directory $dst -Force | Out-Null
-          Invoke-WebRequest $url -OutFile "$dst\Orthanc.exe" -UseBasicParsing
+          $ok = $false
+          for ($i = 1; $i -le 3 -and -not $ok; $i++) {
+            try { Invoke-WebRequest $url -OutFile "$dst\Orthanc.exe" -UseBasicParsing -TimeoutSec 300; $ok = $true }
+            catch { Write-Host "::warning title=Download do Orthanc (tentativa $i)::$($_.Exception.Message)"; Start-Sleep -Seconds (20 * $i) }
+          }
+          if (-not $ok) { Write-Host "::error title=Download do Orthanc::site indisponível após 3 tentativas ($url)"; exit 1 }
           $sha = (Get-FileHash "$dst\Orthanc.exe" -Algorithm SHA256).Hash
-          if ($env:ORTHANC_SHA256 -and $sha -ne $env:ORTHANC_SHA256) { throw "SHA-256 do Orthanc.exe inesperado: $sha" }
+          if ($env:ORTHANC_SHA256 -and $sha -ne $env:ORTHANC_SHA256) {
+            # Nunca segue com um binário diferente do fixado: pode ser republicação ou adulteração. Conferir antes de trocar o valor.
+            Write-Host "::error title=SHA-256 do Orthanc.exe diferente do fixado::obtido $sha; fixado $env:ORTHANC_SHA256"; exit 1
+          }
           if (-not $env:ORTHANC_SHA256) { Write-Host "::warning title=Orthanc SHA-256 não fixado::$sha (fixar em ORTHANC_SHA256)" }
           $info = (Get-Item "$dst\Orthanc.exe").VersionInfo
           @"
