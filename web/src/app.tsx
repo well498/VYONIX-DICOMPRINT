@@ -4,6 +4,7 @@ import { AccessGate, Login } from "./pages/access";
 import { AuditPage } from "./pages/audit";
 import { CommercialPage } from "./pages/commercial";
 import { Dashboard } from "./pages/dashboard";
+import { ImagesPage } from "./pages/images";
 import { LicensePage } from "./pages/license";
 import { PatientsPage } from "./pages/patients";
 import { SettingsPage } from "./pages/settings";
@@ -15,6 +16,7 @@ type Route = { id: string; label: string; perm?: string; view: (me: Me) => React
 const ROUTES: Route[] = [
   { id: "inicio", label: "Início", view: (me) => <Dashboard me={me} /> },
   { id: "pacientes", label: "Pacientes", perm: "clinical.patients.read", view: (me) => <PatientsPage me={me} /> },
+  { id: "imagens", label: "Imagens", perm: "pacs.studies.read", view: (me) => <ImagesPage me={me} /> },
   { id: "usuarios", label: "Usuários e papéis", perm: "core.users.read", view: (me) => <UsersPage me={me} /> },
   { id: "unidades", label: "Unidades", perm: "core.settings.read", view: (me) => <SitesPage me={me} /> },
   { id: "configuracoes", label: "Configurações", perm: "core.settings.read", view: (me) => <SettingsPage me={me} /> },

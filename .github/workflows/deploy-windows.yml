@@ -19,7 +19,7 @@ env:
   OHIF_TAG: v3.13.13
   PG_VERSION: "17.11"
   ORTHANC_VERSION: "1.13.0"
-  ORTHANC_SHA256: ""
+  ORTHANC_SHA256: "2D507DF95DCABB479D3931992F5A2607CDE105DBE38B4562F43653E7CE10C424"   # medido no 1º download (run 40059704391)
   PG_URLS: "https://get.enterprisedb.com/postgresql/postgresql-17.11-1-windows-x64-binaries.zip https://sbp.enterprisedb.com/getfile.jsp?fileid=1260616"
 
 jobs:

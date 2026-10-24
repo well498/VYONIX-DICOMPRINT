@@ -61,6 +61,9 @@ class WebE2E(unittest.TestCase):
         cfg = Config(data_dir=cls.tmp / "data", default_organization=cls.code)
         cfg.data_dir.mkdir(parents=True)
         plat = build(cfg, licensing=helper.licensing(cls.pc), db=db)
+        from tests_platform.pacs_support import MemoryBackend
+        plat.options["pacs_backend"] = cls.pacs_backend = MemoryBackend()     # dublê de motor (rotulado)
+        cls.plat = plat
         cert, key = ensure_tls(cfg)
         cls.port = free_port()
         cls.server = uvicorn.Server(uvicorn.Config(create_app(plat, web_dist=DIST), host="127.0.0.1", port=cls.port,
@@ -146,6 +149,7 @@ class WebE2E(unittest.TestCase):
         lic = self.lm.issue(self.lm_admin, info.request_id, self.cid, ltype="annual", edition="Profissional",
                             features=[], modules={"core": {"kind": "demo", "days": 15},
                                                   "ris": {"kind": "demo", "days": 15}})
+        type(self).license_id = lic["license_id"]
         nav.get_by_role("link", name="Licença e módulos").click()
         pg.get_by_label("Conteúdo do documento").fill(lic["document"])
         pg.get_by_role("button", name="Aplicar licença").click()
@@ -213,6 +217,50 @@ class WebE2E(unittest.TestCase):
         self.shot(pg, "07-tecnico")
         pg.get_by_role("button", name="Sair").click()
         expect(pg.get_by_role("heading", name="Entrar")).to_be_visible()
+
+    def test_4_images_flow(self):
+        """Imagens (PACS): pesquisa, pendências de qualidade e link para o Viewer. Motor: dublê de teste."""
+        from playwright.sync_api import expect
+        from tests_platform.pacs_support import make_dicom, uid
+        from vyonix.modules import registry
+        from vyonix.pacs import service as pacs
+        amended = self.lm.amend_modules(self.lm_admin, self.license_id,
+                                        {"core": {"kind": "demo", "days": 15}, "ris": {"kind": "demo", "days": 15},
+                                         "pacs": {"kind": "demo", "days": 15}}, reason="teste do PACS")
+        with db.session(self.tenant) as s:
+            self.plat.licensing.install(s, amended["document"], actor="admin")
+            registry.enable(s, "pacs", actor="admin", license_check=self.plat.licensing.module_ok)
+            for i in (1, 2, 4):                                    # falta a imagem 3
+                pacs.ingest(s, self.pacs_backend, make_dicom(sop=uid(1, 1, i), instance_number=i,
+                                                             patient_name="SILVA^MARIA SINTETICA", accession="AC-77"),
+                            actor="teste")
+        pg = self.page()
+        self.login(pg, "admin", ADMIN_PW)
+        nav = pg.get_by_role("navigation", name="Navegação principal")
+        nav.get_by_role("link", name="Imagens").click()
+        expect(pg.get_by_role("heading", name="Imagens")).to_be_visible()
+        row = pg.get_by_role("row", name="MARIA SINTETICA SILVA")
+        expect(row).to_be_visible()
+        expect(row.get_by_role("cell", name="CT", exact=True)).to_be_visible()
+        link = row.get_by_role("link", name="Abrir no Viewer")
+        self.assertEqual(link.get_attribute("href"), f"/viewer/viewer?StudyInstanceUIDs={uid(1)}")
+        self.assertEqual(link.get_attribute("rel"), "noopener")
+        status = pg.get_by_role("group", name="Estado do armazenamento")
+        expect(status.get_by_text("Habilitado")).to_be_visible()
+        expect(status.get_by_text("memoria-teste 0")).to_be_visible()              # nome e versão vindos do motor
+        expect(status.get_by_text(" KB")).to_be_visible()
+        row.get_by_role("button", name="Qualidade").click()
+        expect(pg.get_by_text("faltam as instâncias 3")).to_be_visible()
+        expect(pg.get_by_text("Estudo sem pedido conciliado.")).to_be_visible()
+        self.shot(pg, "08-imagens-qualidade")
+        pg.get_by_label("Só com pendência de qualidade").check()
+        expect(pg.get_by_role("row", name="MARIA SINTETICA SILVA")).to_be_visible()
+        expect(pg.get_by_text("Lacuna na numeração")).to_be_visible()
+        pg.get_by_label("Só com pendência de qualidade").uncheck()
+        pg.get_by_label("ID do paciente").fill("NINGUEM")
+        pg.get_by_role("button", name="Pesquisar").click()
+        expect(pg.get_by_text("Nenhum estudo com esses filtros.")).to_be_visible()
+        self.shot(pg, "09-imagens-sem-resultado")
 
 
 if __name__ == "__main__":

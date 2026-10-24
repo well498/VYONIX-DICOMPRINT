@@ -87,11 +87,20 @@ class PacsModuleTest(unittest.TestCase):
         from vyonix_deploy.modules import activation_steps
         ids = [s.id for s in activation_steps(self.ctx, "pacs")]
         for a, b in (("module.pacs.entitlement", "pacs.engine.config"), ("pacs.engine.config", "service.VyonixPacsEngine"),
+                     ("service.VyonixPacsEngine", "acl.pacs.storage"),
                      ("service.VyonixPacsEngine", "running.VyonixPacsEngine"), ("running.VyonixPacsEngine",
                                                                                   "pacs.core.settings"),
                      ("pacs.core.settings", "module.pacs.test"), ("module.pacs.test", "module.pacs.enable")):
             self.assertLess(ids.index(a), ids.index(b), (a, b))
         self.assertIn("firewall.pacs-dicom", ids)
+        # a conta virtual do serviço só existe depois do registro: permissões que a usam vêm depois
+        steps = activation_steps(self.ctx, "pacs")
+        svc_at = ids.index("service.VyonixPacsEngine")
+        for i, st in enumerate(steps):
+            grants = [a for a, _r in getattr(st, "grants", [])] + ([st.account] if hasattr(st, "account")
+                                                                   and st.id.startswith("grant") else [])
+            if any("VyonixPacsEngine" in g for g in grants):
+                self.assertGreater(i, svc_at, st.id)
         self.assertNotIn("pacs.engine.config", [s.id for s in activation_steps(self.ctx, "print")])
 
     def test_engine_service_refuses_plugins(self):
