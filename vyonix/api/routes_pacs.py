@@ -295,6 +295,20 @@ def wado_frames(study_uid: str, series_uid: str, sop_uid: str, frame_list: str,
     return Response(body, media_type=ctype)
 
 
+# --------------------------------------------------------------------------- qualidade
+
+@router.get("/quality")
+def quality_list(only_issues: bool = True, limit: int = 100, c: Ctx = Depends(needs("pacs.studies.read"))):
+    with c.session() as s:
+        return {"studies": pacs.quality_overview(s, limit=limit, only_issues=only_issues)}
+
+
+@router.get("/studies/{study_uid}/quality")
+def quality_study(study_uid: str, c: Ctx = Depends(needs("pacs.studies.read"))):
+    with c.session() as s:
+        return pacs.quality(s, study_uid)
+
+
 # --------------------------------------------------------------------------- administração
 
 @router.get("/status")

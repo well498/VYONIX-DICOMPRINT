@@ -442,3 +442,72 @@ def stats(s: Session) -> dict[str, Any]:
             "series": s.execute(select(func.count()).select_from(PacsSeries)).scalar(),
             "instances": s.execute(select(func.count()).select_from(PacsInstance)).scalar(),
             "bytes": int(s.execute(select(func.coalesce(func.sum(PacsInstance.size_bytes), 0))).scalar())}
+
+
+# --------------------------------------------------------------------------- qualidade (PM §25)
+
+STABLE_AFTER_S = 120          # sem instância nova por 2 min → recepção considerada encerrada
+
+
+def _gaps(numbers: list[int]) -> list[int]:
+    if not numbers:
+        return []
+    have = set(numbers)
+    return [n for n in range(min(numbers), max(numbers) + 1) if n not in have][:50]
+
+
+def quality(s: Session, study_uid: str, *, now=None) -> dict[str, Any]:
+    """Indicadores de qualidade de um estudo indexado.
+
+    O DICOM não informa quantas instâncias um estudo deveria ter; por isso "possivelmente incompleto" é
+    um indício (lacuna ou repetição na numeração das instâncias, recepção ainda em andamento), nunca uma
+    afirmação de completude. Estudo sem pedido conciliado aparece como pendência de conciliação.
+    """
+    from vyonix.clinical.models import Study
+    now = now or utcnow()
+    st = study(s, study_uid)
+    issues: list[dict[str, Any]] = []
+    series_out = []
+    for se in s.execute(select(PacsSeries).where(PacsSeries.study_id == st.id)
+                        .order_by(PacsSeries.series_number.nulls_last())).scalars():
+        nums = [n for (n,) in s.execute(select(PacsInstance.instance_number).where(PacsInstance.series_id == se.id))]
+        known = [n for n in nums if n is not None]
+        gaps = _gaps(known)
+        dup = sorted({n for n in known if known.count(n) > 1})
+        no_number = len(nums) - len(known)
+        series_out.append({"series_uid": se.series_uid, "modality": se.modality, "series_number": se.series_number,
+                           "instances": len(nums), "missing_numbers": gaps, "repeated_numbers": dup,
+                           "without_number": no_number})
+        if gaps:
+            issues.append({"code": "instance_gap", "series_uid": se.series_uid,
+                           "message": f"Série {se.series_number or '?'}: faltam as instâncias {', '.join(map(str, gaps[:10]))}"
+                                      + ("…" if len(gaps) > 10 else "") + " na numeração recebida."})
+        if dup:
+            issues.append({"code": "instance_repeated", "series_uid": se.series_uid,
+                           "message": f"Série {se.series_number or '?'}: números de instância repetidos "
+                                      f"({', '.join(map(str, dup[:10]))})."})
+    receiving = (now - st.last_received_at).total_seconds() < STABLE_AFTER_S
+    if receiving:
+        issues.append({"code": "receiving", "message": "Recepção em andamento (instância recebida há menos de "
+                                                         f"{STABLE_AFTER_S // 60} minutos)."})
+    cs = s.get(Study, st.clinical_study_id) if st.clinical_study_id else None
+    if cs is None or cs.order_id is None:
+        issues.append({"code": "no_order", "message": "Estudo sem pedido conciliado."})
+    if not st.accession:
+        issues.append({"code": "no_accession", "message": "Estudo sem número de acesso (Accession Number)."})
+    return {"study_uid": st.study_uid, "receiving": receiving, "last_received_at": st.last_received_at.isoformat(),
+            "reconciled": bool(cs and cs.order_id), "series": series_out, "issues": issues,
+            "possibly_incomplete": receiving or any(i["code"] == "instance_gap" for i in issues)}
+
+
+def quality_overview(s: Session, *, limit: int = 100, only_issues: bool = True) -> list[dict[str, Any]]:
+    """Estudos mais recentes com os indicadores de qualidade (por padrão, só os que têm pendência)."""
+    out = []
+    for st in s.execute(select(PacsStudy).order_by(PacsStudy.last_received_at.desc()).limit(min(limit, MAX_RESULTS))
+                        ).scalars():
+        q = quality(s, st.study_uid)
+        if q["issues"] or not only_issues:
+            out.append({"study_uid": q["study_uid"], "study_date": st.study_date.isoformat() if st.study_date else None,
+                        "accession": st.accession, "possibly_incomplete": q["possibly_incomplete"],
+                        "reconciled": q["reconciled"], "issues": [i["code"] for i in q["issues"]]})
+    return out

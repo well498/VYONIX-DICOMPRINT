@@ -158,6 +158,55 @@ class Ingest(unittest.TestCase):
             self.assertTrue(all(a.details["via"] == "dimse" for a in _audit(s, "pacs.instance.store")))
 
 
+class Quality(unittest.TestCase):
+    """Indicadores de qualidade (PM §25): lacunas e repetições na numeração, recepção em andamento, estudo sem
+    pedido ou sem número de acesso. Indícios, não afirmação de completude."""
+
+    def setUp(self):
+        from vyonix.pacs import service as pacs
+        self.t = new_org(db)
+        self.b = MemoryBackend()
+        with db.session(self.t) as s:
+            for i, n in enumerate((1, 2, 4, 4)):                # falta a 3; a 4 aparece duas vezes
+                pacs.ingest(s, self.b, make_dicom(sop=uid(1, 1, 10 + i), instance_number=n, patient_id="PAC-Q1"),
+                            actor="teste")
+
+    def test_gap_repeat_receiving_and_no_order(self):
+        from datetime import timedelta
+        from vyonix.db.base import utcnow
+        from vyonix.pacs import service as pacs
+        with db.session(self.t) as s:
+            q = pacs.quality(s, uid(1))
+            codes = {i["code"] for i in q["issues"]}
+            self.assertEqual(codes, {"instance_gap", "instance_repeated", "receiving", "no_order", "no_accession"})
+            self.assertEqual(q["series"][0]["missing_numbers"], [3])
+            self.assertEqual(q["series"][0]["repeated_numbers"], [4])
+            self.assertTrue(q["possibly_incomplete"])
+            later = pacs.quality(s, uid(1), now=utcnow() + timedelta(minutes=5))
+            self.assertNotIn("receiving", {i["code"] for i in later["issues"]})
+            self.assertTrue(later["possibly_incomplete"])                    # a lacuna continua
+            self.assertEqual(len(pacs.quality_overview(s)), 1)
+
+    def test_reconciled_complete_study_has_no_issue(self):
+        from datetime import timedelta
+        from vyonix.clinical import service as clinical
+        from vyonix.db.base import utcnow
+        from vyonix.pacs import service as pacs
+        from vyonix.pacs.models import PacsStudy
+        from sqlalchemy import select
+        with db.session(self.t) as s:
+            pacs.ingest(s, self.b, make_dicom(study=uid(5), series=uid(5, 1), sop=uid(5, 1, 1), accession="ACCQ",
+                                              patient_id="PAC-Q2"), actor="teste")
+            st = s.execute(select(PacsStudy).where(PacsStudy.study_uid == uid(5))).scalar_one()
+            p = clinical.create_patient(s, name="Paciente Sintético", identifiers=[("DICOM", "PAC-Q2")], actor="t")
+            o = clinical.create_order(s, patient_id=p.id, accession="ACCQ", actor="t")
+            clinical.reconcile(s, st.clinical_study_id, o.id, actor="t")
+            q = pacs.quality(s, uid(5), now=utcnow() + timedelta(minutes=5))
+            self.assertEqual(q["issues"], [])
+            self.assertFalse(q["possibly_incomplete"])
+            self.assertTrue(q["reconciled"])
+
+
 class QueryRetrieve(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -346,6 +395,9 @@ class Api(unittest.TestCase):
         self.assertIn('type="application/octet-stream"', r.headers["content-type"])
         self.assertEqual(len(self.parts_any(r)[0]), 32)
         self.assertEqual(self.c.get(f"{DW}/studies/{uid(9)}/metadata").status_code, 404)
+        q = self.c.get(f"/api/v1/pacs/studies/{uid(1)}/quality").json()
+        self.assertIn("no_order", {i["code"] for i in q["issues"]})
+        self.assertEqual(len(self.c.get("/api/v1/pacs/quality").json()["studies"]), 1)
         # estado e auditoria de abertura
         st = self.c.get("/api/v1/pacs/status").json()
         self.assertEqual((st["index"]["instances"], st["engine"]["reachable"]), (2, True))
