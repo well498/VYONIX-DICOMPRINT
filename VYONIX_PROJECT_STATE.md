@@ -187,3 +187,14 @@ Windows; `test_dimse_echo_allowed_query_refused` no platform).
 
 **Ponto de retomada:** runs do commit `d0e0a29` (deploy-windows: atualização e desinstalação com o PACS ativado; viewer:
 ferramentas janela/nível, zoom, inverter e girar).
+
+### Continuação de 24/10 (08h40)
+
+| Entrega | Evidência |
+|---|---|
+| `2598bc9` e `7d09fcb` confirmados no remoto (ancestrais de `d0e0a29`, head remota); viewer run 40089461632 aprovado depois de `7d09fcb` — o tour não bloqueia mais o zoom | `gh api compare`; run 40089461632 (3/3) |
+| Isolamento do PACS cloud: 8 cenários de ataque e erro; encontrou e corrigiu AE Title com espaços de preenchimento indo para a quarentena | `tests_platform/test_pacs_cloud_isolation.py` (8/8 local) |
+| Medição de distância (Length) no ponta a ponta do Viewer | `tests_viewer/test_viewer_e2e.py` (confirmação no CI pendente) |
+
+Restrições mantidas: r6 não publicada; sem ensaio em campo; recuperação de senha do License Manager adiada; DICOM Print em
+laboratório (rede isolada, impressora física e modalidades de teste).
