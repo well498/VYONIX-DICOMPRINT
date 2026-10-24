@@ -123,6 +123,29 @@ class PacsModuleTest(unittest.TestCase):
                 checked += 1
         self.assertGreater(checked, 10)
 
+    def test_update_repair_and_uninstall_know_the_engine(self):
+        """Com o PACS ativado, o motor também executa VyonixPlatform.exe da pasta do programa: o instalador precisa
+        pará-lo antes de copiar (a atualização falhou com código 5, run 40087337898), o reparo/atualização precisa
+        reiniciá-lo e a desinstalação precisa removê-lo."""
+        from pathlib import Path as P
+        from vyonix_deploy.plans import build, install_steps
+        from vyonix_deploy.steps import pacs
+        from vyonix_deploy.steps.update import uninstall_steps
+        self.assertNotIn("running.VyonixPacsEngine", [s.id for s in install_steps(self.ctx)])   # módulo não ativado
+        pacs.config_file(self.ctx).parent.mkdir(parents=True, exist_ok=True)
+        pacs.config_file(self.ctx).write_text("{}", encoding="utf-8")
+        for kind in ("repair", "install"):
+            ids = [s.id for s in build(self.ctx, kind)]
+            self.assertIn("running.VyonixPacsEngine", ids, kind)
+            self.assertLess(ids.index("running.VyonixCore"), ids.index("running.VyonixPacsEngine"))
+            self.assertEqual(len(ids), len(set(ids)), f"passos repetidos em {kind}")
+        un = [s.id for s in uninstall_steps(self.ctx)]
+        self.assertEqual(un[0], "remove.service.VyonixPacsEngine")
+        self.assertIn("remove.firewall.pacs-dicom", un)
+        iss = (P(__file__).resolve().parents[1] / "installer" / "VyonixPlatform.iss").read_text(encoding="utf-8")
+        self.assertIn("'VyonixPacsEngine'", iss.split("function PrepareToInstall", 1)[1])
+        self.assertIn("SetArrayLength(Names, 4)", iss)
+
     def test_engine_service_refuses_plugins(self):
         from vyonix.pacs.engine_host import EngineProcess
         b = self.binary()

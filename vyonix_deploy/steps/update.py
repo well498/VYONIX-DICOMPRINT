@@ -165,8 +165,11 @@ class ShortcutsRemovedStep(ShortcutsStep):
 def uninstall_steps(ctx: Context) -> list[Step]:
     from vyonix_deploy.plans import CORE_SVC, WORKER_SVC
     p = ctx.paths
-    return [ServiceRemovedStep(CORE_SVC), ServiceRemovedStep(WORKER_SVC), ServiceRemovedStep(pg.SERVICE),
+    from vyonix_deploy.steps import pacs
+    return [ServiceRemovedStep(pacs.SERVICE), ServiceRemovedStep(CORE_SVC), ServiceRemovedStep(WORKER_SVC),
+            ServiceRemovedStep(pg.SERVICE),
             RuleRemovedStep("core-https", "Core HTTPS", ctx.cfg.https_port),
+            RuleRemovedStep("pacs-dicom", "PACS DICOM", pacs.DICOM_PORT),
             ShortcutsRemovedStep(ctx.cfg.https_port, p.install_dir / "vyonix-deploy.exe", p.reports)]
 
 

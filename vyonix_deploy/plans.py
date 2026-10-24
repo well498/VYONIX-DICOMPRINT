@@ -57,6 +57,11 @@ def install_steps(ctx: Context) -> list[Step]:
         ServiceRunningStep(CORE_SVC, "VYONIX Core", probe=core.health, timeout=120),
         ServiceRunningStep(WORKER_SVC, "VYONIX Worker"),
     ]
+    from vyonix_deploy.steps import pacs
+    if pacs.config_file(ctx).exists():
+        # Módulo PACS ativado neste servidor: reparo e atualização conferem e reiniciam o motor DICOM também
+        # (o instalador o para antes de copiar os arquivos).
+        steps.extend(pacs.engine_steps(ctx))
     if cfg.shortcuts:
         steps.append(ShortcutsStep(cfg.https_port, p.install_dir / "vyonix-deploy.exe", p.reports))
     if cfg.network.mode == "static":

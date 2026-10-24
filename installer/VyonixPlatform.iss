@@ -110,9 +110,10 @@ var
   Names: array of String;
   I: Integer;
 begin
-  SetArrayLength(Names, 3);
-  Names[0] := 'VyonixCore'; Names[1] := 'VyonixWorker'; Names[2] := 'VyonixPostgreSQL';
-  for I := 0 to 2 do
+  { VyonixPacsEngine (módulo PACS) também executa VyonixPlatform.exe e o Orthanc.exe da pasta do programa. }
+  SetArrayLength(Names, 4);
+  Names[0] := 'VyonixPacsEngine'; Names[1] := 'VyonixCore'; Names[2] := 'VyonixWorker'; Names[3] := 'VyonixPostgreSQL';
+  for I := 0 to 3 do
   begin
     StopService(Names[I]);
     N := 0;
