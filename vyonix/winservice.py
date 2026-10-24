@@ -2,6 +2,7 @@
 
 ``VyonixPlatform.exe service core --data <pasta>``   → serviço ``VyonixCore`` (API + interface web)
 ``VyonixPlatform.exe service worker --data <pasta>`` → serviço ``VyonixWorker`` (processador de eventos)
+``VyonixPlatform.exe service pacs-engine --data <pasta>`` → serviço ``VyonixPacsEngine`` (Orthanc supervisionado)
 
 O registro dos serviços (conta virtual, recuperação, dependências) é feito pelo VYONIX DEPLOY.
 """
@@ -14,7 +15,8 @@ import sys
 import threading
 from pathlib import Path
 
-NAMES = {"core": ("VyonixCore", "VYONIX Core"), "worker": ("VyonixWorker", "VYONIX Worker")}
+NAMES = {"core": ("VyonixCore", "VYONIX Core"), "worker": ("VyonixWorker", "VYONIX Worker"),
+         "pacs-engine": ("VyonixPacsEngine", "VYONIX PACS (motor DICOM)")}
 
 
 def _logging(data_dir: Path, which: str) -> None:
@@ -34,9 +36,19 @@ class Runner:
         self.which, self.data_dir = which, data_dir
         self.server = None
         self.worker = None
+        self.engine = None
         self.thread: threading.Thread | None = None
 
     def start(self) -> None:
+        if self.which == "pacs-engine":
+            from vyonix.pacs.engine_host import CONFIG_NAME, EngineProcess, default_binary
+            import json
+            cfg_file = self.data_dir / "pacs" / CONFIG_NAME
+            storage = Path(json.loads(cfg_file.read_text(encoding="utf-8"))["StorageDirectory"])
+            self.engine = EngineProcess(default_binary(), cfg_file, log_file=storage / "logs" / "orthanc.log")
+            self.engine.start()
+            self.thread = self.engine.thread
+            return
         from vyonix import config as config_mod
         from vyonix.context import build
         cfg = config_mod.load(self.data_dir)
@@ -61,6 +73,8 @@ class Runner:
             self.server.should_exit = True
         if self.worker is not None:
             self.worker.stop.set()
+        if self.engine is not None:
+            self.engine.stop()
         if self.thread is not None:
             self.thread.join(timeout)
 

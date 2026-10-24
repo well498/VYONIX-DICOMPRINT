@@ -17,6 +17,8 @@ concurrency:
 
 env:
   PG_VERSION: "17.11"
+  ORTHANC_VERSION: "1.13.0"
+  ORTHANC_SHA256: ""
   PG_URLS: "https://get.enterprisedb.com/postgresql/postgresql-17.11-1-windows-x64-binaries.zip https://sbp.enterprisedb.com/getfile.jsp?fileid=1260616"
 
 jobs:
@@ -79,6 +81,30 @@ jobs:
           if ($v -notmatch [regex]::Escape($env:PG_VERSION)) { throw "versão inesperada: $v" }
           "PostgreSQL: $v; zip SHA-256 $sha" | Tee-Object -FilePath "dist\VyonixPlatform\pgsql\ORIGEM.txt"
           Write-Host "::notice title=PostgreSQL embutido::$v (zip SHA-256 $sha)"
+
+      - name: Orthanc ${{ env.ORTHANC_VERSION }} (binário oficial, só o núcleo, sem plugins)
+        shell: pwsh
+        run: |
+          # Executável oficial do projeto Orthanc (GPLv3, sem modificações, sem plugins — ADR-0012).
+          # O site não publica SHA-256: o valor fixado em ORTHANC_SHA256 foi medido no primeiro download do CI.
+          $url = "https://orthanc.uclouvain.be/downloads/windows-64/orthanc/$env:ORTHANC_VERSION/Orthanc.exe"
+          $dst = "dist\VyonixPlatform\orthanc"
+          New-Item -ItemType Directory $dst -Force | Out-Null
+          Invoke-WebRequest $url -OutFile "$dst\Orthanc.exe" -UseBasicParsing
+          $sha = (Get-FileHash "$dst\Orthanc.exe" -Algorithm SHA256).Hash
+          if ($env:ORTHANC_SHA256 -and $sha -ne $env:ORTHANC_SHA256) { throw "SHA-256 do Orthanc.exe inesperado: $sha" }
+          if (-not $env:ORTHANC_SHA256) { Write-Host "::warning title=Orthanc SHA-256 não fixado::$sha (fixar em ORTHANC_SHA256)" }
+          $info = (Get-Item "$dst\Orthanc.exe").VersionInfo
+          @"
+          Orthanc $env:ORTHANC_VERSION — servidor DICOM do projeto Orthanc (https://orthanc.uclouvain.be), licença GPLv3.
+          Executável oficial sem modificações, baixado de $url
+          SHA-256: $sha
+          Código-fonte correspondente: https://orthanc.uclouvain.be/hg/orthanc/ (etiqueta Orthanc-$env:ORTHANC_VERSION)
+          e https://orthanc.uclouvain.be/downloads/sources/orthanc/
+          Executado como processo separado pelo serviço VyonixPacsEngine, sem plugins.
+          "@ | Out-File "$dst\LEIA-ME_ORTHANC.txt" -Encoding utf8
+          Invoke-WebRequest "https://www.gnu.org/licenses/gpl-3.0.txt" -OutFile "$dst\COPYING_GPLv3.txt" -UseBasicParsing
+          Write-Host "::notice title=Orthanc embutido::$env:ORTHANC_VERSION ($($info.FileVersion)) SHA-256 $sha"
 
       - name: Versão
         shell: pwsh

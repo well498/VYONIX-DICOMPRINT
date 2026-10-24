@@ -134,6 +134,10 @@ class ModuleTestStep(Step):
                 return {"result": "Aprovado" if ok else "Reprovado",
                         "detail": f"Serviço VyonixDicomPrint: {q['state']}."}
             return {"result": "Não aplicável", "detail": "Somente no Windows."}
+        if self.code == "pacs":
+            from vyonix_deploy.steps.pacs import engine_probe
+            ok, msg = engine_probe(ctx)
+            return {"result": "Aprovado" if ok else "Reprovado", "detail": msg}
         return {"result": "Não aplicável", "detail": "Módulo sem teste específico nesta versão."}
 
     def observe(self, ctx: Context) -> dict:
@@ -199,9 +203,13 @@ class ModuleEnableStep(Step):
 
 
 def activation_steps(ctx: Context, code: str) -> list[Step]:
+    prepare: list[Step] = []
+    if code == "pacs":
+        from vyonix_deploy.steps.pacs import engine_steps
+        prepare = engine_steps(ctx)
     return [EntitlementStep(code), DependenciesStep(code),
             DirectoryStep(f"module.{code}", ctx.paths.data_dir / "modules" / code, f"do módulo {code}"),
-            ModuleTestStep(code), ModuleEnableStep(code)]
+            *prepare, ModuleTestStep(code), ModuleEnableStep(code)]
 
 
 def activate(d, code: str, *, approve_all: bool = False, silent: bool = False, licensing=None,

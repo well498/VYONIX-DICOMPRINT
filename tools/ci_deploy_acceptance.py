@@ -514,6 +514,29 @@ $ap = $r | Get-NetFirewallApplicationFilter
         assert r["refused_without_license"], "habilitou sem licença"
         return json.dumps(r, ensure_ascii=False)[:800]
 
+    @check("2.9", "Ativação do módulo PACS: motor DICOM (Orthanc sem plugins) como serviço, Core configurado e habilitado")
+    def _():
+        sh([sys.executable, ROOT / "tools" / "ci_activation.py", "--out", OUT, "--module", "pacs"], timeout=900,
+           ok=None)
+        r = json.loads((OUT / "activation-pacs.json").read_text(encoding="utf-8"))
+        assert r["status"] == "succeeded", r
+        assert r["before_enabled"] is False and r["after_enabled"] is True, r
+        assert r["refused_without_license"], "habilitou sem licença"
+        ok, msg = r["engine_probe"]
+        assert ok, msg
+        q = query_service("VyonixPacsEngine")
+        assert q and q["state"] == "Running" and q["account"].lower() == "nt service\\vyonixpacsengine", q
+        port = state.get("port", 8444)
+        health(port)
+        api = Api(port)
+        api.login()
+        st = api.call("GET", "/pacs/status")
+        assert st["engine"]["configured"] and st["engine"]["reachable"] and st["enabled"], st
+        import socket
+        with socket.create_connection(("127.0.0.1", 4242), timeout=5):
+            pass
+        return f"{msg}; Core: {st['engine'].get('version')} alcançável; porta DICOM 4242 aberta"
+
     # ---------------------------------------------------------------- 2.8 atualização
     @check("2.8", "Atualização: backup antes da migração; dados e configurações preservados")
     def _():

@@ -17,6 +17,7 @@ from vyonix_deploy.steps import postgres as pg
 DB_NAME = "vyonix"
 PREFIX = "vyonix"
 ROLES = ("owner", "app", "service")
+MODULE_KEYS = ("pacs_",)
 
 
 def _core_store(ctx: Context):
@@ -36,7 +37,13 @@ def role_urls(ctx: Context) -> dict[str, str]:
 def core_config(ctx: Context) -> dict:
     tmpl = {r: f"postgresql://{PREFIX}_{r}:{{secret:db_{r}}}@127.0.0.1:{ctx.cfg.pg_port}/{DB_NAME}" for r in ROLES}
     tls = ctx.paths.data_dir / "tls"
-    return {"mode": "edge", "database_url": tmpl["app"], "service_database_url": tmpl["service"],
+    keep: dict = {}
+    try:                     # configurações de módulos (ex.: pacs_*) gravadas pela ativação são preservadas
+        cur = json.loads((ctx.paths.data_dir / "config.json").read_text(encoding="utf-8"))
+        keep = {k: v for k, v in cur.items() if k.startswith(MODULE_KEYS)}
+    except (OSError, ValueError):
+        pass
+    return {**keep, "mode": "edge", "database_url": tmpl["app"], "service_database_url": tmpl["service"],
             "owner_database_url": tmpl["owner"], "role_prefix": PREFIX, "default_organization": ctx.cfg.organization,
             "bind": "0.0.0.0", "port": int(ctx.cfg.https_port), "tls_cert": str(tls / "server.crt"),
             "tls_key": str(tls / "server.key"), "licensing_dir": str(ctx.paths.licensing)}

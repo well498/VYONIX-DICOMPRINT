@@ -31,6 +31,7 @@ jobs:
       VYONIX_TEST_ORTHANC_USER: vyonix
       VYONIX_TEST_ORTHANC_PASSWORD: ci-orthanc-only
       VYONIX_TEST_ORTHANC_DICOM: 127.0.0.1:4242:VYONIXCI
+      VYONIX_TEST_ORTHANC_BIN: /usr/sbin/Orthanc
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

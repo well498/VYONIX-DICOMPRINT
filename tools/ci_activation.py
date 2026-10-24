@@ -20,7 +20,9 @@ sys.path.insert(0, str(ROOT))
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", required=True)
-    out = Path(ap.parse_args().out)
+    ap.add_argument("--module", default="print")
+    a = ap.parse_args()
+    out, code = Path(a.out), a.module
     res: dict = {}
     tmp = Path(tempfile.mkdtemp(prefix="vyx-act-"))
     try:
@@ -38,23 +40,27 @@ def main() -> int:
         db, tid = _core(ctx)
         from vyonix.modules import registry
         with db.session(tid) as s:
-            res["before_enabled"] = registry.is_enabled(s, "print")
-        r0 = activate(d, "print", approve_all=True, licensing=lic)
+            res["before_enabled"] = registry.is_enabled(s, code)
+        r0 = activate(d, code, approve_all=True, licensing=lic)
         res["refused_without_license"] = r0["status"] != "succeeded"
         res["without_license"] = {"status": r0["status"], "message": r0["message"]}
-        req = lic.request(modules=["core", "print"], demo_days=None, organization="Clínica CI",
+        req = lic.request(modules=sorted({"core", "print", code}), demo_days=None, organization="Clínica CI",
                           contact={"name": "CI", "email": "ci@exemplo.com"})
         info = lm.import_request(admin, req["code"])
         doc = lm.issue(admin, info.request_id, cid, ltype="annual", edition="Profissional",
-                       modules={"core": {"kind": "contract"}})["document"]
+                       modules={"core": {"kind": "contract"},
+                                **({code: {"kind": "contract"}} if code != "print" else {})})["document"]
         with db.session(tid) as s:
             lic.install(s, doc, actor="CI")
-        r = activate(d, "print", approve_all=True, licensing=lic)
+        r = activate(d, code, approve_all=True, licensing=lic)
         res.update(status=r["status"], message=r["message"], run_id=r["run_id"], report=r["report"]["pdf"])
         steps = d.db.steps(r["run_id"])
         res["steps"] = [(s["step_id"], s["status"], s.get("verify_msg")) for s in steps]
         with db.session(tid) as s:
-            res["after_enabled"] = registry.is_enabled(s, "print")
+            res["after_enabled"] = registry.is_enabled(s, code)
+        if code == "pacs":
+            from vyonix_deploy.steps.pacs import engine_probe
+            res["engine_probe"] = engine_probe(ctx)
         db.dispose()
         lm.close()
         d.close()
@@ -64,7 +70,7 @@ def main() -> int:
         res["error"] = traceback.format_exc()
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
-    (out / "activation.json").write_text(json.dumps(res, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+    (out / f"activation-{code}.json" if code != "print" else out / "activation.json").write_text(json.dumps(res, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
     print(json.dumps(res, ensure_ascii=False, indent=2, default=str))
     return 0 if res.get("status") == "succeeded" else 1
 
