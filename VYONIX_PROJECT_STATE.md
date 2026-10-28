@@ -302,6 +302,14 @@ do paciente) — e2e 7/7.
 **CI de `7804f57`:** platform **183/0/0** (40697537395), viewer **5/5** (40697537355), deploy-windows **29/0/1**
 (40697537396), Windows release (40697537456; `v1.0.0-r5` não substituída).
 
+**Retomada de 28/10, 12h50:** o desenvolvimento tinha parado porque a resposta anterior terminou sem nenhuma espera
+pendente (não houve erro nem bloqueio); o contêiner foi reciclado por inatividade e o PostgreSQL de testes religado.
+Retornos agendados nesta sessão passam a garantir a continuidade.
+
+**CI de `f39b8e9` (TELELAUDO T1):** platform, viewer, deploy-windows **29/0/1** (40720905755) e Windows release
+aprovados. Depois, locais: T2 `285dfb8`, T3 `cc9140a`, T4 `50570e8`, T5 `6ca6896`, T6 `5c1c524`, T7 `2e30bf4` —
+platform **168** testes locais, e2e 8/8.
+
 **Decisão pendente do proprietário (REPORT):** assinatura digital do laudo (ICP-Brasil: certificado A1/A3, padrão
 PAdES/CAdES, carimbo de tempo). Até lá a liberação é por confirmação de senha, registrada e verificável, e a tela
 informa que não é assinatura digital.
