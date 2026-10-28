@@ -113,8 +113,10 @@ indexação ficam no motor, mas **não** aparecem na pesquisa nem na recuperaç�
   passa a "em andamento". Exame sem agendamento é aceito e apenas registrado na auditoria.
 * **N-SET:** `COMPLETED` conclui o agendamento (sai da worklist); `DISCONTINUED` devolve o agendamento em andamento à
   fila; MPPS já finalizado não muda (`0x0110`).
-* Cada N-CREATE/N-SET fica na auditoria (AE, situação; sem dados do paciente). Os atributos de dose e de séries
-  executadas são aceitos, mas não armazenados nesta versão.
+* A PerformedSeriesSequence (séries e ReferencedImageSequence) é guardada e comparada com as imagens recebidas pelo
+  PACS: a Agenda mostra “imagens recebidas/informadas” e destaca a falta (transferência incompleta).
+* Cada N-CREATE/N-SET fica na auditoria (AE, situação; sem dados do paciente). Atributos de dose são aceitos, mas não
+  armazenados nesta versão.
 
 ## 4. DICOMweb (Core)
 

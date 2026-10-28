@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, Uuid, text
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Index, Integer, String, Uuid, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from vyonix.db.base import Base, TenantMixin
@@ -35,6 +35,7 @@ class Schedule(TenantMixin, Base):
     duration_min: Mapped[int] = mapped_column(Integer, nullable=False, default=15, server_default="15")
     mpps_uid: Mapped[str | None] = mapped_column(String(64))         # MPPS (N-CREATE) da modalidade
     mpps_status: Mapped[str | None] = mapped_column(String(16))      # IN PROGRESS | COMPLETED | DISCONTINUED
+    mpps_performed: Mapped[dict | None] = mapped_column(JSON)         # {série: [SOP Instance UIDs]} informados no MPPS
 
 
 class Room(TenantMixin, Base):

@@ -6,6 +6,7 @@ type Item = {
   schedule_id: string; sps_id: string; status: string; accession: string; priority: string; modality: string;
   station_aet: string | null; room: string | null; description: string | null; scheduled_at: string; duration_min: number;
   study_instance_uid: string; mpps_status: string | null;
+  images: { expected: number; received: number } | null;
   patient_id: string; patient_name: string;
 };
 type Room = { id: string; name: string; modality: string | null; station_aet: string | null; default_duration_min: number;
@@ -158,6 +159,8 @@ export function SchedulePage({ me }: { me: Me }) {
                 <td className="nowrap">{it.accession}</td>
                 <td>{STATUS[it.status] ?? it.status}
                   {it.mpps_status && <span className="tag" title="Informado pela modalidade (MPPS)">{MPPS[it.mpps_status] ?? it.mpps_status}</span>}
+                  {it.images && <span className={`tag${it.images.received < it.images.expected ? " tag-warn" : ""}`}
+                    title="Imagens informadas pela modalidade (MPPS) × recebidas pelo PACS">imagens {it.images.received}/{it.images.expected}</span>}
                   {canView && ["received", "completed"].includes(it.status) && (
                     <> <a href={`/viewer/viewer?StudyInstanceUIDs=${encodeURIComponent(it.study_instance_uid)}`}
                       target="_blank" rel="noopener">Abrir no Viewer</a></>)}</td>

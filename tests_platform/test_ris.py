@@ -429,6 +429,40 @@ class Worklist(unittest.TestCase):
         with db.session(self.t) as s:
             self.assertEqual(len(audit.query(s, action="ris.mpps.unscheduled")), 1)
 
+    def test_mpps_performed_images_vs_pacs(self):
+        from pydicom.dataset import Dataset
+        from pydicom.uid import generate_uid
+        from vyonix.ris import service as ris
+        with db.session(self.t) as s:
+            self.registry.enable(s, "ris", actor="admin", license_check=self.lic.module_ok)
+        a = self.mpps()
+        uid = generate_uid(prefix=None)
+        self.assertEqual(a.send_n_create(self.mpps_create_ds(self.sch.sps_id), MPPS, uid)[0].Status, 0x0000)
+        series = generate_uid(prefix=None)
+        sops = [generate_uid(prefix=None) for _ in range(3)]
+        done = Dataset()
+        done.PerformedProcedureStepStatus = "COMPLETED"
+        item = Dataset()
+        item.SeriesInstanceUID = series
+        refs = []
+        for u in sops:
+            r = Dataset()
+            r.ReferencedSOPClassUID, r.ReferencedSOPInstanceUID = "1.2.840.10008.5.1.4.1.1.2", u
+            refs.append(r)
+        item.ReferencedImageSequence = refs
+        done.PerformedSeriesSequence = [item]
+        self.assertEqual(a.send_n_set(done, MPPS, uid)[0].Status, 0x0000)
+        def images():
+            with db.session(self.t) as s:
+                wl = ris.worklist(s, date_from=date(2026, 11, 3), date_to=date(2026, 11, 3), include_done=True)
+                return next(e["images"] for e in wl if e["schedule_id"] == str(self.sch_id))
+        self.assertEqual(images(), {"expected": 3, "received": 0})
+        with db.session(self.t) as s:                            # duas das três chegam ao PACS
+            for i, u in enumerate(sops[:2], start=1):
+                self.pacs.ingest(s, self.b, make_dicom(study=self.uid, series=series, sop=u, patient_id=self.pid,
+                                                       instance_number=i), actor="teste")
+        self.assertEqual(images(), {"expected": 3, "received": 2})
+
     def test_mpps_discontinued_returns_to_worklist(self):
         from pydicom.dataset import Dataset
         from pydicom.uid import generate_uid

@@ -15,7 +15,7 @@ import uuid
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from vyonix.audit import service as audit
@@ -217,7 +217,7 @@ def worklist(s: Session, *, date_from: date | None = None, date_to: date | None 
         out.append({"schedule_id": str(st.id), "order_id": str(o.id), "sps_id": st.sps_id, "status": st.status,
                     "study_instance_uid": st.study_instance_uid, "accession": o.accession, "priority": o.priority,
                     "modality": st.modality, "station_aet": st.station_aet, "room": st.room, "duration_min": st.duration_min,
-                    "mpps_status": st.mpps_status,
+                    "mpps_status": st.mpps_status, "images": completeness(s, st),
                     "description": st.description, "requester": o.requester,
                     "scheduled_date": local.strftime("%Y%m%d"), "scheduled_time": local.strftime("%H%M%S"),
                     "scheduled_at": st.scheduled_at.isoformat(), "patient_id": pid,
@@ -303,7 +303,35 @@ def mpps_create(s: Session, sop_uid: str, *, sps_id: str | None, study_uid: str 
     return None
 
 
-def mpps_set(s: Session, sop_uid: str, *, status: str | None, calling_ae: str) -> Schedule | None:
+def performed_from(ds) -> dict[str, list[str]] | None:
+    """{Series Instance UID: [SOP Instance UIDs]} da PerformedSeriesSequence (imagens que a modalidade diz ter feito)."""
+    seq = getattr(ds, "PerformedSeriesSequence", None) if ds is not None else None
+    if not seq:
+        return None
+    out: dict[str, list[str]] = {}
+    for item in seq:
+        series = str(getattr(item, "SeriesInstanceUID", "") or "").strip()
+        sops = [str(getattr(r, "ReferencedSOPInstanceUID", "") or "").strip()
+                for r in (getattr(item, "ReferencedImageSequence", None) or [])]
+        if series:
+            out.setdefault(series, []).extend(x for x in sops if x)
+    return out or None
+
+
+def completeness(s: Session, sch: Schedule) -> dict[str, int] | None:
+    """Imagens informadas no MPPS × recebidas pelo PACS (mesma organização). None sem lista do MPPS."""
+    if not sch.mpps_performed:
+        return None
+    from vyonix.pacs.models import PacsInstance
+    sops = sorted({u for lst in sch.mpps_performed.values() for u in lst})
+    if not sops:
+        return None
+    got = s.execute(select(func.count()).select_from(PacsInstance).where(PacsInstance.sop_uid.in_(sops))).scalar() or 0
+    return {"expected": len(sops), "received": int(got)}
+
+
+def mpps_set(s: Session, sop_uid: str, *, status: str | None, calling_ae: str,
+             performed: dict[str, list[str]] | None = None) -> Schedule | None:
     """N-SET: andamento/conclusão do exame. COMPLETED conclui o agendamento; DISCONTINUED o devolve à fila
     (o exame não foi feito) e fica na auditoria. Depois de finalizado, o MPPS não muda (PS3.4 F.7.2.2)."""
     sch = s.execute(select(Schedule).where(Schedule.mpps_uid == sop_uid)).scalar_one_or_none()
@@ -313,11 +341,16 @@ def mpps_set(s: Session, sop_uid: str, *, status: str | None, calling_ae: str) -
         raise MppsError(0x0110, "MPPS já finalizado não pode ser alterado.")                  # processing failure
     st = (status or "").upper()
     if not st:
+        if performed:
+            sch.mpps_performed = performed
+            s.flush()
         return sch
     if st not in ("IN PROGRESS",) + MPPS_FINAL:
         raise MppsError(0x0106, "PerformedProcedureStepStatus inválido.")
     old = sch.status
     sch.mpps_status = st
+    if performed:
+        sch.mpps_performed = performed
     if st == "COMPLETED" and sch.status not in ("cancelled",):
         sch.status = "completed"
     elif st == "DISCONTINUED" and sch.status == "in_progress":
