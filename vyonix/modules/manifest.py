@@ -169,6 +169,28 @@ _PLANNED = [
 PLANNED = [ModuleManifest(code=c, name=n, version="planejado", description=d, depends=("core",), available=False)
            for c, n, d in _PLANNED]
 
+# Modelos de perfil **opcionais** (Prompt Mestre §8): só viram papéis quando o administrador da instituição os ativa,
+# e depois podem ser personalizados. Os papéis padrão acima continuam criados em toda organização.
+ROLE_TEMPLATES: dict[str, tuple[str, list[str], str]] = {
+    "coordenador_cdi": ("Coordenador do CDI", ["clinical.*", "ris.*", "pacs.studies.read", "pacs.studies.store",
+                                               "report.read", "report.assign", "print.jobs.read", "core.users.read"],
+                        "Coordena agenda, exames, conciliação e a distribuição de laudos; não libera laudos"),
+    "gestor_telelaudos": ("Gestor de Telelaudos", ["report.read", "report.assign", "report.templates.manage",
+                                                   "report.physicians.manage", "report.branding.manage",
+                                                   "clinical.studies.read", "pacs.studies.read"],
+                          "Distribui exames, cadastra médicos e modelos; não libera laudos"),
+    "financeiro": ("Administrador Financeiro", ["core.license.read", "ris.schedule.read"],
+                   "Contratos e licença da instituição; sem acesso a imagens e laudos"),
+    "suporte_tecnico": ("Técnico de Suporte", ["core.settings.read", "core.audit.read", "core.license.read",
+                                               "pacs.admin", "print.jobs.read"],
+                        "Diagnóstico do sistema e da integração DICOM; sem acesso a laudos"),
+}
+STRUCTURES: dict[str, tuple[str, list[str]]] = {
+    "clinica_pequena": ("Clínica pequena", []),
+    "cdi": ("Centro de diagnóstico (CDI)", ["coordenador_cdi"]),
+    "hospital": ("Hospital", ["coordenador_cdi", "gestor_telelaudos", "financeiro", "suporte_tecnico"]),
+}
+
 MANIFESTS: dict[str, ModuleManifest] = {m.code: m for m in [CORE, CLINICAL, PRINT, PACS, RIS, REPORT, *PLANNED]}
 LICENSABLE = tuple(m.code for m in MANIFESTS.values() if m.requires_license)
 

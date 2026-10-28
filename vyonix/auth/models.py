@@ -84,3 +84,16 @@ class MfaFactor(TenantMixin, Base):
     last_step: Mapped[int] = mapped_column(Integer, nullable=False, default=0)       # anti-reuso do código
     recovery_hashes: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     note: Mapped[str | None] = mapped_column(Text)
+
+
+class LoginDirectory(Base):
+    """Diretório **global** de logins (servidor com várias instituições): o identificador de acesso é único na
+    plataforma e aponta para a conta institucional dona dele. Não é cadastro compartilhado — senha, papéis e
+    dados continuam só na conta da instituição. Sem ``tenant_id`` (consultado antes de existir a organização da
+    sessão); só o papel de serviço acessa."""
+    __tablename__ = "login_directory"
+    __table_args__ = (Index("uq_login_directory_user", "user_id", unique=True), {"schema": "auth"})
+    login: Mapped[str] = mapped_column(String(60), primary_key=True)            # minúsculas
+    org_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+    user_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))

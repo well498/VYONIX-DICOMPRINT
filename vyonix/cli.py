@@ -67,7 +67,8 @@ def cmd_init(a) -> int:
         if tenancy.resolve(db, a.org) is None:
             pwd = _password("VYONIX_ADMIN_PASSWORD", f"Senha do administrador '{a.admin_user}': ")
             tenancy.create_organization(db, code=a.org, name=a.org_name or a.org, admin_username=a.admin_user,
-                                        admin_password=pwd, actor="instalação")
+                                        admin_password=pwd, actor="instalação",
+                                        register_login=a.mode == "cloud")
             print(f"Organização '{a.org}' e administrador '{a.admin_user}' criados.")
         else:
             print(f"Organização '{a.org}' já existe: mantida.")

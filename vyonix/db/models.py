@@ -1,7 +1,8 @@
 """Importa todos os modelos (metadados completos para as migrações)."""
 
 from vyonix.audit.models import AuditEntry  # noqa: F401
-from vyonix.auth.models import AuthSession, MfaFactor, Permission, Role, RolePermission, User, UserRole  # noqa: F401
+from vyonix.auth.models import (AuthSession, LoginDirectory, MfaFactor, Permission, Role,  # noqa: F401
+                                RolePermission, User, UserRole)
 from vyonix.clinical.models import (Encounter, Order, Patient, PatientIdentifier, PatientMerge,  # noqa: F401
                                     Procedure, Study)
 from vyonix.events.models import InboxEntry, OutboxEvent  # noqa: F401

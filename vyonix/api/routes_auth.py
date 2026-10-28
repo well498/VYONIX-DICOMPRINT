@@ -39,10 +39,18 @@ def login(body: LoginIn, request: Request, response: Response):
     ip = client_ip(request)
     if not request.app.state.login_limiter.hit(ip):
         raise VyonixError("Muitas tentativas. Aguarde um minuto.", code="rate_limited")
-    code = (body.organization or "").strip().lower() or (plat.cfg.default_organization if plat.edge else "")
-    if not code:
-        raise ValidationFailed("Informe a organização.")
-    tid = tenancy.resolve(plat.db, code)
+    # Só usuário e senha: a instalação local atende uma organização; no servidor com várias instituições, o login
+    # é único na plataforma e o diretório global indica a instituição. O código da organização continua aceito
+    # (compatibilidade) para contas antigas com o mesmo login em duas organizações.
+    code = (body.organization or "").strip().lower()
+    if code:
+        tid = tenancy.resolve(plat.db, code)
+    elif plat.edge:
+        tid = tenancy.resolve(plat.db, plat.cfg.default_organization)
+    else:
+        from vyonix.auth import directory
+        with plat.db.service_session() as s:
+            tid = directory.resolve(s, body.username)
     if tid is None:
         auth.passwords.check_password(body.password, auth.passwords.DUMMY_HASH)
         raise Unauthorized(auth.GENERIC)

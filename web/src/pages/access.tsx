@@ -1,24 +1,18 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { errorText, get, post, type Me } from "../api";
+import { errorText, post, type Me } from "../api";
 import { Field, Notice } from "../ui";
 
 export function Login({ onDone }: { onDone: (m: Me) => void }) {
-  const [mode, setMode] = useState<"edge" | "cloud">("edge");
-  const [org, setOrg] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
 
-  useEffect(() => {
-    get<{ mode: "edge" | "cloud" }>("/health").then((h) => setMode(h.mode)).catch(() => undefined);
-  }, []);
-
   async function submit(e: FormEvent) {
     e.preventDefault();
     setBusy(true); setErr("");
     try {
-      onDone(await post<Me>("/auth/login", { username, password, organization: org || null }));
+      onDone(await post<Me>("/auth/login", { username, password }));
     } catch (x) { setErr(errorText(x)); setPassword(""); } finally { setBusy(false); }
   }
 
@@ -30,10 +24,6 @@ export function Login({ onDone }: { onDone: (m: Me) => void }) {
           <span>VYONIX</span>
         </div>
         <h1 id="login-title">Entrar</h1>
-        {mode === "cloud" && (
-          <Field label="Organização"><input value={org} onChange={(e) => setOrg(e.target.value)} required
-            autoComplete="organization" /></Field>
-        )}
         <Field label="Usuário"><input name="username" value={username} onChange={(e) => setUsername(e.target.value)}
           required autoFocus autoComplete="username" /></Field>
         <Field label="Senha"><input name="password" type="password" value={password}

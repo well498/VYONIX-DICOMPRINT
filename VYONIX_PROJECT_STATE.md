@@ -313,6 +313,16 @@ platform **168** testes locais, e2e 8/8.
 **CI de `f4b1fea`:** platform, viewer, deploy-windows (40726845928) e Windows release aprovados. Enviados depois:
 T8 `63205f1`, `f098374`, assinatura manuscrita `0d3e05d` e C-GET `72abd86` (platform e viewer aprovados; Windows em andamento). Locais depois: resumo do MPPS `a83c00a`, Central de exames `6d6aa78`, retenção do PACS — platform **186** local, e2e 8/8.
 
+**Prompt Mestre (28/10, 14h29) — multi-institucional, licenciamento centralizado, perfis dinâmicos:** auditoria e
+matriz em `docs/platform/Prompt_Mestre_Auditoria_e_Matriz.md`. Fase 2 (primeira parte) feita: diretório global de
+logins (`core_0002`; login só com usuário e senha no servidor com várias instituições, identificador único na
+plataforma, contas independentes; logins repetidos antigos continuam com o código da organização), delegação
+limitada (ninguém concede permissão que não tem nem altera conta mais privilegiada), modelos de perfil opcionais
+(Coordenador do CDI, Gestor de Telelaudos, Financeiro, Técnico de Suporte) e estruturas (clínica pequena, CDI,
+hospital) — `test_access_multiinst.py` 4/4 com Clínica Alfa, Hospital Beta e CDI Gama fictícios. Decisão pendente
+do proprietário antes da Fase 5: onde fica a chave de emissão de licenças (o teste de arquitetura proíbe chave
+privada na plataforma; BLK-01).
+
 **Assinatura manuscrita digitalizada no cadastro médico (pedido de 28/10, tarde) — implementada, não validada para
 uso clínico:** imagem JPG/JPEG/PNG/WEBP com recorte, brilho, contraste e remoção do fundo branco; fica pendente até o
 médico confirmar com a senha; administrador só envia se o médico o designou; cifrada, privada, auditada (envio,

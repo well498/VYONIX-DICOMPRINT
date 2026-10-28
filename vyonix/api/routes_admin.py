@@ -82,12 +82,26 @@ def users(c: Ctx = Depends(needs("core.users.read"))):
 
 @router.post("/users", status_code=201)
 def create_user(body: UserIn, c: Ctx = Depends(needs("core.users.manage"))):
-    with c.session() as s:
+    from vyonix.auth import directory
+    with directory.Reservation(c.plat.db, body.username, c.p.tenant_id, not c.plat.edge) as uid, c.session() as s:
         c.plat.licensing.enforce_limit(s, "core", "users", count_active_users(s) + 1)
+        auth.check_grant(s, c.p, [r.role for r in body.roles])
         u = auth.create_user(s, username=body.username, display_name=body.display_name, email=body.email,
                              password=body.password, roles=[(r.role, r.site_id) for r in body.roles],
-                             mfa_required=body.mfa_required, **c.actor)
+                             mfa_required=body.mfa_required, user_id=uid, **c.actor)
         return {"id": str(u.id)}
+
+
+@router.get("/users/login-available")
+def login_available(login: str, c: Ctx = Depends(needs("core.users.manage"))):
+    """Disponibilidade do login (servidor com várias instituições: único na plataforma)."""
+    from vyonix.auth import directory
+    with c.session() as s:
+        local = auth.find_user(s, login) is None
+    if c.plat.edge:
+        return {"available": local}
+    with c.plat.db.service_session() as s:
+        return {"available": local and directory.available(s, login)}
 
 
 @router.patch("/users/{user_id}")
@@ -97,6 +111,7 @@ def update_user(user_id: uuid.UUID, body: UserPatch, c: Ctx = Depends(needs("cor
         u = s.get(User, user_id)
         if body.active and u is not None and not u.active:
             c.plat.licensing.enforce_limit(s, "core", "users", count_active_users(s) + 1)
+        auth.check_grant(s, c.p, [], user_id=user_id)          # não mexe em conta mais privilegiada
         auth.update_user(s, user_id, **body.model_dump(exclude_unset=True), **c.actor)
     return {"ok": True}
 
@@ -104,6 +119,7 @@ def update_user(user_id: uuid.UUID, body: UserPatch, c: Ctx = Depends(needs("cor
 @router.put("/users/{user_id}/roles")
 def set_roles(user_id: uuid.UUID, body: RolesIn, c: Ctx = Depends(needs("core.users.manage"))):
     with c.session() as s:
+        auth.check_grant(s, c.p, [r.role for r in body.roles], user_id=user_id)
         auth.set_roles(s, user_id, [(r.role, r.site_id) for r in body.roles], **c.actor)
     return {"ok": True}
 
@@ -111,6 +127,7 @@ def set_roles(user_id: uuid.UUID, body: RolesIn, c: Ctx = Depends(needs("core.us
 @router.post("/users/{user_id}/reset-password")
 def reset_password(user_id: uuid.UUID, body: PasswordReset, c: Ctx = Depends(needs("core.users.manage"))):
     with c.session() as s:
+        auth.check_grant(s, c.p, [], user_id=user_id)          # não mexe em conta mais privilegiada
         auth.reset_password(s, user_id, body.password, **c.actor)
     return {"ok": True}
 
@@ -118,6 +135,7 @@ def reset_password(user_id: uuid.UUID, body: PasswordReset, c: Ctx = Depends(nee
 @router.post("/users/{user_id}/unlock")
 def unlock(user_id: uuid.UUID, c: Ctx = Depends(needs("core.users.manage"))):
     with c.session() as s:
+        auth.check_grant(s, c.p, [], user_id=user_id)          # não mexe em conta mais privilegiada
         auth.unlock(s, user_id, **c.actor)
     return {"ok": True}
 
@@ -125,6 +143,7 @@ def unlock(user_id: uuid.UUID, c: Ctx = Depends(needs("core.users.manage"))):
 @router.delete("/users/{user_id}/mfa")
 def mfa_reset(user_id: uuid.UUID, c: Ctx = Depends(needs("core.users.manage"))):
     with c.session() as s:
+        auth.check_grant(s, c.p, [], user_id=user_id)          # não mexe em conta mais privilegiada
         auth.mfa_disable(s, user_id, **c.actor)
     return {"ok": True}
 
@@ -138,8 +157,40 @@ def roles(c: Ctx = Depends(needs("core.users.read"))):
 @router.put("/roles/{code}")
 def save_role(code: str, body: RoleIn, c: Ctx = Depends(needs("core.users.manage"))):
     with c.session() as s:
+        auth.check_grant(s, c.p, [code], permissions=body.permissions)
         r = auth.save_role(s, code=code, name=body.name, permissions=body.permissions, **c.actor)
         return {"id": str(r.id)}
+
+
+@router.get("/role-templates")
+def role_templates(c: Ctx = Depends(needs("core.users.read"))):
+    with c.session() as s:
+        return auth.role_templates(s)
+
+
+@router.post("/role-templates/{code}/activate")
+def activate_template(code: str, c: Ctx = Depends(needs("core.users.manage"))):
+    """Ativa um modelo de perfil opcional (o papel criado pode ser personalizado depois)."""
+    from vyonix.modules.manifest import ROLE_TEMPLATES
+    with c.session() as s:
+        if code in ROLE_TEMPLATES:
+            auth.check_grant(s, c.p, [], permissions=auth.expand(ROLE_TEMPLATES[code][1]))
+        r = auth.activate_template(s, code, **c.actor)
+        return {"code": r.code, "name": r.name}
+
+
+@router.post("/role-templates/structure/{code}")
+def apply_structure(code: str, c: Ctx = Depends(needs("core.users.manage"))):
+    """Ativa os perfis sugeridos para a estrutura (clínica pequena, CDI, hospital); nada é removido."""
+    from vyonix.errors import NotFound
+    from vyonix.modules.manifest import ROLE_TEMPLATES, STRUCTURES
+    if code not in STRUCTURES:
+        raise NotFound("Estrutura desconhecida.")
+    with c.session() as s:
+        for t in STRUCTURES[code][1]:
+            auth.check_grant(s, c.p, [], permissions=auth.expand(ROLE_TEMPLATES[t][1]))
+            auth.activate_template(s, t, **c.actor)
+        return auth.role_templates(s)
 
 
 @router.get("/permissions")

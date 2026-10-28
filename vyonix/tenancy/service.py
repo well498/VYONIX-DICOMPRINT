@@ -26,7 +26,11 @@ def resolve(db: Database, code: str) -> uuid.UUID | None:
 
 def create_organization(db: Database, *, code: str, name: str, admin_username: str, admin_password: str,
                         admin_name: str = "Administrador", site_name: str = "Unidade principal",
-                        document: str | None = None, actor: str = "instalação") -> uuid.UUID:
+                        document: str | None = None, actor: str = "instalação",
+                        register_login: bool = False) -> uuid.UUID:
+    """Cria a organização, a unidade principal e o administrador inicial. ``register_login``: servidor com várias
+    instituições — o login do administrador entra no diretório global (único na plataforma)."""
+    from vyonix.auth import directory
     from vyonix.auth import service as auth
     code = code.strip().lower()
     if not CODE_RE.match(code):
@@ -36,7 +40,7 @@ def create_organization(db: Database, *, code: str, name: str, admin_username: s
     with db.service_session() as s:
         auth.sync_permission_catalog(s)
     tid = uuid.uuid4()
-    with db.session(tid) as s:
+    with directory.Reservation(db, admin_username, tid, register_login) as admin_id, db.session(tid) as s:
         s.add(Organization(id=tid, tenant_id=tid, code=code, name=name.strip(), document=document))
         s.flush()
         s.add(Site(name=site_name))
@@ -45,7 +49,7 @@ def create_organization(db: Database, *, code: str, name: str, admin_username: s
         audit.record(s, actor=actor, action="organization.create", target_type="organization", target_id=tid,
                      details={"code": code})
         auth.create_user(s, username=admin_username, display_name=admin_name, password=admin_password,
-                         roles=[("administrador", None)], must_change=False, actor=actor)
+                         roles=[("administrador", None)], must_change=False, actor=actor, user_id=admin_id)
     return tid
 
 

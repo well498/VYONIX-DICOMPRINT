@@ -94,6 +94,10 @@ def sync_permission_catalog(service_session: Session) -> None:
     service_session.flush()
 
 
+def expand(patterns: list[str]) -> list[str]:
+    return _expand(patterns)
+
+
 def _expand(patterns: list[str]) -> list[str]:
     allp = all_permissions()
     out = set()
@@ -126,6 +130,26 @@ def ensure_default_roles(s: Session) -> dict[str, Role]:
                 s.delete(have[p])
     s.flush()
     return roles
+
+
+def role_templates(s: Session) -> dict:
+    from vyonix.modules.manifest import ROLE_TEMPLATES, STRUCTURES
+    have = {r.code for r in s.execute(select(Role)).scalars()}
+    return {"templates": [{"code": c, "name": n, "description": d, "permissions": _expand(p), "active": c in have}
+                          for c, (n, p, d) in ROLE_TEMPLATES.items()],
+            "structures": [{"code": c, "name": n, "roles": r} for c, (n, r) in STRUCTURES.items()]}
+
+
+def activate_template(s: Session, code: str, *, actor: str, actor_id=None, ip=None) -> Role:
+    """Cria o papel a partir do modelo (personalizável depois); já ativo: devolve o existente."""
+    from vyonix.modules.manifest import ROLE_TEMPLATES
+    if code not in ROLE_TEMPLATES:
+        raise NotFound("Modelo de perfil desconhecido.")
+    r = s.execute(select(Role).where(Role.code == code)).scalar_one_or_none()
+    if r is not None:
+        return r
+    name, patterns, _d = ROLE_TEMPLATES[code]
+    return save_role(s, code=code, name=name, permissions=_expand(patterns), actor=actor, actor_id=actor_id, ip=ip)
 
 
 def role_list(s: Session) -> list[dict]:
@@ -165,6 +189,30 @@ def save_role(s: Session, *, code: str, name: str, permissions: list[str], actor
 
 # --------------------------------------------------------------------------- usuários
 
+def check_grant(s: Session, p: "Principal", role_codes: list[str], *, user_id: uuid.UUID | None = None,
+                permissions: list[str] | None = None) -> None:
+    """Delegação limitada (Prompt Mestre §18): ninguém concede papel ou permissão que não possui, nem altera os
+    papéis de quem tem mais permissões que ele. Vale para criar usuário, trocar papéis e salvar papel."""
+    mine = set(p.grants)
+    want: set[str] = set(permissions or [])
+    roles = {r.code: r.id for r in s.execute(select(Role)).scalars()}
+    ids = [roles[c] for c in role_codes if c in roles]
+    if ids:
+        want |= set(s.execute(select(RolePermission.permission).where(RolePermission.role_id.in_(ids))).scalars())
+    if user_id is not None:                              # papéis atuais do usuário alterado
+        cur = select(RolePermission.permission).join(UserRole, UserRole.role_id == RolePermission.role_id).where(
+            UserRole.user_id == user_id)
+        want |= set(s.execute(cur).scalars())
+    missing = sorted(want - mine)
+    if missing:
+        raise Forbidden("Você não pode conceder ou alterar permissões que não possui.", code="cannot_delegate",
+                        details={"permissions": missing[:20]})
+
+
+def find_user(s: Session, username: str) -> User | None:
+    return _find_user(s, username)
+
+
 def _find_user(s: Session, username: str) -> User | None:
     return s.execute(select(User).where(func.lower(User.username) == username.strip().lower())).scalar_one_or_none()
 
@@ -181,14 +229,14 @@ def _check_pw(s: Session, password: str) -> None:
 
 def create_user(s: Session, *, username: str, display_name: str, password: str, roles: list[tuple[str, uuid.UUID | None]],
                 email: str | None = None, must_change: bool = True, mfa_required: bool = False, actor: str,
-                actor_id=None, ip=None) -> User:
+                actor_id=None, ip=None, user_id: uuid.UUID | None = None) -> User:
     username = username.strip()
     if not username or len(username) > 60 or any(c.isspace() for c in username):
         raise ValidationFailed("Nome de usuário inválido (sem espaços, até 60 caracteres).")
     if _find_user(s, username):
         raise Conflict("Já existe um usuário com esse nome.")
     _check_pw(s, password)
-    u = User(username=username, display_name=display_name.strip() or username, email=email,
+    u = User(id=user_id or uuid.uuid4(), username=username, display_name=display_name.strip() or username, email=email,
              pw_hash=passwords.hash_password(password), must_change=must_change, mfa_required=mfa_required)
     s.add(u)
     s.flush()
