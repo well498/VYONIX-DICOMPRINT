@@ -23,6 +23,7 @@ log = logging.getLogger("vyonix.pacs.qr")
 FIND = "1.2.840.10008.5.1.4.1.2.2.1"        # Study Root Query/Retrieve Information Model - FIND
 MOVE = "1.2.840.10008.5.1.4.1.2.2.2"        # Study Root Query/Retrieve Information Model - MOVE
 VERIFICATION = "1.2.840.10008.1.1"
+MWL = "1.2.840.10008.5.1.4.31"             # Modality Worklist Information Model - FIND (VYONIX RIS)
 
 STUDY_KEYS = {"PatientID": "PatientID", "PatientName": "PatientName", "StudyDate": "StudyDate",
               "AccessionNumber": "AccessionNumber", "StudyInstanceUID": "StudyInstanceUID",
@@ -60,7 +61,7 @@ class QRServer:
         ae.require_called_aet = False                 # modo cloud: o AE chamado escolhe a organização
         ae.acse_timeout, ae.dimse_timeout, ae.network_timeout = 30, 60, 60
         ae.maximum_associations = 16
-        for uid in (VERIFICATION, FIND, MOVE):
+        for uid in (VERIFICATION, FIND, MOVE, MWL):
             ae.add_supported_context(uid)
         self.server = ae.start_server((self.bind, self.port), block=False, evt_handlers=[
             (evt.EVT_REQUESTED, self._on_requested), (evt.EVT_RELEASED, self._on_end),
@@ -128,6 +129,9 @@ class QRServer:
             yield 0xC000, None
             return
         ident = event.identifier
+        if str(event.context.abstract_syntax) == MWL:
+            yield from self._worklist(event, info, ident)
+            return
         level = _value(ident, "QueryRetrieveLevel").upper()
         try:
             with self.plat.db.session(info["tenant"]) as s:
@@ -159,6 +163,56 @@ class QRServer:
             for kw in requested - {"QueryRetrieveLevel"}:
                 out.add_new(ident[kw].tag, ident[kw].VR, full.get(kw, ident[kw].value) if kw in full else None)
             out.RetrieveAETitle = self.ae_title
+            yield 0xFF00, out
+
+    # ------------------------------------------------------------------ Modality Worklist (RIS)
+    def _worklist(self, event, info, ident):
+        """C-FIND da worklist: só com o RIS habilitado e licenciado (trabalho novo); filtros por modalidade, AE da
+        estação, data (ou intervalo), paciente e número de acesso."""
+        from datetime import date
+        from vyonix.audit import service as audit
+        from vyonix.errors import NotLicensed
+        from vyonix.modules import registry
+        from vyonix.ris import service as ris
+
+        def day(t: str):
+            t = t.strip()
+            return date(int(t[:4]), int(t[4:6]), int(t[6:8])) if len(t) == 8 and t.isdigit() else None
+        sps = ident.ScheduledProcedureStepSequence[0] if "ScheduledProcedureStepSequence" in ident and \
+            len(ident.ScheduledProcedureStepSequence) else None
+        rng = _value(sps, "ScheduledProcedureStepStartDate") if sps is not None else ""
+        a, _, b = rng.partition("-")
+        d_from, d_to = day(a), (day(b) if "-" in rng else day(a))
+        with self.plat.db.session(info["tenant"]) as s:
+            if not registry.is_enabled(s, "ris"):
+                yield 0xC001, None                                   # worklist indisponível nesta organização
+                return
+            try:
+                self.plat.licensing.require_module(s, "ris")
+            except NotLicensed:
+                yield 0xC001, None
+                return
+            entries = ris.worklist(
+                s, date_from=d_from, date_to=d_to,
+                modality=(_value(sps, "Modality") if sps is not None else "") or None,
+                station_aet=(_value(sps, "ScheduledStationAETitle") if sps is not None else "") or None,
+                patient_id=_value(ident, "PatientID").replace("*", "") or None,
+                patient_name=_value(ident, "PatientName") or None,
+                accession=_value(ident, "AccessionNumber") or None)
+            audit.record(s, actor=f"dicom:{info['calling']}", action="ris.mwl.find", target_type="dicom",
+                         details={"calling_ae": info["calling"], "address": info["address"], "results": len(entries)},
+                         ip=info["address"])
+        requested = {el.keyword for el in ident if el.keyword}
+        for e in entries:
+            if event.is_cancelled:
+                yield 0xFE00, None
+                return
+            full = ris.mwl_dataset(e)
+            out = type(full)()
+            out.SpecificCharacterSet = full.SpecificCharacterSet
+            for kw in requested:
+                if kw in full:
+                    setattr(out, kw, full[kw].value)
             yield 0xFF00, out
 
     # ------------------------------------------------------------------ C-MOVE

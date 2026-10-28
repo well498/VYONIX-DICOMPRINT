@@ -28,8 +28,10 @@ class Platform:
 
 def build_bus() -> Bus:
     from vyonix.clinical import service as clinical
+    from vyonix.ris import service as ris
     bus = Bus()
     clinical.register_consumers(bus)
+    ris.register_consumers(bus)
     return bus
 
 

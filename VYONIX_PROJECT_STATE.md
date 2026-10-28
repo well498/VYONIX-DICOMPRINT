@@ -63,6 +63,7 @@ React 19 + TypeScript (esbuild), ReportLab, cryptography (Ed25519), PyInstaller,
 | BKL-07 | Assinatura de código dos instaladores | Segurança | Recomendada | Certificado (pago) | Instaladores assinados verificados no CI | Baixo | Aguarda aprovação | Sim (custo) | — |
 | BKL-08 | Testes manuais em Windows 10/11 limpos, impressoras físicas e equipamentos reais | Print | Essencial | Ambiente do cliente | Roteiro `docs/release/Roteiro_Testes_Manuais.md` executado | — | Aguarda ambiente | — | — |
 | BKL-09 | Identidade OpenID Connect para portais | CORE | Recomendada | Entrega 6 | — | — | Planejada | — | — |
+| BKL-10 | DICOM Print: trocar a raiz de UID do pydicom por raiz própria ou `2.25` | Print | Recomendada | Aprovação (Print em validação) | UIDs gerados sem raiz de terceiros; testes do Print | Baixo | Aguarda decisão | Sim | Reverter o commit |
 
 ## 6. Dependências externas
 
@@ -208,3 +209,20 @@ laboratório (rede isolada, impressora física e modalidades de teste).
 | Medição de distância no Viewer | viewer run 40092073131 (3/3) |
 
 Aceitação 2.9 estendida confirmada no Windows (run 40094435865, 2ª tentativa: 28/0/1): "consulta DICOM 4243 escutando e recusando estação não cadastrada". A 1ª tentativa falhou no download do Orthanc (site indisponível; mesmo SHA-256 na 2ª); o passo passou a tentar 3 vezes e a anotar o motivo (commit `c5ee2bd`).
+
+## 11. Retomada de 27/10/2026 (após interrupção por limite de créditos)
+
+**Verificação inicial:** ramo `develop`; remoto em `39e7a96` (mais novo que o `c87c8a3` citado no comando de retomada);
+CI de `39e7a96` todo aprovado — platform run 40104250535 (**135 testes, 0 pulados**), viewer run 40104250565 (**5/5**:
+duas séries e queda/volta do motor), deploy-windows run 40104250638 (**28/0/1**), Windows release run 40104250660.
+Trabalho local não enviado (RIS/MWL) preservado e concluído.
+
+| Entrega | Evidência |
+|---|---|
+| RIS — primeira entrega: agendamento, worklist, Modality Worklist por DICOM, ciclo fechado pelo PACS | `tests_platform/test_ris.py` 7/7 local; suíte da plataforma 112 testes locais (2 pulados: binário do Orthanc, só no CI) |
+| Defeito corrigido: UID agendado era gerado com a **raiz do pydicom** (`1.2.826.0.1.3680043.8.498`); agora `2.25.<UUID>` | `test_schedule_assigns_uid_and_updates_order` |
+| Teste do grafo de migrações generalizado para N ramos (core, pacs, ris) | `tests_platform/test_migrations_graph.py` |
+
+**Achado registrado, sem alteração (preservar o DICOM Print em validação):** o DICOM Print usa a raiz do pydicom nos UIDs
+que gera (`app/dicom/print_model.py`, `print_intake.py`, `print_scp.py`, `app/ui/application.py`). Recomendação: raiz
+própria do fornecedor ou `2.25`, numa revisão futura do Print, com aprovação (BKL-10).

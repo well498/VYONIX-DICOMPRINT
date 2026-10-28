@@ -18,7 +18,7 @@ NAMING = {"ix": "ix_%(table_name)s_%(column_0_N_name)s", "uq": "uq_%(table_name)
           "ck": "ck_%(table_name)s_%(constraint_name)s", "fk": "fk_%(table_name)s_%(column_0_name)s",
           "pk": "pk_%(table_name)s"}
 
-TENANT_SCHEMAS = ("tenancy", "auth", "clinical", "platform", "audit", "licensing", "pacs")
+TENANT_SCHEMAS = ("tenancy", "auth", "clinical", "platform", "audit", "licensing", "pacs", "ris")
 
 
 def utcnow() -> datetime:

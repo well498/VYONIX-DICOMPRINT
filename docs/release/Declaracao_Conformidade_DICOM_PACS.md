@@ -17,9 +17,10 @@
 | DIMSE (TCP) | Verification | SCP | Orthanc | `tests_platform/test_pacs_engine.py` |
 | DIMSE (TCP) | Storage | SCP | Orthanc; indexação pelo Core (sincronização) | `test_pacs_orthanc.py` (C-STORE com pynetdicom) |
 | DIMSE (TCP) | Verification; Study Root Q/R — FIND e MOVE | SCP (e SCU de Storage nas sub-operações do MOVE) | Core VYONIX (pynetdicom) | `tests_platform/test_pacs_qr.py` |
+| DIMSE (TCP) | Modality Worklist — FIND | SCP | Core VYONIX (módulo RIS) | `tests_platform/test_ris.py` |
 
 **Não implementado nesta versão:** C-GET, Patient Root e Patient/Study Only Q/R, consultas relacionais e
-estendidas, Modality Worklist, MPPS, Storage Commitment, Instance Availability Notification, Storage SCU (envio a
+estendidas, MPPS, Storage Commitment, Instance Availability Notification, Storage SCU (envio a
 outros sistemas), WADO-URI, UPS-RS, mídia removível (DICOMDIR) e STOW-RS de metadados com dados volumosos separados
 (só objetos DICOM Part 10).
 
@@ -85,6 +86,22 @@ indexação ficam no motor, mas **não** aparecem na pesquisa nem na recuperaç�
 * **Auditoria:** cada consulta (nível, AE, quantidade — sem dados do paciente) e cada envio (destino, quantidades,
   falhas de integridade); o envio também registra a abertura do estudo (finalidade `dimse-move`).
 
+### 3.5 Modality Worklist (módulo VYONIX RIS)
+
+* Classe SOP: Modality Worklist Information Model – FIND `1.2.840.10008.5.1.4.31`, no mesmo AE e porta da seção 3.4,
+  com a mesma autorização de nós DICOM.
+* Exige o módulo RIS habilitado e com licença vigente na organização (trabalho novo); sem isso, a resposta é
+  `0xC001` (impossível processar).
+* Chaves de filtro: Modality, ScheduledStationAETitle e ScheduledProcedureStepStartDate (dia ou intervalo, no fuso
+  da clínica) dentro de ScheduledProcedureStepSequence; PatientID, PatientName (prefixo), AccessionNumber.
+* Atributos devolvidos (os pedidos): PatientName (Família^Nome), PatientID (identificador do emissor `DICOM`, se
+  houver) e IssuerOfPatientID, PatientBirthDate, PatientSex, AccessionNumber, **StudyInstanceUID atribuído no
+  agendamento** (raiz 2.25, derivada de UUID), RequestedProcedureID/Description/Priority, ReferringPhysicianName e a
+  sequência do passo agendado (Modality, ScheduledStationAETitle, data, hora, descrição, SPS ID, ScheduledStationName).
+* Só agendamentos "agendado" ou "em andamento". Quando o estudo com o UID agendado chega ao PACS, o agendamento passa a
+  "recebido" e sai da worklist. Cada consulta é auditada (AE, quantidade; sem dados do paciente).
+* MPPS não implementado.
+
 ## 4. DICOMweb (Core)
 
 Base: `https://<servidor>:<porta>/api/v1/pacs/dicomweb`. Autenticação pela sessão do VYONIX (cookie
@@ -149,6 +166,6 @@ conforme o Specific Character Set do objeto.
 
 ## 7. Pendências para a versão de homologação
 
-C-GET; instalação do modo cloud; Modality Worklist e
+C-GET; instalação do modo cloud;
 MPPS (com o RIS); TLS no DIMSE; teste de interoperabilidade com modalidades e estações reais; revisão desta
 declaração por especialista.

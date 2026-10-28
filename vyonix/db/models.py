@@ -11,3 +11,4 @@ from vyonix.pacs.models import (PacsAeRoute, PacsCloudSyncState, PacsDicomNode, 
                                 PacsStudy, PacsSyncState)
 from vyonix.settings.models import Setting, SettingHistory  # noqa: F401
 from vyonix.tenancy.models import Installation, Organization, Site  # noqa: F401
+from vyonix.ris.models import Schedule  # noqa: F401
