@@ -290,6 +290,15 @@ check-in e MPPS no RIS.
 (40687347923), Windows release (40687347828; `v1.0.0-r5` não substituída). Local depois: `063076e` (laudo na ficha
 do paciente) — e2e 7/7.
 
+**CI de `cf4d7be`:** platform, viewer, deploy-windows **29/0/1** (40692296911) e Windows release aprovados.
+
+| Entrega (28/10, tarde) | Commit | Evidência |
+|---|---|---|
+| Requisitos do TELELAUDO multicliente registrados (TEL-01…16, BKL-11), sem iniciar a implementação | `1dc22f0` | `docs/platform/Telelaudo_Multicliente_Requisitos.md` |
+| `npm audit` da interface web no CI (BKL-03 concluído) | `610f10f` | aguardando CI |
+| Transferência incompleta pelo MPPS × PACS (`ris_0005`) | `f6f53f3` | `test_mpps_performed_images_vs_pacs` |
+| Tela Conciliação de estudos sem pedido (BKL-06 concluído) | `1d15da9` | e2e `test_8_reconcile_flow`; platform 150 local |
+
 **Decisão pendente do proprietário (REPORT):** assinatura digital do laudo (ICP-Brasil: certificado A1/A3, padrão
 PAdES/CAdES, carimbo de tempo). Até lá a liberação é por confirmação de senha, registrada e verificável, e a tela
 informa que não é assinatura digital.
