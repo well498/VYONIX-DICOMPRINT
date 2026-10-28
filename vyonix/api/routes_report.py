@@ -56,9 +56,11 @@ class TemplateIn(BaseModel):
 
 @router.get("/worklist")
 def worklist(status: str | None = None, modality: str | None = None, date_from: date | None = None,
-             date_to: date | None = None, c: Ctx = Depends(needs("report.read"))):
+             date_to: date | None = None, patient_id: uuid.UUID | None = None,
+             c: Ctx = Depends(needs("report.read"))):
     with c.session() as s:
-        return {"items": rep.worklist(s, status=status, modality=modality, date_from=date_from, date_to=date_to)}
+        return {"items": rep.worklist(s, status=status, modality=modality, date_from=date_from, date_to=date_to,
+                                      patient_id=patient_id)}
 
 
 @router.post("/reports", status_code=201)

@@ -304,7 +304,8 @@ def verify(s: Session, report_id: uuid.UUID) -> dict[str, Any]:
 
 
 def worklist(s: Session, *, status: str | None = None, modality: str | None = None, date_from: date | None = None,
-             date_to: date | None = None, limit: int = 200) -> list[dict[str, Any]]:
+             date_to: date | None = None, patient_id: uuid.UUID | None = None,
+             limit: int = 200) -> list[dict[str, Any]]:
     """Estudos do cadastro clínico com a situação do laudo: pending (sem laudo), draft, final."""
     q = (select(Study, Patient, Report).outerjoin(Patient, Patient.id == Study.patient_id)
          .outerjoin(Report, Report.study_id == Study.id))
@@ -314,6 +315,8 @@ def worklist(s: Session, *, status: str | None = None, modality: str | None = No
         q = q.where(Report.status == status)
     if modality:
         q = q.where(Study.modality == modality.strip().upper())
+    if patient_id:
+        q = q.where(Study.patient_id == patient_id)
     if date_from:
         q = q.where(Study.study_date >= date_from)
     if date_to:

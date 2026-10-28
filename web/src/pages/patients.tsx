@@ -84,6 +84,10 @@ function PatientDetail({ id, me, onChanged }: { id: string; me: Me; onChanged: (
   const p = useLoad(() => get<Patient>(`/patients/${id}`), [id]);
   const orders = useLoad(() => (can("clinical.orders.read") ? get<Order[]>(`/orders?patient_id=${id}`) : Promise.resolve([])), [id]);
   const studies = useLoad(() => (can("clinical.studies.read") ? get<Study[]>(`/studies?patient_id=${id}`) : Promise.resolve([])), [id]);
+  const reports = useLoad(async () => (can("report.read")
+    ? (await get<{ items: { study_id: string; report_id: string | null; report_status: string }[] }>(`/report/worklist?patient_id=${id}`)).items
+    : []), [id]);
+  const reportOf = new Map((reports.data ?? []).map((r) => [r.study_id, r]));
   const act = useAction();
   const [mergeTarget, setMergeTarget] = useState("");
   const [reason, setReason] = useState("");
@@ -112,7 +116,9 @@ function PatientDetail({ id, me, onChanged }: { id: string; me: Me; onChanged: (
       {can("clinical.studies.read") && (
         <>
           <h3>Estudos</h3>
-          {studies.data?.length ? <ul className="history">{studies.data.map((s) => <li key={s.id}>{s.modality ?? "—"} {s.study_date ? fmtDate(s.study_date + "T12:00:00", false) : ""} — acesso {s.accession ?? "—"} {s.order_id ? "(conciliado)" : "(sem pedido)"}</li>)}</ul>
+          {studies.data?.length ? <ul className="history">{studies.data.map((s) => <li key={s.id}>{s.modality ?? "—"} {s.study_date ? fmtDate(s.study_date + "T12:00:00", false) : ""} — acesso {s.accession ?? "—"} {s.order_id ? "(conciliado)" : "(sem pedido)"}
+                {reportOf.get(s.id)?.report_status === "final" && <> — laudo liberado <a href={`/api/v1/report/reports/${reportOf.get(s.id)!.report_id}/pdf`}>PDF do laudo</a></>}
+                {reportOf.get(s.id)?.report_status === "draft" && " — laudo em rascunho"}</li>)}</ul>
             : <p className="empty">Nenhum estudo recebido.</p>}
         </>
       )}

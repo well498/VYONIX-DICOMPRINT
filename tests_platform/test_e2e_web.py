@@ -489,6 +489,14 @@ class WebE2E(unittest.TestCase):
         pend = pg.get_by_role("group", name="Pendências")
         expect(pend.get_by_role("link", name="Achados críticos a comunicar 0")).to_be_visible()
         expect(pend.get_by_role("link", name="Estudos sem laudo")).to_be_visible()
+        nav.get_by_role("link", name="Pacientes").click()
+        pg.get_by_label("Buscar paciente").fill("Helena")
+        pg.get_by_role("button", name="Buscar").click()
+        pg.get_by_role("button", name="Helena Laudo Sintetica").click()
+        ficha = pg.get_by_role("article", name="Paciente Helena Laudo Sintetica")
+        expect(ficha.get_by_text("laudo liberado")).to_be_visible()
+        href = ficha.get_by_role("link", name="PDF do laudo").get_attribute("href")
+        self.assertRegex(href, r"^/api/v1/report/reports/[0-9a-f-]{36}/pdf$")
         with db.session(self.tenant) as s:
             from vyonix.report.models import Report
             r = s.query(Report).filter(Report.study_id == st.id).one()
