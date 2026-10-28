@@ -89,7 +89,7 @@ class WebE2E(unittest.TestCase):
         shutil.rmtree(cls.tmp, True)
 
     def page(self):
-        ctx = self.browser.new_context(ignore_https_errors=True, locale="pt-BR")
+        ctx = self.browser.new_context(ignore_https_errors=True, locale="pt-BR", timezone_id="America/Sao_Paulo")
         self.addCleanup(ctx.close)
         pg = ctx.new_page()
         errors: list[str] = []
@@ -264,7 +264,8 @@ class WebE2E(unittest.TestCase):
 
     def test_5_ris_schedule_flow(self):
         """Agenda (RIS): a recepção agenda um pedido, inicia e cancela com motivo; o técnico só consulta."""
-        from datetime import date
+        from datetime import date, datetime, timedelta, timezone
+        today = datetime.now(timezone(timedelta(hours=-3))).date()     # dia da clínica (navegador em São Paulo)
         from playwright.sync_api import expect
         from vyonix.clinical import service as clinical
         from vyonix.modules import registry
@@ -285,7 +286,7 @@ class WebE2E(unittest.TestCase):
         form = pg.get_by_role("form", name="Agendar exame")
         form.get_by_label("Pedido").select_option(label=f"Carlos Agenda Sintetico — {acc} — RX de tórax")
         expect(form.get_by_label("Modalidade")).to_have_value("CR")             # vem do procedimento
-        form.get_by_label("Data e hora").fill(f"{date.today().isoformat()}T23:30")
+        form.get_by_label("Data e hora").fill(f"{today.isoformat()}T23:30")
         form.get_by_label("AE Title da estação").fill("cr_sala1")
         form.get_by_role("button", name="Confirmar agendamento").click()
         expect(pg.get_by_text("Exame agendado.")).to_be_visible()
@@ -297,7 +298,7 @@ class WebE2E(unittest.TestCase):
         pg.get_by_role("button", name="Agendar exame").click()          # mesmo horário e estação: recusado
         form = pg.get_by_role("form", name="Agendar exame")
         form.get_by_label("Pedido").select_option(label=f"Carlos Agenda Sintetico — {acc2} — RX de tórax")
-        form.get_by_label("Data e hora").fill(f"{date.today().isoformat()}T23:40")
+        form.get_by_label("Data e hora").fill(f"{today.isoformat()}T23:40")
         form.get_by_label("AE Title da estação").fill("CR_SALA1")
         form.get_by_role("button", name="Confirmar agendamento").click()
         expect(pg.get_by_text("Horário ocupado na estação CR_SALA1")).to_be_visible()
@@ -309,7 +310,7 @@ class WebE2E(unittest.TestCase):
         cf.get_by_label("Motivo do cancelamento").fill("paciente não compareceu")
         cf.get_by_role("button", name="Confirmar cancelamento").click()
         expect(pg.get_by_text("Nenhum exame agendado nesse período.")).to_be_visible()
-        pg.get_by_label("Incluir concluídos e cancelados").check()
+        pg.get_by_label("Incluir recebidos, concluídos e cancelados").check()
         pg.get_by_role("button", name="Filtrar").click()
         expect(pg.get_by_role("row", name="Carlos Agenda Sintetico").get_by_role("cell", name="Cancelado")).to_be_visible()
         pg = self.page()
@@ -321,6 +322,36 @@ class WebE2E(unittest.TestCase):
         from vyonix.audit import service as audit
         with db.session(self.tenant) as s:
             self.assertEqual(len(audit.query(s, action="ris.schedule.status")), 2)
+
+        # estudo agendado chega ao PACS (dublê de motor) → "Imagens recebidas" com link para o Viewer
+        from tests_platform.pacs_support import make_dicom
+        from vyonix.events.worker import process_batch
+        from vyonix.pacs import service as pacs
+        from vyonix.ris import service as ris
+        brt = timezone(timedelta(hours=-3))
+        with db.session(self.tenant) as s:
+            st = ris.schedule(s, clinical.create_order(s, patient_id=p.id, procedure_id=proc.id, actor="t").id,
+                              scheduled_at=datetime.now(brt).replace(hour=22, minute=0, second=0, microsecond=0),
+                              station_aet="CR_SALA2", actor="t")
+            study_uid = st.study_instance_uid
+            pacs.ingest(s, self.pacs_backend, make_dicom(study=study_uid, series=study_uid + ".1",
+                                                         sop=study_uid + ".1.1", patient_id="AG-901",
+                                                         patient_name="SINTETICO^CARLOS AGENDA"), actor="teste")
+        while process_batch(db, self.plat.bus):
+            pass
+        with db.session(self.tenant) as s:
+            from vyonix.ris.models import Schedule
+            self.assertEqual(s.get(Schedule, st.id).status, "received")
+        pg = self.page()
+        self.login(pg, "admin", ADMIN_PW)
+        pg.get_by_role("navigation", name="Navegação principal").get_by_role("link", name="Agenda").click()
+        expect(pg.get_by_role("row", name="CR_SALA2")).to_have_count(0)          # fora da lista de pendentes
+        pg.get_by_label("Incluir recebidos, concluídos e cancelados").check()
+        pg.get_by_role("button", name="Filtrar").click()
+        row = pg.get_by_role("row", name="CR_SALA2")
+        expect(row.get_by_text("Imagens recebidas")).to_be_visible()
+        self.assertEqual(row.get_by_role("link", name="Abrir no Viewer").get_attribute("href"),
+                         f"/viewer/viewer?StudyInstanceUIDs={study_uid}")
 
 
 if __name__ == "__main__":

@@ -5,6 +5,7 @@ import { Field, Notice, Page, useAction, useLoad } from "../ui";
 type Item = {
   schedule_id: string; sps_id: string; status: string; accession: string; priority: string; modality: string;
   station_aet: string | null; room: string | null; description: string | null; scheduled_at: string; duration_min: number;
+  study_instance_uid: string;
   patient_id: string; patient_name: string;
 };
 type Pending = { order_id: string; accession: string; priority: string; patient_name: string;
@@ -32,6 +33,7 @@ function withOffset(local: string): string {
 
 export function SchedulePage({ me }: { me: Me }) {
   const canManage = me.permissions.includes("ris.schedule.manage");
+  const canView = me.permissions.includes("pacs.studies.read");
   const [filters, setFilters] = useState({ from: today(), to: today(), modality: "", done: false });
   const [query, setQuery] = useState(filters);
   const [form, setForm] = useState({ order: "", when: `${today()}T08:00`, modality: "", aet: "", room: "", description: "", duration: "15" });
@@ -112,7 +114,7 @@ export function SchedulePage({ me }: { me: Me }) {
         <input placeholder="Modalidade" aria-label="Modalidade" maxLength={16} value={filters.modality}
           onChange={(e) => setFilters({ ...filters, modality: e.target.value })} />
         <label className="check"><input type="checkbox" checked={filters.done}
-          onChange={(e) => setFilters({ ...filters, done: e.target.checked })} /> Incluir concluídos e cancelados</label>
+          onChange={(e) => setFilters({ ...filters, done: e.target.checked })} /> Incluir recebidos, concluídos e cancelados</label>
         <button>Filtrar</button>
       </form>
       <Notice kind="error">{list.error}</Notice>
@@ -131,7 +133,10 @@ export function SchedulePage({ me }: { me: Me }) {
                 <td>{[it.station_aet, it.room].filter(Boolean).join(" · ") || "—"}</td>
                 <td>{it.description || "—"}</td>
                 <td className="nowrap">{it.accession}</td>
-                <td>{STATUS[it.status] ?? it.status}</td>
+                <td>{STATUS[it.status] ?? it.status}
+                  {canView && ["received", "completed"].includes(it.status) && (
+                    <> <a href={`/viewer/viewer?StudyInstanceUIDs=${encodeURIComponent(it.study_instance_uid)}`}
+                      target="_blank" rel="noopener">Abrir no Viewer</a></>)}</td>
                 {canManage && (
                   <td className="actions"><div className="row-actions">
                     {it.status === "scheduled" && <button onClick={() => void setStatus(it, "in_progress")}>Iniciar</button>}
