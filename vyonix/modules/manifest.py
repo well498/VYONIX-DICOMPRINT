@@ -138,8 +138,10 @@ RIS = ModuleManifest(
 
 REPORT = ModuleManifest(
     code="report", name="VYONIX REPORT", version="0.1.0", depends=("core",),
-    description="Laudos com modelos, rascunho, liberação com confirmação de senha, versões imutáveis e adendos "
-                "(primeira entrega; não é assinatura digital ICP-Brasil). Não liberado para uso clínico.",
+    description="Laudos e telelaudo multicliente: médicos e vínculos por unidade, identidade visual por organização e "
+                "unidade, modelos versionados com seleção automática e importação DOCX, fila com prazos, liberação com "
+                "confirmação de senha (não é assinatura digital ICP-Brasil), versões imutáveis, adendos, PDF, FHIR, "
+                "HL7 e DICOM. Não liberado para uso clínico.",
     permissions={"report.read": "Consultar laudos", "report.write": "Redigir laudos (rascunho)",
                  "report.sign": "Liberar laudos e registrar adendos", "report.templates.manage": "Gerenciar modelos",
                  "report.physicians.manage": "Cadastrar médicos e vínculos com unidades",
