@@ -274,3 +274,5 @@ button.danger { background: var(--red); border-color: var(--red); color: #fff; f
   .exam-filters > * { flex: 1 1 140px; min-width: 0 !important; }
   .exam-filters > button { flex: 0 0 auto; }
 }
+.homolog-banner { background: #7a1f1f; color: #fff; text-align: center; font-weight: 700; font-size: .85rem; letter-spacing: .03em;
+  padding: .35rem .75rem; position: sticky; top: 0; z-index: 25; }

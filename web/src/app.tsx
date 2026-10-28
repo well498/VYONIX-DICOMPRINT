@@ -52,6 +52,9 @@ export function App() {
     catch { return "expanded"; }
   });
   const [drawer, setDrawer] = useState(false);
+  const [flavor, setFlavor] = useState("commercial");
+  useEffect(() => { get<{ flavor?: string }>("/health").then((h) => setFlavor(h.flavor ?? "commercial")).catch(() => undefined); }, []);
+  const banner = flavor === "homologacao" ? <div className="homolog-banner" role="note">HOMOLOGAÇÃO INTERNA — SEM LICENÇA COMERCIAL — somente dados fictícios, não usar com pacientes</div> : null;
 
   const refresh = useCallback(async () => {
     try {
@@ -71,8 +74,8 @@ export function App() {
   }, []);
 
   if (me === undefined) return <div className="boot" aria-busy="true">Carregando…</div>;
-  if (me === null) return <Login onDone={(m) => { setCsrf(m.csrf); setMe(m); }} />;
-  if (me.stage !== "ok") return <AccessGate me={me} onDone={refresh} onLogout={() => setMe(null)} />;
+  if (me === null) return <>{banner}<Login onDone={(m) => { setCsrf(m.csrf); setMe(m); }} /></>;
+  if (me.stage !== "ok") return <>{banner}<AccessGate me={me} onDone={refresh} onLogout={() => setMe(null)} /></>;
 
   const allowed = ROUTES.filter((r) => (!r.perm || me.permissions.includes(r.perm))
     && (!r.operator || me.organization?.kind === "operator"));
@@ -121,7 +124,7 @@ export function App() {
           <button className="link" onClick={logout}>Sair</button>
         </div>
       </nav>
-      <main id="conteudo">{active.view(me)}</main>
+      <main id="conteudo">{banner}{active.view(me)}</main>
     </div>
   );
 }

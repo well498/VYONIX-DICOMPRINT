@@ -484,6 +484,11 @@ class Licensing:
         out["core"].limits = dict(UNLICENSED_CORE_LIMITS)
         out["core"].message = (f"Sem licença: uso limitado a {UNLICENSED_CORE_LIMITS['users']} usuários e "
                                f"{UNLICENSED_CORE_LIMITS['sites']} unidade, para instalar a licença.")
+        from vyonix import build_flavor
+        if build_flavor.HOMOLOG:                 # instalador de homologação interna (compilação própria)
+            return {code: ModuleStatus(code, True, "homologacao", "homologacao",
+                                       "Homologação interna: liberado sem licença comercial. Não usar com pacientes.")
+                    for code in F.MODULE_CODES}
         ents = list(s.execute(select(Entitlement)).scalars())
         p = self.installed_payload(s)
         if not ents or p is None:

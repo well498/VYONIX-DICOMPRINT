@@ -7,12 +7,19 @@ on:
   push:
     branches: [develop, main]
   workflow_dispatch:
+    inputs:
+      flavor:
+        description: "commercial (padrão) ou homologacao (instalador interno de testes, módulos sem licença)"
+        required: false
+        default: commercial
+        type: choice
+        options: [commercial, homologacao]
 
 permissions:
   contents: read
 
 concurrency:
-  group: deploy-windows-${{ github.ref }}
+  group: deploy-windows-${{ github.ref }}-${{ inputs.flavor || 'commercial' }}
   cancel-in-progress: true
 
 env:
@@ -77,6 +84,13 @@ jobs:
         run: |
           npm install --no-audit --no-fund
           npm run build
+
+      - name: Variante de homologação interna (só nesta compilação)
+        if: ${{ inputs.flavor == 'homologacao' }}
+        shell: pwsh
+        run: |
+          Set-Content -Encoding utf8 vyonix\build_flavor.py "FLAVOR = `"homologacao`"`nHOMOLOG = True`n"
+          Write-Host "::warning title=Homologação interna::instalador sem licença comercial, só para testes com dados fictícios"
 
       - name: PyInstaller (dist\VyonixPlatform)
         run: python -m PyInstaller --noconfirm --clean VyonixPlatform.spec
@@ -171,9 +185,11 @@ jobs:
         run: |
           $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
           if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress; }
-          & $iscc "/DAppVersion=$env:APP_VERSION" "/DFileVersion=$env:APP_VERSION.0" installer\VyonixPlatform.iss
+          $extra = @(); $name = "VYONIX_Setup_x64.exe"
+          if ("${{ inputs.flavor }}" -eq "homologacao") { $extra = @("/DHomolog=1"); $name = "VYONIX_Homologacao_Setup_x64.exe" }
+          & $iscc "/DAppVersion=$env:APP_VERSION" "/DFileVersion=$env:APP_VERSION.0" @extra installer\VyonixPlatform.iss
           if ($LASTEXITCODE -ne 0) { throw "ISCC falhou" }
-          $f = Get-Item dist\installer-platform\VYONIX_Setup_x64.exe
+          $f = Get-Item "dist\installer-platform\$name"
           Write-Host "::notice title=Instalador::$($f.Name) $([math]::Round($f.Length/1MB,1)) MB SHA-256 $((Get-FileHash $f -Algorithm SHA256).Hash)"
 
       - name: Nenhuma chave privada no pacote
@@ -183,6 +199,7 @@ jobs:
         run: python tools/bundle_vuln_check.py dist/sbom/vyonix-platform.vulnerable.json dist/VyonixPlatform
 
       - name: DICOM Print (release publicada, para o teste de coexistência)
+        if: ${{ inputs.flavor != 'homologacao' }}
         env:
           GH_TOKEN: ${{ github.token }}
         shell: pwsh
@@ -192,6 +209,7 @@ jobs:
           Get-ChildItem dist\print
 
       - name: Aceitação real no Windows
+        if: ${{ inputs.flavor != 'homologacao' }}
         shell: pwsh
         env:
           PYTHONIOENCODING: utf-8
@@ -206,6 +224,16 @@ jobs:
             Write-Host "::error title=Saída final da aceitação (código $code)::$tail"
             throw "critérios reprovados"
           }
+
+      - name: Homologação interna — roteiro do proprietário executado no instalador
+        if: ${{ inputs.flavor == 'homologacao' }}
+        shell: pwsh
+        env:
+          PYTHONIOENCODING: utf-8
+          PYTHONUTF8: "1"
+        run: |
+          python tools/ci_homolog_acceptance.py --setup dist\installer-platform\VYONIX_Homologacao_Setup_x64.exe --out dist\acceptance 2>&1 | Tee-Object -FilePath dist\acceptance-console.txt
+          if ($LASTEXITCODE -ne 0) { throw "roteiro de homologação reprovado" }
 
       - name: Diagnóstico em caso de falha
         if: failure()
@@ -222,9 +250,11 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: deploy-windows
+          name: ${{ inputs.flavor == 'homologacao' && 'homologacao-windows' || 'deploy-windows' }}
           path: |
             dist/acceptance/
             dist/deploy-junit.xml
-            dist/installer-platform/VYONIX_Setup_x64.exe
+            dist/installer-platform/*.exe
+            docs/homologacao/Roteiro_Homologacao_Interna_Plataforma.md
           if-no-files-found: ignore
+          retention-days: 30

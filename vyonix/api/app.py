@@ -113,6 +113,8 @@ def create_app(plat: Platform, *, cookie_secure: bool = True, web_dist: Path | N
                 routes_platform):
         app.include_router(mod.router, prefix="/api/v1")
 
+    from vyonix import build_flavor
+
     @app.get("/api/v1/health")
     def health():
         from sqlalchemy import text
@@ -123,7 +125,8 @@ def create_app(plat: Platform, *, cookie_secure: bool = True, web_dist: Path | N
         except Exception:  # noqa: BLE001
             db_ok = False
         return JSONResponse({"status": "ok" if db_ok else "degraded", "database": db_ok, "version": __version__,
-                             "mode": plat.cfg.mode}, status_code=200 if db_ok else 503)
+                             "mode": plat.cfg.mode, "flavor": build_flavor.FLAVOR},
+                            status_code=200 if db_ok else 503)
 
     from vyonix.api import viewer
     viewer.mount(app, viewer_dist)

@@ -24,14 +24,14 @@ export const STATE_LABEL: Record<string, string> = {
   unlicensed: "Sem licença", active: "Ativa", due_soon: "Próxima do vencimento", overdue: "Em atraso",
   suspension_scheduled: "Suspensão programada", suspended: "Suspensa", expired: "Expirada", reactivated: "Reativada",
   demo: "Demonstração", demo_expired: "Demonstração encerrada", blocked: "Bloqueada",
-  auth_expired: "Validação online pendente",
+  auth_expired: "Validação online pendente", homologacao: "Homologação interna (sem licença)",
 };
 export const KIND_LABEL: Record<string, string> = { subscription: "Assinatura", permanent: "Permanente",
-  demo: "Demonstração" };
+  demo: "Demonstração", homologacao: "Homologação interna" };
 
 export function tone(state: string): "ok" | "warn" | "bad" | "off" {
   if (["active", "reactivated", "demo"].includes(state)) return "ok";
-  if (["due_soon", "overdue", "suspension_scheduled"].includes(state)) return "warn";
+  if (["due_soon", "overdue", "suspension_scheduled", "homologacao"].includes(state)) return "warn";
   if (state === "unlicensed") return "off";
   return "bad";
 }

@@ -20,7 +20,11 @@
   #define DistDir "..\dist\VyonixPlatform"
 #endif
 
-#define AppName "VYONIX"
+#ifdef Homolog
+  #define AppName "VYONIX Homologacao"
+#else
+  #define AppName "VYONIX"
+#endif
 #define AppPublisher "VYONIX"
 #define DeployExe "vyonix-deploy.exe"
 
@@ -42,7 +46,11 @@ ArchitecturesInstallIn64BitMode=x64compatible
 MinVersion=10.0.17763
 PrivilegesRequired=admin
 OutputDir=..\dist\installer-platform
+#ifdef Homolog
+OutputBaseFilename=VYONIX_Homologacao_Setup_x64
+#else
 OutputBaseFilename=VYONIX_Setup_x64
+#endif
 UninstallDisplayName={#AppName} (plataforma)
 WizardStyle=modern
 Compression=lzma2/max
@@ -58,6 +66,14 @@ Type: filesandordirs; Name: "{app}\_internal"
 
 [Files]
 Source: "{#DistDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+#ifdef Homolog
+Source: "homologacao\*"; DestDir: "{app}"; Flags: ignoreversion
+
+[Icons]
+Name: "{commonprograms}\VYONIX\VYONIX Homologacao - Preparar modulos"; Filename: "{app}\Preparar_Homologacao.cmd"; WorkingDir: "{app}"
+Name: "{commonprograms}\VYONIX\VYONIX Homologacao - Enviar exame simulado"; Filename: "{app}\Enviar_Exame_Simulado.cmd"; WorkingDir: "{app}"
+Name: "{commonprograms}\VYONIX\LEIA-ME Homologacao"; Filename: "{app}\LEIA-ME_HOMOLOGACAO.txt"
+#endif
 
 [Run]
 Filename: "{app}\{#DeployExe}"; Parameters: "install --config ""{param:DEPLOYCONFIG}"" --approve-all --silent"; Flags: runhidden waituntilterminated; Check: SilentInstall; StatusMsg: "Aplicando o plano aprovado (VYONIX DEPLOY)..."

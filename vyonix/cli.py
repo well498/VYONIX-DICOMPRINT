@@ -219,6 +219,21 @@ def cmd_pacs_restore(a) -> int:
     return 1 if out["rejected"] else 0
 
 
+def cmd_homolog_send(a) -> int:
+    """Simulador de modalidade (homologação): estudo sintético enviado ao PACS local por C-STORE."""
+    from vyonix import homolog
+    if not homolog.allowed(a.forcar_teste):
+        raise SystemExit("Simulador disponível só no instalador de homologação (ou com --forcar-teste em teste).")
+    ds = homolog.synthetic_study(patient_id=a.paciente_id, patient_name=a.nome, issuer=a.emissor,
+                                 accession=a.accession or "", modality=a.modalidade.upper(),
+                                 description=a.descricao, images=a.imagens)
+    r = homolog.send(ds, port=a.porta)
+    print(json.dumps(r, ensure_ascii=False, indent=2))
+    print("Estudo sintético enviado. Ele aparece na Central de Exames em até 1 minuto (sincronização do PACS)."
+          if r["sent"] else "Nenhuma imagem foi aceita pelo PACS.")
+    return 0 if r["sent"] and not r["failed"] else 1
+
+
 def cmd_operator_init(a) -> int:
     """Cria a organização operadora VYONIX (administração global) no servidor em nuvem."""
     from vyonix.context import build
@@ -273,10 +288,21 @@ def main(argv: list[str] | None = None) -> int:
     op.add_argument("--code", default="vyonix")
     op.add_argument("--name", default="VYONIX")
     op.add_argument("--admin-user", required=True)
+    hs = sub.add_parser("homolog-enviar", help="HOMOLOGAÇÃO: envia um estudo sintético ao PACS local (C-STORE)")
+    hs.add_argument("--paciente-id", required=True, help="o mesmo identificador cadastrado no paciente fictício")
+    hs.add_argument("--nome", required=True, help="nome fictício do paciente (Nome Sobrenome)")
+    hs.add_argument("--emissor", default="PRONTUARIO", help="emissor do identificador (padrão do cadastro: PRONTUARIO)")
+    hs.add_argument("--accession")
+    hs.add_argument("--modalidade", default="CT")
+    hs.add_argument("--descricao", default="TC de crânio (sintético)")
+    hs.add_argument("--imagens", type=int, default=8)
+    hs.add_argument("--porta", type=int, default=4242)
+    hs.add_argument("--forcar-teste", action="store_true", help=argparse.SUPPRESS)
     a = p.parse_args(argv)
     return {"init": cmd_init, "migrate": cmd_migrate, "serve": cmd_serve, "worker": cmd_worker,
             "status": cmd_status, "pacs-backup": cmd_pacs_backup, "pacs-verify": cmd_pacs_verify,
-            "pacs-restore": cmd_pacs_restore, "operator-init": cmd_operator_init}[a.cmd](a)
+            "pacs-restore": cmd_pacs_restore, "operator-init": cmd_operator_init,
+            "homolog-enviar": cmd_homolog_send}[a.cmd](a)
 
 
 if __name__ == "__main__":

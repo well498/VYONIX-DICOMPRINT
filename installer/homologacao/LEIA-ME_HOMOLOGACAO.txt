@@ -1,0 +1,15 @@
+VYONIX - HOMOLOGACAO INTERNA
+
+Esta instalacao e SOMENTE para testes internos com dados ficticios.
+- Os modulos (PACS, Viewer, RIS e Laudos) funcionam sem licenca comercial.
+- Todas as telas mostram a faixa "HOMOLOGACAO INTERNA - SEM LICENCA COMERCIAL".
+- Nao use com pacientes reais nem conecte equipamentos medicos reais.
+- Nao e validado para uso clinico.
+- Instale em um computador ou maquina virtual SEM o VYONIX DICOM Print.
+
+Atalhos no Menu Iniciar > VYONIX:
+  VYONIX                         abre o sistema no navegador
+  VYONIX Homologacao - Preparar  ativa PACS, RIS e Laudos (uma vez, como administrador)
+  VYONIX Homologacao - Enviar exame simulado   envia um estudo sintetico ao PACS local
+
+Roteiro completo: docs/homologacao/Roteiro_Homologacao_Interna_Plataforma.md (entregue junto).
