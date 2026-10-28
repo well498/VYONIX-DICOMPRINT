@@ -485,6 +485,10 @@ class WebE2E(unittest.TestCase):
         cf.get_by_label("Comunicado a").fill("Dr. Plantonista")
         cf.get_by_role("button", name="Confirmar").click()
         expect(pg.get_by_text("Comunicação do achado crítico registrada.")).to_be_visible()
+        nav.get_by_role("link", name="Início").click()
+        pend = pg.get_by_role("group", name="Pendências")
+        expect(pend.get_by_role("link", name="Achados críticos a comunicar 0")).to_be_visible()
+        expect(pend.get_by_role("link", name="Estudos sem laudo")).to_be_visible()
         with db.session(self.tenant) as s:
             from vyonix.report.models import Report
             r = s.query(Report).filter(Report.study_id == st.id).one()
