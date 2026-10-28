@@ -22,6 +22,24 @@ class ReportTemplate(TenantMixin, Base):
     body: Mapped[str] = mapped_column(Text, nullable=False)
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_by: Mapped[str] = mapped_column(String(120), nullable=False)
+    procedure_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("clinical.procedures.id"))
+    site_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("tenancy.sites.id"))
+    preferred: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+
+
+class TemplateVersion(TenantMixin, Base):
+    """Versão do modelo: rascunho editável; publicada é imutável; arquivada quando outra é publicada."""
+    __tablename__ = "template_versions"
+    __table_args__ = (Index("uq_report_template_versions", "tenant_id", "template_id", "version", unique=True), SCHEMA)
+    template_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("report.templates.id"), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(12), nullable=False, default="draft")   # draft|published|archived
+    technique: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    findings: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    conclusion: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    created_by: Mapped[str] = mapped_column(String(120), nullable=False)
+    published_by: Mapped[str | None] = mapped_column(String(120))
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class Report(TenantMixin, Base):
@@ -39,6 +57,8 @@ class Report(TenantMixin, Base):
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=0)          # versões liberadas
     branding_org_version: Mapped[int | None] = mapped_column(Integer)                  # identidade usada na liberação
     branding_site_version: Mapped[int | None] = mapped_column(Integer)
+    template_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)                         # modelo e versão usados
+    template_version: Mapped[int | None] = mapped_column(Integer)
 
 
 class CriticalAlert(TenantMixin, Base):

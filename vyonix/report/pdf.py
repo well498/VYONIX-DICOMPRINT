@@ -167,11 +167,12 @@ def render(report: dict[str, Any], *, patient: dict[str, Any], study: dict[str, 
     return buf.getvalue()
 
 
-def preview(branding: dict[str, Any], institution: dict[str, Any], *, pages: int = 1) -> bytes:
-    """Pré-visualização A4 da identidade com dados fictícios (sem dados de pacientes)."""
-    body = ("Técnica: exame realizado com protocolo padrão (texto de exemplo).\nAchados: texto de exemplo para "
-            "conferir margens, fontes, cores, cabeçalho, rodapé e quebra de página.\nConclusão: exemplo.")
-    rep = {"versions": [{"version": 1, "kind": "final", "body": "\n\n".join([body] * (6 * pages)), "critical": False,
+def preview(branding: dict[str, Any], institution: dict[str, Any], *, pages: int = 1, body: str | None = None) -> bytes:
+    """Pré-visualização A4 (identidade ou modelo) com dados fictícios (sem dados de pacientes)."""
+    sample = ("Técnica: exame realizado com protocolo padrão (texto de exemplo).\nAchados: texto de exemplo para "
+              "conferir margens, fontes, cores, cabeçalho, rodapé e quebra de página.\nConclusão: exemplo.")
+    text = body if body is not None else "\n\n".join([sample] * (6 * pages))
+    rep = {"versions": [{"version": 1, "kind": "final", "body": text, "critical": False,
                          "signed_by": "Dr(a). Exemplo — CRM 000000/UF", "signed_at": "2026-01-01T12:00:00+00:00",
                          "sha256": "0" * 64}]}
     return render(rep, patient={"name": "PACIENTE DE EXEMPLO", "identifier": "000000", "sex": "—",

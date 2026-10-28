@@ -25,40 +25,21 @@ from vyonix.report.models import CriticalAlert, Report, ReportTemplate, ReportVe
 MAX_BODY = 20000
 
 
-# ------------------------------------------------------------------ modelos
-def save_template(s: Session, *, name: str, body: str, modality: str | None = None, active: bool = True,
-                  template_id: uuid.UUID | None = None, actor: str, actor_id=None, ip=None) -> ReportTemplate:
-    name = (name or "").strip()
-    if not name or len(name) > 120:
-        raise ValidationFailed("Nome do modelo: 1 a 120 caracteres.")
-    if len(body or "") > MAX_BODY:
-        raise ValidationFailed(f"Texto do modelo: até {MAX_BODY} caracteres.")
-    t = s.get(ReportTemplate, template_id) if template_id else None
-    if template_id and t is None:
-        raise NotFound("Modelo não encontrado.")
-    if t is None:
-        if s.execute(select(ReportTemplate).where(func.lower(ReportTemplate.name) == name.lower())).first():
-            raise Conflict("Já existe um modelo com esse nome.")
-        t = ReportTemplate(name=name, created_by=actor[:120], body="")
-        s.add(t)
-    t.name, t.body, t.active = name, body or "", bool(active)
-    t.modality = (modality or "").strip().upper()[:16] or None
-    s.flush()
-    audit.record(s, actor=actor, actor_id=actor_id, ip=ip, action="report.template.save", target_type="report_template",
-                 target_id=t.id, details={"name": t.name, "modality": t.modality, "active": t.active})
+# ------------------------------------------------------------------ modelos (versões em vyonix/report/templates.py)
+def save_template(s: Session, *, name: str, body: str = "", modality: str | None = None, active: bool = True,
+                  template_id: uuid.UUID | None = None, technique: str = "", conclusion: str = "", actor: str,
+                  actor_id=None, ip=None, **kw) -> ReportTemplate:
+    """Cria/altera o modelo e grava o rascunho (``body`` = seção de achados). Publicar: ``templates.publish``."""
+    from vyonix.report import templates as tpl
+    t, _v = tpl.save(s, name=name, modality=modality, active=active, technique=technique, findings=body,
+                     conclusion=conclusion, template_id=template_id, actor=actor, actor_id=actor_id, ip=ip, **kw)
     return t
 
 
-def templates(s: Session, *, modality: str | None = None, include_inactive: bool = False) -> list[dict]:
-    q = select(ReportTemplate).order_by(ReportTemplate.name)
-    if not include_inactive:
-        q = q.where(ReportTemplate.active.is_(True))
-    out = []
-    for t in s.execute(q).scalars():
-        if modality and t.modality and t.modality != modality.upper():
-            continue
-        out.append({"id": str(t.id), "name": t.name, "modality": t.modality, "body": t.body, "active": t.active})
-    return out
+def templates(s: Session, *, modality: str | None = None, include_inactive: bool = False,
+              only_published: bool = False) -> list[dict]:
+    from vyonix.report import templates as tpl
+    return tpl.listing(s, modality=modality, include_inactive=include_inactive, only_published=only_published)
 
 
 # ------------------------------------------------------------------ laudos
@@ -86,14 +67,18 @@ def open_report(s: Session, study_id: uuid.UUID, *, template_id: uuid.UUID | Non
     r = s.execute(select(Report).where(Report.study_id == study_id)).scalar_one_or_none()
     if r is not None:
         return r
-    body = ""
+    body, tver = "", None
     if template_id:
+        from vyonix.report import templates as tpl
         t = s.get(ReportTemplate, template_id)
         if t is None or not t.active:
             raise NotFound("Modelo não encontrado.")
-        body = t.body
+        v = tpl.published(s, t)
+        if v is None:
+            raise Conflict("O modelo ainda não tem versão publicada.")
+        body, tver = tpl.compose(v, tpl.context(s, st.id)), v.version   # campos administrativos já preenchidos
     r = Report(study_id=st.id, order_id=st.order_id, status="draft", body=body, critical=False, author=actor[:120],
-               version=0)
+               version=0, template_id=template_id if template_id else None, template_version=tver)
     s.add(r)
     s.flush()
     audit.record(s, actor=actor, actor_id=actor_id, ip=ip, action="report.open", target_type="report", target_id=r.id,

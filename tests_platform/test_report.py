@@ -68,6 +68,8 @@ class Service(unittest.TestCase):
         with db.session(self.t) as s:
             t = self.rep.save_template(s, name="TC de crânio normal", modality="ct",
                                        body="Técnica: ...\nAchados: sem alterações.\nConclusão: ...", actor="med")
+            from vyonix.report import templates as tpl
+            tpl.publish(s, t.id, reviewed=True, actor="med")
             r = self.rep.open_report(s, study_id, template_id=t.id, actor="med")
             rid = r.id
             self.assertEqual((r.status, r.version), ("draft", 0))
@@ -284,13 +286,16 @@ class Api(ApiBase):
         self.assertEqual(r.status_code, 201, r.text)
         pid = r.json()["id"]
         self.assertEqual(med.get("/api/v1/report/physicians").status_code, 403)          # médico não gerencia cadastro
-        self.assertEqual(med.post("/api/v1/report/templates", json={"name": "Normal", "body": "Sem alterações."})
-                         .status_code, 201)
-        tpl = med.get("/api/v1/report/templates").json()["items"][0]
+        r = med.post("/api/v1/report/templates", json={"name": "Normal", "body": "Sem alterações."})
+        self.assertEqual(r.status_code, 201, r.text)
+        self.assertEqual(med.post(f"/api/v1/report/templates/{r.json()['id']}/publish", json={}).status_code, 422)
+        self.assertEqual(med.post(f"/api/v1/report/templates/{r.json()['id']}/publish",
+                                  json={"reviewed": True}).status_code, 200)
+        tpl = med.get("/api/v1/report/templates", params={"published": True}).json()["items"][0]
         r = med.post("/api/v1/report/reports", json={"study_id": str(study_id), "template_id": tpl["id"]})
         self.assertEqual(r.status_code, 201, r.text)
         rep = r.json()
-        self.assertEqual(rep["body"], "Sem alterações.")
+        self.assertEqual(rep["body"], "Achados:\nSem alterações.")
         self.assertEqual(tec.get(f"/api/v1/report/reports/{rep['id']}").status_code, 403)       # técnico não lê
         r = med.put(f"/api/v1/report/reports/{rep['id']}", json={"body": "Exame normal.",
                                                                  "row_version": rep["row_version"]})

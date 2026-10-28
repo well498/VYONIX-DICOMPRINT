@@ -1,6 +1,6 @@
 # VYONIX TELELAUDO multicliente — requisitos, arquitetura e plano incremental
 
-Situação: requisitos registrados em 28/10/2026 (pedido do proprietário). **T1 e T2 entregues em 28/10** (médicos e vínculos; identidade visual por organização e unidade com versões imutáveis, imagens validadas, PDF com logomarca, papel timbrado, cabeçalho, rodapé, fonte, cor, margens e “Página X de Y”, pré-visualização A4); T3–T9 planejadas. Entra depois das
+Situação: requisitos registrados em 28/10/2026 (pedido do proprietário). **T1, T2 e T3 entregues em 28/10** (médicos e vínculos; identidade visual por organização e unidade com versões imutáveis, imagens validadas, PDF com logomarca, papel timbrado, cabeçalho, rodapé, fonte, cor, margens e “Página X de Y”, pré-visualização A4; modelos com versões, seções, campos dinâmicos validados e publicação após conferência); T4–T9 planejadas. Entra depois das
 prioridades em andamento (PACS, Viewer, RIS, DEPLOY), respeitando os bloqueios BLK-06, BLK-13 e BLK-14. Constrói sobre
 o VYONIX REPORT (primeira entrega já feita), sem uma versão separada do sistema por cliente.
 
@@ -83,7 +83,7 @@ as mesmas versões.
 |---|---|---|
 | T1 | Cadastro de médicos e vínculos; permissão de laudar por organização e unidade — **feito** (`report_0003`, `vyonix/report/physicians.py`, painel Médicos) | `test_report.Physicians` (validações, unicidade, outra organização, vínculo por unidade, vencido, inativo); e2e `test_7_report_flow` |
 | T2 | Identidade visual (organização e unidade) com versões e pré-visualização A4 — **feito** (`report_0004`, `vyonix/report/branding.py`, painel Identidade visual) | `test_report_branding.py` (herança campo a campo, PDF/SVG/arquivo truncado recusados, outra organização, versões e imagens imutáveis no banco, reemissão idêntica com a versão da liberação); e2e |
-| T3 | Modelos estruturados com campos dinâmicos, versões e publicação | Campos validados; versão publicada imutável |
+| T3 | Modelos estruturados com campos dinâmicos, versões e publicação — **feito** (`report_0005`, `vyonix/report/templates.py`, painel Modelos) | `test_report_templates.py` (campos desconhecidos recusados, preenchimento com dados do cadastro, rascunho × publicada, conferência obrigatória, laudo registra modelo e versão, modelo antigo vira v1, isolamento); e2e |
 | T4 | Seleção automática com prioridade e fallback | Matriz de casos; nunca seleciona de outro cliente |
 | T5 | PDF final com identidade e modelo versionados; imagem de assinatura opcional autorizada pelo médico | Administrador não usa a assinatura; reemissão idêntica |
 | T6 | Importação DOCX assistida com relatório e conferência | Documentos sintéticos com incompatibilidades conhecidas |

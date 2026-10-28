@@ -16,6 +16,7 @@ from vyonix.modules import registry
 from vyonix.report import branding as brand
 from vyonix.report import physicians as phys
 from vyonix.report import service as rep
+from vyonix.report import templates as tpl
 
 router = APIRouter(prefix="/report")
 
@@ -51,9 +52,24 @@ class AddendumIn(BaseModel):
 
 class TemplateIn(BaseModel):
     name: str = Field(min_length=1, max_length=120)
-    body: str = Field("", max_length=rep.MAX_BODY)
+    body: str = Field("", max_length=rep.MAX_BODY)            # compatibilidade: vira a seção de achados
+    technique: str = Field("", max_length=10000)
+    findings: str | None = Field(None, max_length=10000)
+    conclusion: str = Field("", max_length=10000)
     modality: str | None = Field(None, max_length=16)
+    procedure_id: uuid.UUID | None = None
+    site_id: uuid.UUID | None = None
+    preferred: bool = False
     active: bool = True
+
+    def kw(self) -> dict:
+        return {"name": self.name, "modality": self.modality, "active": self.active, "technique": self.technique,
+                "findings": self.findings if self.findings is not None else self.body, "conclusion": self.conclusion,
+                "procedure_id": self.procedure_id, "site_id": self.site_id, "preferred": self.preferred}
+
+
+class PublishIn(BaseModel):
+    reviewed: bool = False
 
 
 @router.get("/worklist")
@@ -151,25 +167,53 @@ def communicate(aid: uuid.UUID, body: CommunicateIn, c: Ctx = Depends(needs("rep
 
 
 @router.get("/templates")
-def list_templates(modality: str | None = None, include_inactive: bool = False,
+def list_templates(modality: str | None = None, include_inactive: bool = False, published: bool = False,
                    c: Ctx = Depends(needs("report.read"))):
     with c.session() as s:
-        return {"items": rep.templates(s, modality=modality, include_inactive=include_inactive)}
+        return {"items": rep.templates(s, modality=modality, include_inactive=include_inactive,
+                                       only_published=published),
+                "fields": tpl.FIELDS}
 
 
 @router.post("/templates", status_code=201)
 def create_template(body: TemplateIn, c: Ctx = Depends(needs("report.templates.manage"))):
     with c.session() as s:
-        t = rep.save_template(s, name=body.name, body=body.body, modality=body.modality, active=body.active, **c.actor)
-        return {"id": str(t.id)}
+        t, v = tpl.save(s, **body.kw(), **c.actor)
+        return {"id": str(t.id), "version": v.version, "status": v.status}
 
 
 @router.put("/templates/{tid}")
 def update_template(tid: uuid.UUID, body: TemplateIn, c: Ctx = Depends(needs("report.templates.manage"))):
     with c.session() as s:
-        t = rep.save_template(s, template_id=tid, name=body.name, body=body.body, modality=body.modality,
-                              active=body.active, **c.actor)
-        return {"id": str(t.id)}
+        t, v = tpl.save(s, template_id=tid, **body.kw(), **c.actor)
+        return {"id": str(t.id), "version": v.version, "status": v.status}
+
+
+@router.post("/templates/{tid}/publish")
+def publish_template(tid: uuid.UUID, body: PublishIn, c: Ctx = Depends(needs("report.templates.manage"))):
+    with c.session() as s:
+        v = tpl.publish(s, tid, reviewed=body.reviewed, **c.actor)
+        return {"id": str(tid), "version": v.version, "status": v.status}
+
+
+@router.get("/templates/{tid}/preview")
+def preview_template(tid: uuid.UUID, c: Ctx = Depends(needs("report.templates.manage"))):
+    """PDF A4 do rascunho (ou da versão publicada) com dados fictícios e a identidade da organização."""
+    from fastapi.responses import Response
+    from vyonix.errors import NotFound
+    from vyonix.report import pdf
+    from vyonix.report.models import ReportTemplate
+    from vyonix.settings import service as settings
+    with c.session() as s:
+        t = s.get(ReportTemplate, tid)
+        if t is None:
+            raise NotFound("Modelo não encontrado.")
+        item = next(x for x in tpl.listing(s, include_inactive=True) if x["id"] == str(tid))
+        text = tpl.compose(item["draft"], tpl.sample_context()) if item["draft"] else \
+            tpl.render(item["body"], tpl.sample_context())
+        data = pdf.preview(brand.effective(s, None), settings.get(s, "core", "institution"), body=text)
+    return Response(data, media_type="application/pdf",
+                    headers={"Content-Disposition": 'inline; filename="previa-modelo.pdf"', "Cache-Control": "no-store"})
 
 
 # ------------------------------------------------------------------ médicos (TELELAUDO T1)

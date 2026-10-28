@@ -109,7 +109,7 @@ function Editor({ me, row, initial, onClose }: { me: Me; row: Row; initial: Repo
   const [add, setAdd] = useState({ text: "", critical: false, password: "" });
   const act = useAction();
   const templates = useLoad(async () => (!report && can("report.write")
-    ? (await get<{ items: Template[] }>(`/report/templates?${new URLSearchParams(row.modality ? { modality: row.modality } : {})}`)).items
+    ? (await get<{ items: Template[] }>(`/report/templates?${new URLSearchParams({ published: "true", ...(row.modality ? { modality: row.modality } : {}) })}`)).items
     : []), [report]);
   const title = `Laudo — ${row.patient_name ?? "paciente"} — ${row.modality ?? ""} ${day(row.study_date)}`;
 
@@ -213,28 +213,69 @@ function Editor({ me, row, initial, onClose }: { me: Me; row: Row; initial: Repo
   );
 }
 
+type TplItem = Template & { published_version: number | null; preferred: boolean;
+  draft: null | { version: number; technique: string; findings: string; conclusion: string };
+  versions: { version: number; status: string; created_by: string; published_by: string | null; published_at: string | null }[] };
+const TPL_STATUS: Record<string, string> = { draft: "rascunho", published: "publicada", archived: "arquivada" };
+
+/** Modelos de laudo com versões (TELELAUDO T3): rascunho, pré-visualização A4 e publicação após conferência. */
 function Templates() {
-  const list = useLoad(async () => (await get<{ items: Template[] }>("/report/templates?include_inactive=true")).items, []);
-  const [form, setForm] = useState({ name: "", modality: "", body: "" });
+  const list = useLoad(async () => await get<{ items: TplItem[]; fields: Record<string, string> }>("/report/templates?include_inactive=true"), []);
+  const empty = { id: "", name: "", modality: "", technique: "", findings: "", conclusion: "" };
+  const [form, setForm] = useState(empty);
+  const [reviewed, setReviewed] = useState(false);
   const act = useAction();
-  async function submit(e: FormEvent) {
-    e.preventDefault();
-    const ok = await act.run(async () => { await post("/report/templates", form); await list.reload(); }, "Modelo salvo.");
-    if (ok) setForm({ name: "", modality: "", body: "" });
+  function edit(t: TplItem) {
+    const d = t.draft;
+    const pub = t.body;
+    setForm({ id: t.id, name: t.name, modality: t.modality ?? "", technique: d?.technique ?? "", findings: d?.findings ?? (d ? "" : pub),
+      conclusion: d?.conclusion ?? "" });
+    setReviewed(false);
   }
+  async function save(e: FormEvent) {
+    e.preventDefault();
+    await act.run(async () => {
+      const body = { name: form.name, modality: form.modality || null, technique: form.technique, findings: form.findings,
+        conclusion: form.conclusion };
+      const r = form.id ? await put<{ id: string }>(`/report/templates/${form.id}`, body) : await post<{ id: string }>("/report/templates", body);
+      setForm({ ...form, id: r.id }); setReviewed(false);
+      await list.reload();
+    }, "Rascunho do modelo salvo. Confira a pré-visualização e publique.");
+  }
+  async function publish() {
+    await act.run(async () => { await post(`/report/templates/${form.id}/publish`, { reviewed }); await list.reload(); setReviewed(false); },
+      "Modelo publicado. Novos laudos passam a usar esta versão.");
+  }
+  const current = list.data?.items.find((t) => t.id === form.id);
   return (
     <section className="panel" aria-label="Modelos de laudo">
       <h2>Modelos de laudo</h2>
       {act.view}
-      <ul className="history">{(list.data ?? []).map((t) => <li key={t.id}>{t.name}{t.modality ? ` (${t.modality})` : ""}{t.active ? "" : " — inativo"}</li>)}</ul>
-      <form onSubmit={submit} aria-label="Novo modelo">
+      <ul className="history">{(list.data?.items ?? []).map((t) => (
+        <li key={t.id}><button className="link" onClick={() => edit(t)}>{t.name}</button>{t.modality ? ` (${t.modality})` : ""}
+          {" — "}{t.published_version ? `publicada v${t.published_version}` : "sem versão publicada"}{t.draft ? ` · rascunho v${t.draft.version}` : ""}{t.active ? "" : " — inativo"}</li>))}
+      </ul>
+      <form onSubmit={save} aria-label="Editar modelo">
         <div className="grid2">
           <Field label="Nome do modelo"><input required maxLength={120} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
           <Field label="Modalidade" hint="Vazio = todas"><input maxLength={16} value={form.modality} onChange={(e) => setForm({ ...form, modality: e.target.value.toUpperCase() })} /></Field>
         </div>
-        <Field label="Texto do modelo"><textarea rows={6} value={form.body} onChange={(e) => setForm({ ...form, body: e.target.value })} /></Field>
-        <button className="primary" disabled={act.busy}>Salvar modelo</button>
+        <p className="field-hint">Campos dinâmicos (preenchidos com os dados do exame): {Object.keys(list.data?.fields ?? {}).map((f) => `{{${f}}}`).join("  ")}</p>
+        <Field label="Técnica"><textarea rows={3} value={form.technique} onChange={(e) => setForm({ ...form, technique: e.target.value })} /></Field>
+        <Field label="Achados"><textarea rows={5} value={form.findings} onChange={(e) => setForm({ ...form, findings: e.target.value })} /></Field>
+        <Field label="Conclusão"><textarea rows={3} value={form.conclusion} onChange={(e) => setForm({ ...form, conclusion: e.target.value })} /></Field>
+        <div className="row-actions">
+          <button className="primary" disabled={act.busy}>Salvar rascunho</button>
+          {form.id && <button type="button" className="link" onClick={() => { setForm(empty); setReviewed(false); }}>Novo modelo</button>}
+        </div>
       </form>
+      {form.id && current?.draft && (
+        <div className="row-actions" role="group" aria-label="Publicar modelo">
+          <a className="button" href={`/api/v1/report/templates/${form.id}/preview`} target="_blank" rel="noopener">Pré-visualizar A4</a>
+          <label className="check"><input type="checkbox" checked={reviewed} onChange={(e) => setReviewed(e.target.checked)} /> Conferi o texto e a pré-visualização</label>
+          <button className="primary" disabled={!reviewed || act.busy} onClick={() => void publish()}>Publicar versão {current.draft.version}</button>
+        </div>)}
+      {current && <p className="field-hint">Versões: {current.versions.map((v) => `v${v.version} ${TPL_STATUS[v.status] ?? v.status}${v.published_by ? ` por ${v.published_by}` : ""}`).join(" · ")}</p>}
     </section>
   );
 }

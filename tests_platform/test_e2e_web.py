@@ -425,8 +425,10 @@ class WebE2E(unittest.TestCase):
                                          modality="MR", study_date=date(2026, 10, 27), description="RM de joelho",
                                          actor="t")
             clinical.reconcile(s, st.id, o.id, actor="t")
-            rep.save_template(s, name="RM normal", modality="MR", body="Técnica: sequências padrão.\nAchados: ",
-                              actor="t")
+            from vyonix.report import templates as tpl
+            t, _ = tpl.save(s, name="RM normal", modality="MR", technique="Sequências padrão em {{paciente.nome}}.",
+                            findings="", actor="t")
+            tpl.publish(s, t.id, reviewed=True, actor="t")
         pg = self.page()
         self.login(pg, "admin", ADMIN_PW)
         nav = pg.get_by_role("navigation", name="Navegação principal")
@@ -477,6 +479,26 @@ class WebE2E(unittest.TestCase):
         self.assertIn("Clínica Imagem Teste · Rua Sintética, 1",
                       " ".join(p_.extract_text() for p_ in PdfReader(_io.BytesIO(r.body())).pages))
         self.shot(pg, "14-identidade")
+        # modelo de laudo: campo desconhecido recusado, rascunho, conferência obrigatória e publicação
+        pg.get_by_role("button", name="Modelos de laudo").click()
+        mf = pg.get_by_role("form", name="Editar modelo")
+        mf.get_by_label("Nome do modelo").fill("TC padrão")
+        mf.get_by_label("Modalidade").fill("CT")
+        mf.get_by_label("Achados").fill("Exame de {{paciente.cpf}}.")
+        mf.get_by_role("button", name="Salvar rascunho").click()
+        expect(pg.get_by_text("Campos desconhecidos no modelo: paciente.cpf.")).to_be_visible()
+        mf.get_by_label("Achados").fill("Exame de {{paciente.nome}} em {{exame.data}}.")
+        mf.get_by_role("button", name="Salvar rascunho").click()
+        expect(pg.get_by_text("Rascunho do modelo salvo.")).to_be_visible()
+        pub = pg.get_by_role("group", name="Publicar modelo")
+        expect(pub.get_by_role("button", name="Publicar versão 1")).to_be_disabled()
+        r = pg.request.get(self.base + pub.get_by_role("link", name="Pré-visualizar A4").get_attribute("href"))
+        self.assertIn("PACIENTE DE EXEMPLO",
+                      " ".join(p_.extract_text() for p_ in PdfReader(_io.BytesIO(r.body())).pages))
+        pub.get_by_label("Conferi o texto e a pré-visualização").check()
+        pub.get_by_role("button", name="Publicar versão 1").click()
+        expect(pg.get_by_text("Modelo publicado.")).to_be_visible()
+        expect(pg.get_by_text("v1 publicada por admin")).to_be_visible()
         pg = self.page()
         self.login(pg, "medica1", "Provisoria-123")
         pg.get_by_label("Senha atual").fill("Provisoria-123")
@@ -492,7 +514,7 @@ class WebE2E(unittest.TestCase):
         editor.get_by_label("Modelo").select_option(label="RM normal")
         editor.get_by_role("button", name="Iniciar laudo").click()
         text = editor.get_by_label("Texto do laudo")
-        expect(text).to_have_value("Técnica: sequências padrão.\nAchados: ")
+        expect(text).to_have_value("Técnica:\nSequências padrão em Helena Laudo Sintetica.")
         text.fill("Técnica: sequências padrão.\nAchados: sem alterações significativas.\nConclusão: exame normal.")
         editor.get_by_role("button", name="Salvar rascunho").click()
         expect(editor.get_by_text("Rascunho salvo.")).to_be_visible()

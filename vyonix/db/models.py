@@ -13,4 +13,4 @@ from vyonix.settings.models import Setting, SettingHistory  # noqa: F401
 from vyonix.tenancy.models import Installation, Organization, Site  # noqa: F401
 from vyonix.ris.models import Room, Schedule  # noqa: F401
 from vyonix.report.models import (Asset, BrandingVersion, CriticalAlert, Physician, PhysicianLink,  # noqa: F401
-                                  Report, ReportTemplate, ReportVersion)
+                                  Report, ReportTemplate, ReportVersion, TemplateVersion)
