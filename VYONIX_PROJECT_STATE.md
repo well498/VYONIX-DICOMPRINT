@@ -280,6 +280,11 @@ check-in e MPPS no RIS.
 | **VYONIX REPORT — primeira entrega**: modelos, rascunho, liberação com confirmação de senha, versões imutáveis (SHA-256; banco sem UPDATE/DELETE para a aplicação), adendos, achado crítico (evento), verificação, papel Médico, tela Laudos | `0596b65` | `test_report.py`; e2e 7/7 |
 | REPORT: PDF do laudo liberado; comunicação de achado crítico (`report_0002`); correção da tela (senha recusada deixava o rascunho com versão desatualizada) | `33dda63`, `3402531`, `398ea3f` | `test_report.py` 5/5; e2e `test_7_report_flow`; platform 147 local |
 
+| Confirmação de senha no ato bloqueada após 5 erros em 15 min; RIS: salas cadastradas (`ris_0004`); Início com pendências por papel | `94943a1`, `bc89131`, `173c9b2` | `test_report.py`, `test_ris.py`, e2e 7/7; platform 148 local |
+
+**CI de `5767a66` (REPORT incluído):** platform **180/0/0** (40682713999), viewer **5/5** (40682713953), deploy-windows
+**29/0/1** (40682713933, com o backup do PACS real no Windows), Windows release (40682714100; `v1.0.0-r5` não substituída).
+
 **Decisão pendente do proprietário (REPORT):** assinatura digital do laudo (ICP-Brasil: certificado A1/A3, padrão
 PAdES/CAdES, carimbo de tempo). Até lá a liberação é por confirmação de senha, registrada e verificável, e a tela
 informa que não é assinatura digital.
