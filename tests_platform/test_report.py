@@ -228,6 +228,12 @@ class Api(ApiBase):
         self.assertEqual([x["report_id"] for x in wl], [rep["id"]])
         with db.session(self.t) as s:
             self.assertEqual(len(audit.query(s, action="auth.confirm_failed")), 1)
+        # tentativa e erro com a sessão aberta: bloqueia após 5 senhas incorretas em 15 minutos
+        for _ in range(4):
+            self.assertEqual(med.post(f"/api/v1/report/reports/{rep['id']}/addenda",
+                                      json={"text": "x", "password": "errada"}).json()["error"], "password_mismatch")
+        r = med.post(f"/api/v1/report/reports/{rep['id']}/addenda", json={"text": "x", "password": "Senha-Nova-9876!"})
+        self.assertEqual((r.status_code, r.json()["error"]), (403, "too_many_attempts"))
 
 
 if __name__ == "__main__":

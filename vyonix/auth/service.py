@@ -393,12 +393,24 @@ def logout(s: Session, p: Principal, ip: str | None = None) -> None:
 def confirm_password(s: Session, p: Principal, password: str, *, purpose: str, ip: str | None = None) -> bool:
     """Confirmação de identidade no ato (ex.: liberar laudo). Falha fica na auditoria (a sessão precisa ser
     confirmada pelo chamador antes de recusar a operação)."""
+    from datetime import timedelta
+    from sqlalchemy import func as sqlfunc
+    from vyonix.audit.models import AuditEntry
+    recent = s.execute(select(sqlfunc.count()).select_from(AuditEntry).where(
+        AuditEntry.actor_id == p.user_id, AuditEntry.action == "auth.confirm_failed",
+        AuditEntry.at > utcnow() - timedelta(minutes=CONFIRM_WINDOW_MIN))).scalar() or 0
+    if recent >= CONFIRM_MAX_FAILS:                    # contra tentativa e erro com a sessão aberta
+        raise Forbidden(f"Muitas confirmações de senha incorretas. Aguarde {CONFIRM_WINDOW_MIN} minutos.",
+                        code="too_many_attempts")
     u = s.get(User, p.user_id)
     if u is None or not password or not passwords.check_password(password, u.pw_hash):
         audit.record(s, actor=p.username, actor_id=p.user_id, action="auth.confirm_failed", ip=ip,
                      details={"purpose": purpose})
         return False
     return True
+
+
+CONFIRM_MAX_FAILS, CONFIRM_WINDOW_MIN = 5, 15
 
 
 def change_password(s: Session, p: Principal, current: str, new: str, ip: str | None = None) -> None:
