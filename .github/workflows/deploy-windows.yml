@@ -111,6 +111,11 @@ jobs:
           $n = (Get-ChildItem dist\VyonixPlatform\_internal\viewer -Recurse -File).Count
           Write-Host "::notice title=Viewer no pacote::$n arquivos; $(Get-Content dist\VyonixPlatform\_internal\viewer\ORIGEM.txt)"
 
+      - name: Cache do Orthanc oficial (mesma versão e SHA-256)
+        uses: actions/cache@v4
+        with:
+          path: .orthanc-cache
+          key: orthanc-${{ env.ORTHANC_VERSION }}-${{ env.ORTHANC_SHA256 }}
       - name: Orthanc ${{ env.ORTHANC_VERSION }} (binário oficial, só o núcleo, sem plugins)
         shell: pwsh
         run: |
@@ -120,11 +125,19 @@ jobs:
           $dst = "dist\VyonixPlatform\orthanc"
           New-Item -ItemType Directory $dst -Force | Out-Null
           $ok = $false
-          for ($i = 1; $i -le 3 -and -not $ok; $i++) {
+          # cache local do CI (chave = versão + SHA-256 fixado); o SHA-256 é conferido de novo abaixo
+          $cached = ".orthanc-cache\Orthanc.exe"
+          if ((Test-Path $cached) -and $env:ORTHANC_SHA256 -and ((Get-FileHash $cached -Algorithm SHA256).Hash -eq $env:ORTHANC_SHA256)) {
+            Copy-Item $cached "$dst\Orthanc.exe"; $ok = $true
+            Write-Host "::notice title=Orthanc::usado do cache do CI (SHA-256 conferido)"
+          }
+          for ($i = 1; $i -le 4 -and -not $ok; $i++) {
             try { Invoke-WebRequest $url -OutFile "$dst\Orthanc.exe" -UseBasicParsing -TimeoutSec 300; $ok = $true }
             catch { Write-Host "::warning title=Download do Orthanc (tentativa $i)::$($_.Exception.Message)"; Start-Sleep -Seconds (20 * $i) }
           }
-          if (-not $ok) { Write-Host "::error title=Download do Orthanc::site indisponível após 3 tentativas ($url)"; exit 1 }
+          if (-not $ok) { Write-Host "::error title=Download do Orthanc::site indisponível após 4 tentativas ($url)"; exit 1 }
+          New-Item -ItemType Directory .orthanc-cache -Force | Out-Null
+          Copy-Item "$dst\Orthanc.exe" .orthanc-cache\Orthanc.exe -Force
           $sha = (Get-FileHash "$dst\Orthanc.exe" -Algorithm SHA256).Hash
           if ($env:ORTHANC_SHA256 -and $sha -ne $env:ORTHANC_SHA256) {
             # Nunca segue com um binário diferente do fixado: pode ser republicação ou adulteração. Conferir antes de trocar o valor.
