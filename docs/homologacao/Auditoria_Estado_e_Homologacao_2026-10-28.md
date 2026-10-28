@@ -55,8 +55,8 @@ clínico · exclusão por retenção (exige autorização) · transcrição de �
 | Plataforma (`tests_platform` + `tests_deploy`), PostgreSQL real, Orthanc real | CI *platform* | **`b8253ba`: 237 testes, 0 pulados, 0 falhas** (Orthanc real, PostgreSQL 17.11; inclui o roteiro e2e e os testes dependentes do Orthanc). Antes: `c9eb30e` 227/0/0 |
 | Plataforma local (este ambiente, sem Orthanc) | local | `b8253ba`: 204 testes (202 aprovados + 2 dependentes do Orthanc, que só rodam no CI) + 22 do DEPLOY |
 | Viewer (Chromium + Orthanc) | CI *viewer* | `b8253ba`: aprovado |
-| Implantação Windows comercial (instala, repara, atualiza, ativa módulo com licença de teste, convive com o DICOM Print r5, desinstala) | CI *deploy-windows* | `c9eb30e`: **aprovado** |
-| DICOM Print (339 testes no Windows) | CI *Windows release* | `c9eb30e`: aprovado |
+| Implantação Windows comercial (instala, repara, atualiza, ativa módulo com licença de teste, convive com o DICOM Print r5, desinstala) | CI *deploy-windows* | `b8253ba`: **aprovado** (29 aprovados, 0 reprovados, 1 não executado: impressão física) |
+| DICOM Print (339 testes no Windows) | CI *Windows release* | `b8253ba`: aprovado |
 | **Roteiro de homologação no instalador de homologação** (Windows real, Orthanc oficial) | CI *deploy-windows* `flavor=homologacao` | **`b8253ba`, execução 40775100865: aprovado, 13/13 passos** (ver E.1) |
 | Testes manuais pela interface | você | roteiro em `Roteiro_Homologacao_Interna_Plataforma.md` |
 
