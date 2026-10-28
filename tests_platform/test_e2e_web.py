@@ -262,6 +262,10 @@ class WebE2E(unittest.TestCase):
         pg.get_by_role("button", name="Pesquisar").click()
         expect(pg.get_by_text("Nenhum estudo com esses filtros.")).to_be_visible()
         self.shot(pg, "09-imagens-sem-resultado")
+        ret = pg.get_by_role("region", name="Retenção de estudos")             # relatório; nada é excluído
+        ret.get_by_role("button", name="Ver relatório").click()
+        expect(ret.get_by_text("Prazo: 20 anos")).to_be_visible()
+        expect(ret.get_by_text("Nada é excluído pelo VYONIX")).to_be_visible()
 
     def test_5_ris_schedule_flow(self):
         """Agenda (RIS): a recepção agenda um pedido, inicia e cancela com motivo; o técnico só consulta."""

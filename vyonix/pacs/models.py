@@ -36,6 +36,8 @@ class PacsStudy(TenantMixin, Base):
     clinical_study_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("clinical.studies.id"))
     last_received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False,
                                                        server_default=func.now())
+    retention_hold: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    retention_hold_reason: Mapped[str | None] = mapped_column(String(300))  # guarda obrigatória (processo, pedido)
 
 
 class PacsSeries(TenantMixin, Base):

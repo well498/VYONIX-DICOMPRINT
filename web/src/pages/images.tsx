@@ -169,6 +169,45 @@ export function ImagesPage({ me }: { me: { permissions: string[] } }) {
         </table>
         {!studies.loading && rows.length === 0 && <p className="empty">Nenhum estudo com esses filtros.</p>}
       </div>
+      {isAdmin && status.data?.enabled && <RetentionPanel />}
     </Page>
+  );
+}
+
+type Retention = { years: number; cutoff: string; eligible: number; eligible_bytes: number; eligible_on_hold: number;
+  on_hold: number; items: { study_uid: string; study_date: string | null; received: string; accession: string | null;
+    description: string | null; instances: number; bytes: number }[] };
+
+/** Retenção: relatório dos estudos fora do prazo e guarda obrigatória. Nada é excluído. */
+function RetentionPanel() {
+  const [open, setOpen] = useState(false);
+  const r = useLoad(async () => (open ? await get<Retention>("/pacs/retention") : null), [open]);
+  const [hold, setHold] = useState<{ uid: string; reason: string } | null>(null);
+  const act = useAction();
+  async function save() {
+    if (!hold) return;
+    const ok = await act.run(async () => { await post(`/pacs/studies/${encodeURIComponent(hold.uid)}/retention-hold`, { hold: true, reason: hold.reason }); await r.reload(); },
+      "Guarda obrigatória registrada: o estudo sai da lista de elegíveis.");
+    if (ok) setHold(null);
+  }
+  return (
+    <section className="panel" aria-label="Retenção de estudos">
+      <div className="row-actions"><h2>Retenção de estudos</h2>
+        <button className="link" onClick={() => setOpen(!open)}>{open ? "Fechar" : "Ver relatório"}</button></div>
+      <p className="field-hint">Relatório dos estudos que já passaram do prazo mínimo de guarda (Configurações → PACS). Nada é excluído pelo VYONIX; confirme o prazo com o jurídico.</p>
+      {act.view}
+      <Notice kind="error">{r.error}</Notice>
+      {r.data && <>
+        <p>Prazo: {r.data.years} anos (estudos anteriores a {r.data.cutoff.split("-").reverse().join("/")}). Elegíveis: <strong>{r.data.eligible}</strong> ({size(r.data.eligible_bytes)}); em guarda obrigatória: {r.data.on_hold}.</p>
+        {r.data.items.length > 0 && <ul className="history">{r.data.items.map((x) => (
+          <li key={x.study_uid}>{x.study_date ? x.study_date.split("-").reverse().join("/") : `recebido ${x.received}`} — {x.description ?? "estudo"} {x.accession ?? ""} — {x.instances} imagem(ns), {size(x.bytes)}
+            {hold?.uid === x.study_uid ? (
+              <form className="filters" aria-label="Guarda obrigatória" onSubmit={(e) => { e.preventDefault(); void save(); }}>
+                <input required maxLength={300} aria-label="Motivo da guarda" placeholder="Motivo (ex.: processo judicial)" value={hold.reason} onChange={(e) => setHold({ ...hold, reason: e.target.value })} />
+                <button className="primary" disabled={act.busy}>Registrar guarda</button>
+              </form>) : <> <button className="link" onClick={() => setHold({ uid: x.study_uid, reason: "" })}>Guarda obrigatória</button></>}
+          </li>))}</ul>}
+      </>}
+    </section>
   );
 }

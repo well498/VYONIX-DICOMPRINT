@@ -73,6 +73,11 @@ class ClinicalPolicy(_Strict):
     auto_reconcile_by_accession: bool = Field(True, description="Conciliar estudos automaticamente pelo número de acesso")
 
 
+class PacsRetention(_Strict):
+    years: int = Field(20, ge=5, le=100, description="Prazo mínimo de guarda dos estudos (anos) — confirmar com o "
+                                                     "jurídico da clínica")
+
+
 VERSION = "0.1.0"
 
 CORE = ModuleManifest(
@@ -123,6 +128,7 @@ PACS = ModuleManifest(
     permissions={"pacs.studies.read": "Pesquisar e abrir estudos de imagem",
                  "pacs.studies.store": "Enviar estudos de imagem (STOW-RS)",
                  "pacs.admin": "Sincronizar e consultar o estado do armazenamento DICOM"},
+    settings=(SettingSpec("retention", PacsRetention, "Retenção de estudos (relatório; nada é excluído)"),),
     publishes=("pacs.study.received.v1",),
 )
 

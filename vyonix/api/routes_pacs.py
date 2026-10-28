@@ -397,3 +397,24 @@ def sync(c: Ctx = Depends(needs("pacs.admin"))):
             raise NotLicensed("O módulo VYONIX PACS não está habilitado nesta organização.", code="module_disabled")
         c.plat.licensing.require_module(s, "pacs")
         return _wrap(lambda: pacs.sync(s, b))
+
+
+# ------------------------------------------------------------------ retenção (relatório; nada é excluído)
+class HoldIn(BaseModel):
+    hold: bool
+    reason: str | None = Field(None, max_length=300)
+
+
+@router.get("/retention")
+def retention_report(c: Ctx = Depends(needs("pacs.admin"))):
+    from vyonix.pacs import retention
+    with c.session() as s:
+        return retention.report(s)
+
+
+@router.post("/studies/{study_uid}/retention-hold")
+def retention_hold(study_uid: str, body: HoldIn, c: Ctx = Depends(needs("pacs.admin"))):
+    from vyonix.pacs import retention
+    with c.session() as s:
+        st = retention.set_hold(s, study_uid, body.hold, reason=body.reason, **c.actor)
+        return {"study_uid": st.study_uid, "hold": st.retention_hold, "reason": st.retention_hold_reason}
