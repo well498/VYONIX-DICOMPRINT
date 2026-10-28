@@ -65,7 +65,7 @@ class SecurityHeaders(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         resp: Response = await call_next(request)
         h = resp.headers
-        h.setdefault("Content-Security-Policy", "default-src 'self'; img-src 'self' data:; style-src 'self' "
+        h.setdefault("Content-Security-Policy", "default-src 'self'; img-src 'self' data: blob:; style-src 'self' "
                                                 "'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'; "
                                                 "form-action 'self'")
         h.setdefault("X-Frame-Options", "DENY")

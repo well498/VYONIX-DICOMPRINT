@@ -48,15 +48,27 @@ def _when(iso: str) -> str:
 
 
 def render(report: dict[str, Any], *, patient: dict[str, Any], study: dict[str, Any], institution: dict[str, Any],
-           branding: dict[str, Any] | None = None) -> bytes:
+           branding: dict[str, Any] | None = None, block: dict[str, Any] | None = None) -> bytes:
+    """Três situações distintas, nunca confundidas no documento:
+
+    * **rascunho** (``report["draft"]``): marca d'água "RASCUNHO — NÃO FINALIZADO" em todas as páginas, sem bloco
+      de assinatura, sem imagem e sem "Liberado por";
+    * **liberado com confirmação de senha**, com ou sem a **imagem da assinatura manuscrita** (elemento visual,
+      inserido só na versão liberada pelo próprio médico que autorizou o uso);
+    * **assinado digitalmente (PAdES/ICP-Brasil)** — ainda não disponível (BLK-14); o texto do documento nunca o
+      sugere.
+    """
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.styles import ParagraphStyle
     from reportlab.lib.units import mm
     from reportlab.lib.utils import ImageReader
     from reportlab.pdfgen import canvas as rl_canvas
-    from reportlab.platypus import HRFlowable, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+    from reportlab.platypus import Flowable, HRFlowable, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
+    from vyonix.report.templates import block_settings
+    blk = block_settings(block)
+    draft = bool(report.get("draft"))
     b = branding or {}
     cfg = dict(b.get("settings") or {})
     reg, bold = _fonts(cfg.get("font", "Sans"))
@@ -113,6 +125,16 @@ def render(report: dict[str, Any], *, patient: dict[str, Any], study: dict[str, 
                 self.drawString(ml, mb / 2, footer_text[:160])
             if page_numbers:
                 self.drawRightString(pw - mr, mb / 2, f"Página {n} de {total}")
+            if draft:                                   # rascunho nunca aparenta estar assinado
+                self.setFillColor(colors.HexColor("#b91c1c"))
+                self.setFont(bold, size)
+                self.drawCentredString(pw / 2, ph - mt / 2 - 3 * mm, "RASCUNHO — NÃO FINALIZADO — SEM VALIDADE")
+                self.setFillAlpha(0.12)
+                self.setFont(bold, 46)
+                self.translate(pw / 2, ph / 2)
+                self.rotate(45)
+                self.drawCentredString(0, 0, "RASCUNHO")
+                self.drawCentredString(0, -54, "NÃO FINALIZADO")
             self.restoreState()
 
     inst = institution.get("display_name") or "Instituição"
@@ -142,23 +164,81 @@ def render(report: dict[str, Any], *, patient: dict[str, Any], study: dict[str, 
               colWidths=[width * 0.19, width * 0.36, width * 0.18, width * 0.27])
     t.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"), ("BOTTOMPADDING", (0, 0), (-1, -1), 2)]))
     story += [t, Spacer(1, 5 * mm)]
+    align = {"left": 0, "center": 1, "right": 2}[blk["align"]]
+    al_name = {"left": "LEFT", "center": "CENTER", "right": "RIGHT"}[blk["align"]]
+    st["sig"] = ParagraphStyle("sig", parent=st["b"], alignment=align, leading=size * 1.3)
+    st["sigs"] = ParagraphStyle("sigs", parent=st["s"], alignment=align)
+
+    def signer_block(v: dict[str, Any]) -> list[Any]:
+        """Bloco profissional configurado no modelo: imagem (se autorizada), nome, CRM/UF, especialidade, RQE."""
+        from reportlab.platypus import Image as RLImage
+        items: list[Any] = []
+        if v.get("signature_image") and blk["show_image"]:
+            data_, w_, h_ = v["signature_image"]
+            hh = blk["height_mm"] * mm
+            ww = min(hh * w_ / max(h_, 1), (pw - ml - mr) * 0.6)
+            items.append(RLImage(io.BytesIO(data_), width=ww, height=ww * h_ / max(w_, 1), hAlign=al_name))
+        sg = v.get("signer") or {}
+        lines = []
+        if blk["show_name"]:
+            lines.append(sg.get("name") or v["signed_by"])
+        if blk["show_crm"] and sg.get("crm"):
+            lines.append(sg["crm"])
+        if blk["show_specialty"] and sg.get("specialty"):
+            lines.append(sg["specialty"])
+        if blk["show_rqe"] and sg.get("rqe"):
+            lines.append(f"RQE {sg['rqe']}")
+        if lines:
+            items.append(Paragraph("<br/>".join(escape(x) for x in lines), st["sig"]))
+        how = ("imagem da assinatura manuscrita digitalizada (elemento visual) · liberado com confirmação de senha"
+               if v.get("signature_image") and blk["show_image"] else "liberado com confirmação de senha")
+        items.append(Paragraph(escape(f"{how} em {_when(v['signed_at'])} · SHA-256 {v['sha256']}"), st["sigs"]))
+        return items
+
+    class AtBottom(Flowable):
+        """Bloco no rodapé da última página: ocupa o espaço restante e desenha o conteúdo encostado embaixo."""
+
+        def __init__(self, items: list[Any]):
+            super().__init__()
+            self.t = Table([[x] for x in items], colWidths=[pw - ml - mr])
+            self.t.setStyle(TableStyle([("ALIGN", (0, 0), (-1, -1), al_name), ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                                        ("RIGHTPADDING", (0, 0), (-1, -1), 0)]))
+
+        def wrap(self, aw, ah):  # noqa: D401
+            _w, self.h = self.t.wrap(aw, ah)
+            return aw, (self.h if ah < self.h else max(self.h, ah - 1))
+
+        def draw(self):
+            self.t.drawOn(self.canv, 0, 0)
+
+    footer_items: list[Any] = []
     for v in report["versions"]:
-        title = "Laudo" if v["kind"] == "final" else f"Adendo (versão {v['version']})"
-        story.append(para(title, "k"))
+        title = {"final": "Laudo", "draft": "Laudo — RASCUNHO (não finalizado)"}.get(
+            v["kind"], f"Adendo (versão {v['version']})")
+        story.append(para(title, "k" if not draft else "w"))
         if v["critical"]:
             story.append(para("Achado crítico", "w"))
         story += [Spacer(1, 1.5 * mm), para(v["body"]), Spacer(1, 2 * mm)]
-        if v.get("signature_image"):                         # elemento visual autorizado pelo médico (não é assinatura)
-            from reportlab.platypus import Image as RLImage
-            data_, w_, h_ = v["signature_image"]
-            hh = 14 * mm
-            story.append(RLImage(io.BytesIO(data_), width=hh * w_ / max(h_, 1), height=hh, hAlign="LEFT"))
-        story += [para(f"Liberado por {v['signed_by']} em {_when(v['signed_at'])} · SHA-256 {v['sha256']}", "s"),
-                  Spacer(1, 4 * mm)]
-    story += [HRFlowable(width="100%", color=colors.HexColor("#c8d0d6")), Spacer(1, 2 * mm),
-              para("Liberação registrada no VYONIX com confirmação de senha do médico. Não é assinatura digital "
-                   "ICP-Brasil. A integridade de cada versão pode ser conferida pelo SHA-256 no sistema. "
-                   "Documento gerado por software não liberado para uso clínico.", "s")]
+        if draft:
+            continue
+        items = signer_block(v)
+        if blk["position"] == "footer" and v["kind"] == "final":
+            footer_items = items
+        else:
+            from reportlab.platypus import KeepTogether
+            story += [Spacer(1, 2 * mm), KeepTogether(items)]
+        story.append(Spacer(1, 4 * mm))
+    story += [HRFlowable(width="100%", color=colors.HexColor("#c8d0d6")), Spacer(1, 2 * mm)]
+    if draft:
+        story.append(para("RASCUNHO: documento não finalizado, sem liberação, sem assinatura e sem validade. "
+                          "Documento gerado por software não liberado para uso clínico.", "w"))
+    else:
+        story.append(para("Liberação registrada no VYONIX com confirmação de senha do médico. Não é assinatura digital "
+                          "ICP-Brasil. A imagem da assinatura manuscrita, quando presente, é apenas um elemento visual "
+                          "autorizado pelo médico. A integridade de cada versão pode ser conferida pelo SHA-256 "
+                          "no sistema. Documento gerado por software não liberado para uso clínico.", "s"))
+    if footer_items:
+        story.append(AtBottom(footer_items))
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=ml, rightMargin=mr, topMargin=mt, bottomMargin=mb,
                             title=f"Laudo {study.get('accession') or ''}".strip(), author=inst, creator="VYONIX REPORT")
@@ -172,16 +252,34 @@ def render(report: dict[str, Any], *, patient: dict[str, Any], study: dict[str, 
     return buf.getvalue()
 
 
-def preview(branding: dict[str, Any], institution: dict[str, Any], *, pages: int = 1, body: str | None = None) -> bytes:
+def sample_signature() -> tuple[bytes, int, int]:
+    """Traço sintético (não é assinatura de ninguém) para a prévia do bloco de assinatura do modelo."""
+    import math
+
+    from PIL import Image, ImageDraw
+    im = Image.new("RGBA", (600, 180), (255, 255, 255, 0))
+    d = ImageDraw.Draw(im)
+    pts = [(30 + x * 5.4, 95 + 38 * math.sin(x / 9) * math.cos(x / 23)) for x in range(100)]
+    d.line(pts, fill=(20, 40, 90, 255), width=5)
+    d.text((440, 150), "EXEMPLO", fill=(150, 150, 150, 255))
+    out = io.BytesIO()
+    im.save(out, "PNG")
+    return out.getvalue(), 600, 180
+
+
+def preview(branding: dict[str, Any], institution: dict[str, Any], *, pages: int = 1, body: str | None = None,
+            block: dict[str, Any] | None = None) -> bytes:
     """Pré-visualização A4 (identidade ou modelo) com dados fictícios (sem dados de pacientes)."""
     sample = ("Técnica: exame realizado com protocolo padrão (texto de exemplo).\nAchados: texto de exemplo para "
               "conferir margens, fontes, cores, cabeçalho, rodapé e quebra de página.\nConclusão: exemplo.")
     text = body if body is not None else "\n\n".join([sample] * (6 * pages))
     rep = {"versions": [{"version": 1, "kind": "final", "body": text, "critical": False,
                          "signed_by": "Dr(a). Exemplo — CRM 000000/UF", "signed_at": "2026-01-01T12:00:00+00:00",
-                         "sha256": "0" * 64}]}
+                         "sha256": "0" * 64, "signature_image": sample_signature(),
+                         "signer": {"name": "Dr(a). Exemplo", "crm": "CRM 000000/UF", "rqe": "00000",
+                                    "specialty": "Especialidade de exemplo"}}]}
     return render(rep, patient={"name": "PACIENTE DE EXEMPLO", "identifier": "000000", "sex": "—",
                                 "birth_date": "01/01/1970"},
                   study={"modality": "XX", "description": "Exame de exemplo", "study_date": "01/01/2026",
                          "accession": "EXEMPLO", "requester": "Dr(a). Solicitante"},
-                  institution=institution, branding=branding)
+                  institution=institution, branding=branding, block=block)

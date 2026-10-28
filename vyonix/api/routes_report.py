@@ -81,11 +81,13 @@ class TemplateIn(BaseModel):
     site_id: uuid.UUID | None = None
     preferred: bool = False
     active: bool = True
+    signature_block: dict | None = None
 
     def kw(self) -> dict:
         return {"name": self.name, "modality": self.modality, "active": self.active, "technique": self.technique,
                 "findings": self.findings if self.findings is not None else self.body, "conclusion": self.conclusion,
-                "procedure_id": self.procedure_id, "site_id": self.site_id, "preferred": self.preferred}
+                "procedure_id": self.procedure_id, "site_id": self.site_id, "preferred": self.preferred,
+                "signature_block": self.signature_block}
 
 
 class PublishIn(BaseModel):
@@ -174,6 +176,51 @@ def report_pdf(rid: uuid.UUID, c: Ctx = Depends(needs("report.read"))):
         data, name = rep.pdf(s, rid, signature_key=_sig_key(c), **c.actor)
     return Response(data, media_type="application/pdf",
                     headers={"Content-Disposition": f'attachment; filename="{name}"', "Cache-Control": "no-store"})
+
+
+@router.get("/reports/{rid}/draft-pdf")
+def report_draft_pdf(rid: uuid.UUID, c: Ctx = Depends(needs("report.read"))):
+    """Prévia do rascunho: marcada "RASCUNHO — NÃO FINALIZADO", sem assinatura nem imagem."""
+    from fastapi.responses import Response
+    with c.session() as s:
+        _in_scope(c, s, report_id=rid)
+        data, name = rep.pdf(s, rid, draft=True, **c.actor)
+    return Response(data, media_type="application/pdf",
+                    headers={"Content-Disposition": f'inline; filename="{name}"', "Cache-Control": "no-store"})
+
+
+class BatchIn(BaseModel):
+    report_ids: list[uuid.UUID] = Field(min_length=1, max_length=50)
+    password: str = Field(min_length=1, max_length=200)
+    confirm: bool = False
+
+
+@router.post("/reports/finalize-batch")
+def finalize_batch(body: BatchIn, c: Ctx = Depends(needs("report.sign"))):
+    """Liberação de vários laudos do próprio médico: autorização explícita (``confirm``) e senha uma vez; cada laudo
+    é liberado e auditado individualmente (com o identificador do lote); uma falha não afeta os demais."""
+    from vyonix.errors import ValidationFailed, VyonixError
+    if not body.confirm:
+        raise ValidationFailed("Confirme explicitamente a liberação de todos os laudos selecionados.")
+    ids = list(dict.fromkeys(body.report_ids))
+    with c.session() as s:
+        _require(c, s)
+    with c.session() as s:
+        ok = auth.confirm_password(s, c.p, body.password, purpose="report.finalize_batch", ip=c.ip)
+    if not ok:
+        raise Forbidden("Senha incorreta: nenhum laudo foi liberado.", code="password_mismatch")
+    batch = str(uuid.uuid4())
+    results = []
+    for rid in ids:
+        try:
+            with c.session() as s:
+                _in_scope(c, s, report_id=rid)
+                r = rep.finalize(s, rid, actor=c.p.display_name or c.p.username, actor_id=c.p.user_id, ip=c.ip,
+                                 batch=batch)
+                results.append({"report_id": str(rid), "ok": True, "version": r.version})
+        except VyonixError as exc:
+            results.append({"report_id": str(rid), "ok": False, "code": exc.code, "message": str(exc)})
+    return {"batch": batch, "released": sum(1 for x in results if x["ok"]), "results": results}
 
 
 @router.get("/reports/{rid}/verify")
@@ -281,7 +328,8 @@ def preview_template(tid: uuid.UUID, c: Ctx = Depends(needs("report.templates.ma
         item = next(x for x in tpl.listing(s, include_inactive=True) if x["id"] == str(tid))
         text = tpl.compose(item["draft"], tpl.sample_context()) if item["draft"] else \
             tpl.render(item["body"], tpl.sample_context())
-        data = pdf.preview(brand.effective(s, None), settings.get(s, "core", "institution"), body=text)
+        blk = (item["draft"] or {}).get("signature_block") or item["signature_block"]
+        data = pdf.preview(brand.effective(s, None), settings.get(s, "core", "institution"), body=text, block=blk)
     return Response(data, media_type="application/pdf",
                     headers={"Content-Disposition": 'inline; filename="previa-modelo.pdf"', "Cache-Control": "no-store"})
 
@@ -392,7 +440,7 @@ def preview_branding(site_id: uuid.UUID | None = None, c: Ctx = Depends(needs("r
                     headers={"Content-Disposition": 'inline; filename="previa-identidade.pdf"', "Cache-Control": "no-store"})
 
 
-# ------------------------------------------------------------------ imagem da assinatura (TELELAUDO T5)
+# ------------------------------------------------------------------ imagem da assinatura manuscrita (T5)
 def _sig_key(c: Ctx) -> bytes:
     from vyonix.secrets import SecretStore
     return SecretStore(c.plat.cfg.data_dir).get_or_create(sig.KEY_NAME)
@@ -402,23 +450,88 @@ class ConsentIn(BaseModel):
     allow: bool
 
 
-@router.get("/physicians/me/signature")
-def my_signature(c: Ctx = Depends(needs("report.sign"))):
-    """Situação da imagem do próprio médico (a imagem em si nunca é devolvida pela API)."""
-    with c.session() as s:
-        return sig.status(s, c.p.user_id)
+class DelegateIn(BaseModel):
+    user_id: uuid.UUID | None = None
 
 
-@router.post("/physicians/me/signature", status_code=201)
-async def upload_signature(request: Request, c: Ctx = Depends(needs("report.sign"))):
+async def _body(request: Request) -> bytes:
     from vyonix.errors import ValidationFailed
     data = bytearray()
     async for chunk in request.stream():
         data += chunk
         if len(data) > sig.MAX_BYTES:
-            raise ValidationFailed("Imagem acima de 512 KB.")
+            raise ValidationFailed("Imagem acima de 5 MB.")
+    return bytes(data)
+
+
+def _params(crop: str | None, brightness: float, contrast: float, remove_background: bool) -> dict:
+    from vyonix.errors import ValidationFailed
+    box = None
+    if crop:
+        try:
+            box = tuple(float(x) for x in crop.split(","))
+        except ValueError:
+            raise ValidationFailed("Recorte inválido (use esquerda,topo,direita,base em frações).") from None
+        if len(box) != 4:
+            raise ValidationFailed("Recorte inválido (4 valores).")
+    return {"crop": box, "brightness": brightness, "contrast": contrast, "remove_background": remove_background}
+
+
+def _png(data: bytes):
+    from fastapi.responses import Response
+    return Response(data, media_type="image/png", headers={"Cache-Control": "no-store, private",
+                                                           "X-Content-Type-Options": "nosniff"})
+
+
+@router.get("/physicians/me/signature")
+def my_signature(c: Ctx = Depends(needs("report.sign"))):
+    """Situação e histórico da imagem do próprio médico."""
     with c.session() as s:
-        sig.upload(s, c.p.user_id, bytes(data), key=_sig_key(c), actor=c.p.username, ip=c.ip)
+        return sig.status(s, c.p.user_id)
+
+
+@router.post("/physicians/me/signature/preview")
+async def preview_signature(request: Request, crop: str | None = None, brightness: float = 1.0, contrast: float = 1.0,
+                            remove_background: bool = False, c: Ctx = Depends(needs("report.sign"))):
+    """Tratamento sem gravar nada (para conferir antes de enviar)."""
+    png, _w, _h = sig.process(await _body(request), **_params(crop, brightness, contrast, remove_background))
+    return _png(png)
+
+
+@router.post("/physicians/me/signature", status_code=201)
+async def upload_signature(request: Request, crop: str | None = None, brightness: float = 1.0, contrast: float = 1.0,
+                           remove_background: bool = False, c: Ctx = Depends(needs("report.sign"))):
+    """Envia a imagem tratada: fica pendente até o médico confirmar."""
+    data = await _body(request)
+    with c.session() as s:
+        sig.upload(s, c.p.user_id, data, key=_sig_key(c), actor=c.p.username, ip=c.ip,
+                   **_params(crop, brightness, contrast, remove_background))
+        return sig.status(s, c.p.user_id)
+
+
+@router.get("/physicians/me/signature/image")
+def my_signature_image(which: str = "active", c: Ctx = Depends(needs("report.sign"))):
+    """A própria imagem (ativa ou pendente), só para o médico dono; nunca há URL pública."""
+    with c.session() as s:
+        return _png(sig.image_for(s, c.p.user_id, which=which, key=_sig_key(c), actor=c.p.username, ip=c.ip))
+
+
+@router.post("/physicians/me/signature/confirm")
+def confirm_signature(body: SignIn, c: Ctx = Depends(needs("report.sign"))):
+    """O médico confirma, com a senha, que a imagem pendente é a assinatura dele (ativa e substitui a anterior)."""
+    with c.session() as s:
+        ok = auth.confirm_password(s, c.p, body.password, purpose="report.signature.confirm", ip=c.ip)
+    if not ok:
+        raise Forbidden("Senha incorreta: a imagem não foi ativada.", code="password_mismatch")
+    with c.session() as s:
+        sig.confirm(s, c.p.user_id, actor=c.p.username, ip=c.ip)
+        return sig.status(s, c.p.user_id)
+
+
+@router.delete("/physicians/me/signature")
+def delete_signature(c: Ctx = Depends(needs("report.sign"))):
+    with c.session() as s:
+        sig.delete(s, c.p.user_id, actor=c.p.username, ip=c.ip)
         return sig.status(s, c.p.user_id)
 
 
@@ -427,6 +540,46 @@ def signature_consent(body: ConsentIn, c: Ctx = Depends(needs("report.sign"))):
     with c.session() as s:
         sig.set_consent(s, c.p.user_id, body.allow, actor=c.p.username, ip=c.ip)
         return sig.status(s, c.p.user_id)
+
+
+@router.get("/physicians/me/signature/delegates")
+def signature_delegates(c: Ctx = Depends(needs("report.sign"))):
+    with c.session() as s:
+        return {"items": sig.delegate_candidates(s, exclude=c.p.user_id)}
+
+
+@router.put("/physicians/me/signature/delegate")
+def signature_delegate(body: DelegateIn, c: Ctx = Depends(needs("report.sign"))):
+    with c.session() as s:
+        sig.set_delegate(s, c.p.user_id, body.user_id, actor=c.p.username, ip=c.ip)
+        return sig.status(s, c.p.user_id)
+
+
+@router.post("/physicians/{pid}/signature/preview")
+async def admin_preview_signature(pid: uuid.UUID, request: Request, crop: str | None = None, brightness: float = 1.0,
+                                  contrast: float = 1.0, remove_background: bool = False,
+                                  c: Ctx = Depends(needs("report.physicians.manage"))):
+    png, _w, _h = sig.process(await _body(request), **_params(crop, brightness, contrast, remove_background))
+    return _png(png)
+
+
+@router.post("/physicians/{pid}/signature", status_code=201)
+async def admin_upload_signature(pid: uuid.UUID, request: Request, crop: str | None = None, brightness: float = 1.0,
+                                 contrast: float = 1.0, remove_background: bool = False,
+                                 c: Ctx = Depends(needs("report.physicians.manage"))):
+    """Envio pelo administrador **designado pelo próprio médico**; fica pendente até o médico confirmar."""
+    data = await _body(request)
+    with c.session() as s:
+        img = sig.upload(s, c.p.user_id, data, key=_sig_key(c), actor=c.p.username, ip=c.ip, physician_id=pid,
+                         **_params(crop, brightness, contrast, remove_background))
+        return {"status": img.status, "uploaded_at": img.created_at.isoformat()}
+
+
+@router.get("/physicians/{pid}/signature/pending")
+def admin_view_signature(pid: uuid.UUID, c: Ctx = Depends(needs("report.physicians.manage"))):
+    """O administrador designado vê só a imagem pendente que ele enviou (visualização auditada)."""
+    with c.session() as s:
+        return _png(sig.image_for(s, c.p.user_id, physician_id=pid, key=_sig_key(c), actor=c.p.username, ip=c.ip))
 
 
 # ------------------------------------------------------------------ fila de telelaudo (T7)

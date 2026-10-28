@@ -75,6 +75,31 @@ def context(s: Session, study_id: uuid.UUID) -> dict[str, str | None]:
             "unidade.nome": site.name if site else None}
 
 
+BLOCK_DEFAULT = {"show_image": True, "position": "block", "align": "left", "height_mm": 14, "show_name": True,
+                 "show_crm": True, "show_specialty": False, "show_rqe": True}
+
+
+def block_settings(cfg: dict | None) -> dict[str, Any]:
+    """Bloco de assinatura do modelo: imagem sim/não, posição (bloco profissional após o texto ou rodapé da última
+    página), alinhamento, altura proporcional (8–30 mm) e linhas de identificação (nome, CRM/UF, especialidade, RQE)."""
+    out = dict(BLOCK_DEFAULT)
+    for k, v in (cfg or {}).items():
+        if k not in BLOCK_DEFAULT:
+            raise ValidationFailed(f"Opção desconhecida no bloco de assinatura: {k}.")
+        out[k] = v
+    if out["position"] not in ("block", "footer") or out["align"] not in ("left", "center", "right"):
+        raise ValidationFailed("Posição (bloco ou rodapé) ou alinhamento (esquerda, centro, direita) inválido.")
+    try:
+        out["height_mm"] = float(out["height_mm"])
+    except (TypeError, ValueError):
+        raise ValidationFailed("Altura da assinatura inválida.") from None
+    if not 8 <= out["height_mm"] <= 30:
+        raise ValidationFailed("Altura da imagem da assinatura: 8 a 30 mm.")
+    for k in ("show_image", "show_name", "show_crm", "show_specialty", "show_rqe"):
+        out[k] = bool(out[k])
+    return out
+
+
 def _versions(s: Session, tid: uuid.UUID) -> list[TemplateVersion]:
     return list(s.execute(select(TemplateVersion).where(TemplateVersion.template_id == tid)
                           .order_by(TemplateVersion.version)).scalars())
@@ -93,8 +118,8 @@ def published(s: Session, t: ReportTemplate) -> TemplateVersion | None:
 
 def save(s: Session, *, name: str, modality: str | None = None, procedure_id: uuid.UUID | None = None,
          site_id: uuid.UUID | None = None, preferred: bool = False, active: bool = True, technique: str = "",
-         findings: str = "", conclusion: str = "", template_id: uuid.UUID | None = None, actor: str, actor_id=None,
-         ip=None) -> tuple[ReportTemplate, TemplateVersion]:
+         findings: str = "", conclusion: str = "", template_id: uuid.UUID | None = None,
+         signature_block: dict | None = None, actor: str, actor_id=None, ip=None) -> tuple[ReportTemplate, TemplateVersion]:
     """Cria ou altera o modelo e grava o rascunho (cria um rascunho novo se a última versão já foi publicada)."""
     from vyonix.clinical.models import Procedure
     from vyonix.tenancy.models import Site
@@ -108,6 +133,7 @@ def save(s: Session, *, name: str, modality: str | None = None, procedure_id: uu
     if bad:
         raise ValidationFailed(f"Campos desconhecidos no modelo: {', '.join(bad)}.",
                                details={"unknown_fields": bad, "allowed": sorted(FIELDS)})
+    block = block_settings(signature_block) if signature_block is not None else None
     if procedure_id and s.get(Procedure, procedure_id) is None:
         raise NotFound("Procedimento não encontrado nesta organização.")
     if site_id and s.get(Site, site_id) is None:
@@ -133,6 +159,10 @@ def save(s: Session, *, name: str, modality: str | None = None, procedure_id: uu
                             created_by=actor[:120])
         s.add(v)
     v.technique, v.findings, v.conclusion = technique or "", findings or "", conclusion or ""
+    if block is not None:
+        v.signature_block = block
+    elif v.signature_block is None and vs:                         # novo rascunho herda o bloco da versão anterior
+        v.signature_block = next((x.signature_block for x in reversed(vs) if x.signature_block), None)
     t.body = compose(v)                                           # texto legível do rascunho mais recente
     s.flush()
     audit.record(s, actor=actor, actor_id=actor_id, ip=ip, action="report.template.save", target_type="report_template",
@@ -184,7 +214,9 @@ def listing(s: Session, *, modality: str | None = None, include_inactive: bool =
                     "published_version": pub.version if pub else None,
                     "draft": None if last is None or last.status != "draft" else
                     {"version": last.version, "technique": last.technique, "findings": last.findings,
-                     "conclusion": last.conclusion, "import_report": last.import_report},
+                     "conclusion": last.conclusion, "import_report": last.import_report,
+                     "signature_block": block_settings(last.signature_block)},
+                    "signature_block": block_settings((pub or last).signature_block if (pub or last) else None),
                     "versions": [{"version": v.version, "status": v.status, "created_by": v.created_by,
                                   "published_by": v.published_by,
                                   "published_at": v.published_at.isoformat() if v.published_at else None}

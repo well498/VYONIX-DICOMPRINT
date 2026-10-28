@@ -9,7 +9,7 @@ type Row = { study_id: string; study_instance_uid: string; accession: string | n
   report_status: "pending" | "draft" | "final"; critical: boolean;
   assignment: null | { physician: string; priority: string; due_at: string; overdue: boolean } };
 type Version = { version: number; kind: "final" | "addendum"; body: string; critical: boolean; signed_by: string;
-  signed_at: string; sha256: string };
+  signed_at: string; sha256: string; signature_mode?: "password" | "handwritten_image" };
 type Report = { id: string; study_id: string; study_instance_uid: string | null; status: "draft" | "final"; body: string;
   critical: boolean; critical_note: string | null; author: string; version: number; finalized_by: string | null;
   finalized_at: string | null; row_version: number; versions: Version[] };
@@ -20,6 +20,12 @@ type Template = { id: string; name: string; modality: string | null; body: strin
 
 const PRIORITY: Record<string, string> = { routine: "rotina", urgent: "urgente", stat: "imediato" };
 const STATUS: Record<string, string> = { pending: "Sem laudo", draft: "Rascunho", final: "Liberado" };
+const MODE: Record<string, string> = { password: "Liberado com confirmação de senha",
+  handwritten_image: "Senha + imagem da assinatura manuscrita (visual; não é assinatura digital)" };
+type Block = { show_image: boolean; position: "block" | "footer"; align: "left" | "center" | "right"; height_mm: number;
+  show_name: boolean; show_crm: boolean; show_specialty: boolean; show_rqe: boolean };
+const BLOCK: Block = { show_image: true, position: "block", align: "left", height_mm: 14, show_name: true, show_crm: true,
+  show_specialty: false, show_rqe: true };
 
 function day(d: string | null) { return d ? fmtDate(d + "T12:00:00", false) : "—"; }
 
@@ -36,6 +42,8 @@ export function ReportsPage({ me }: { me: Me }) {
   const [showPhysicians, setShowPhysicians] = useState(false);
   const [showBranding, setShowBranding] = useState(false);
   const [showSignature, setShowSignature] = useState(false);
+  const [picked, setPicked] = useState<string[]>([]);
+  const [batch, setBatch] = useState({ confirm: false, password: "" });
   const act = useAction();
 
   const list = useLoad(async () => {
@@ -53,6 +61,19 @@ export function ReportsPage({ me }: { me: Me }) {
       await list.reload();
     }, "Exame atribuído.");
     if (ok) setAssignFor(null);
+  }
+
+  async function finalizeBatch(e: FormEvent) {
+    e.preventDefault();
+    await act.run(async () => {
+      const r = await post<{ released: number; results: { report_id: string; ok: boolean; message?: string }[] }>(
+        "/report/reports/finalize-batch", { report_ids: picked, password: batch.password, confirm: batch.confirm });
+      const bad = r.results.filter((x) => !x.ok);
+      setPicked(bad.map((x) => x.report_id)); setBatch({ confirm: false, password: "" });
+      await list.reload();
+      if (bad.length) throw new Error(`${r.released} liberado(s); ${bad.length} não: ${bad.map((x) => x.message).join("; ")}`);
+    }, "Laudos selecionados liberados, cada um registrado individualmente na auditoria.");
+    setBatch((b) => ({ ...b, password: "" }));
   }
 
   async function openRow(row: Row) {
@@ -94,6 +115,19 @@ export function ReportsPage({ me }: { me: Me }) {
         <button>Filtrar</button>
       </form>
       <Notice kind="error">{list.error}</Notice>
+      {can("report.sign") && picked.length > 0 && (
+        <form className="panel" aria-label="Liberar laudos selecionados" onSubmit={finalizeBatch}>
+          <strong>{picked.length} rascunho(s) selecionado(s)</strong>
+          <label className="check"><input type="checkbox" checked={batch.confirm} onChange={(e) => setBatch({ ...batch, confirm: e.target.checked })} />
+            {" "}Revisei e libero, em meu nome ({me.display_name}), os {picked.length} laudos selecionados</label>
+          <div className="filters">
+            <input type="password" required autoComplete="current-password" aria-label="Sua senha para liberar os selecionados"
+              placeholder="Sua senha" value={batch.password} onChange={(e) => setBatch({ ...batch, password: e.target.value })} />
+            <button className="primary" disabled={!batch.confirm || act.busy}>Liberar selecionados</button>
+            <button type="button" className="link" onClick={() => setPicked([])}>Limpar seleção</button>
+          </div>
+          <span className="field-hint">Cada laudo é liberado e auditado individualmente; um erro em um não afeta os demais. Máximo de 50.</span>
+        </form>)}
       <div className="table-wrap">
         <table>
           <thead><tr><th>Data</th><th>Paciente</th><th>Modalidade</th><th>Descrição</th><th>Accession</th>
@@ -101,7 +135,10 @@ export function ReportsPage({ me }: { me: Me }) {
           <tbody>
             {(list.data ?? []).map((r) => (
               <tr key={r.study_id}>
-                <td className="nowrap">{day(r.study_date)}</td><td>{r.patient_name ?? "—"}</td><td>{r.modality ?? "—"}</td>
+                <td className="nowrap">{can("report.sign") && r.report_status === "draft" && r.report_id &&
+                  <input type="checkbox" aria-label={`Selecionar laudo de ${r.patient_name ?? "paciente"}`} checked={picked.includes(r.report_id)}
+                    onChange={(e) => setPicked(e.target.checked ? [...picked, r.report_id!].slice(0, 50) : picked.filter((x) => x !== r.report_id))} />}
+                  {" "}{day(r.study_date)}</td><td>{r.patient_name ?? "—"}</td><td>{r.modality ?? "—"}</td>
                 <td>{r.description ?? "—"}</td><td className="nowrap">{r.accession ?? "—"}</td>
                 <td>{STATUS[r.report_status]}{r.critical && <span className="tag tag-warn">Achado crítico</span>}</td>
                 <td>{r.assignment ? <>{r.assignment.physician} · {PRIORITY[r.assignment.priority] ?? r.assignment.priority} · até {fmtDate(r.assignment.due_at)}
@@ -145,6 +182,8 @@ function Editor({ me, row, initial, onClose }: { me: Me; row: Row; initial: Repo
     : []), [report]);
   const suggestion = useLoad(async () => (!report && can("report.write")
     ? await get<{ status: string; name?: string; level?: string; message?: string }>(`/report/suggest?study_id=${row.study_id}`) : null), [report]);
+  const sig = useLoad(async () => (can("report.sign") ? await get<{ has_image: boolean; use_signature_image: boolean }>(
+    "/report/physicians/me/signature").catch(() => null) : null), []);
   const title = `Laudo — ${row.patient_name ?? "paciente"} — ${row.modality ?? ""} ${day(row.study_date)}`;
 
   async function create() {
@@ -213,12 +252,17 @@ function Editor({ me, row, initial, onClose }: { me: Me; row: Row; initial: Repo
             <input maxLength={300} value={draft.note} onChange={(e) => setDraft({ ...draft, note: e.target.value })} /></Field>}
           <div className="row-actions">
             {can("report.write") && <button disabled={act.busy} onClick={() => void save()}>Salvar rascunho</button>}
+            <a className="link" href={`/api/v1/report/reports/${report.id}/draft-pdf`} target="_blank" rel="noopener">Prévia do rascunho (sem assinatura)</a>
           </div>
           {can("report.sign") && (
             <form className="filters" aria-label="Liberar laudo" onSubmit={finalize}>
               <input type="password" required autoComplete="current-password" aria-label="Sua senha para liberar"
                 placeholder="Sua senha" value={password} onChange={(e) => setPassword(e.target.value)} />
               <button className="primary" disabled={act.busy}>Liberar laudo</button>
+              <span className="field-hint">Confirmação por senha (não é assinatura digital ICP-Brasil).{" "}
+                {sig.data?.has_image && sig.data.use_signature_image
+                  ? "A imagem da sua assinatura manuscrita será inserida como elemento visual."
+                  : "Sem imagem de assinatura manuscrita (não cadastrada ou não autorizada)."}</span>
             </form>)}
         </>
       )}
@@ -237,6 +281,7 @@ function Editor({ me, row, initial, onClose }: { me: Me; row: Row; initial: Repo
             <article key={v.version} aria-label={`Versão ${v.version}`} className="card">
               <span className="card-label">{v.kind === "final" ? "Laudo" : "Adendo"} — versão {v.version} — {v.signed_by}, {fmtDate(v.signed_at)}
                 {v.critical && <span className="tag tag-warn">Achado crítico</span>}</span>
+              {v.signature_mode && <span className="field-hint">{MODE[v.signature_mode]}</span>}
               <pre className="report-text">{v.body}</pre>
               <span className="field-hint" title={v.sha256}>SHA-256 {v.sha256.slice(0, 16)}…</span>
             </article>
@@ -259,8 +304,9 @@ function Editor({ me, row, initial, onClose }: { me: Me; row: Row; initial: Repo
 }
 
 type TplItem = Template & { published_version: number | null; preferred: boolean; procedure_id: string | null; site_id: string | null;
-  draft: null | { version: number; technique: string; findings: string; conclusion: string;
+  draft: null | { version: number; technique: string; findings: string; conclusion: string; signature_block?: Block;
     import_report: null | { issues: string[]; fields: string[]; header: string; footer: string } };
+  signature_block?: Block;
   versions: { version: number; status: string; created_by: string; published_by: string | null; published_at: string | null }[] };
 const TPL_STATUS: Record<string, string> = { draft: "rascunho", published: "publicada", archived: "arquivada" };
 
@@ -271,6 +317,7 @@ function Templates() {
   const procs = useLoad(async () => await get<{ id: string; name: string }[]>("/procedures").catch(() => []), []);
   const sites = useLoad(async () => await get<{ id: string; name: string }[]>("/sites").catch(() => []), []);
   const [form, setForm] = useState(empty);
+  const [block, setBlock] = useState<Block>(BLOCK);
   const [reviewed, setReviewed] = useState(false);
   const act = useAction();
   function edit(t: TplItem) {
@@ -278,13 +325,15 @@ function Templates() {
     const pub = t.body;
     setForm({ id: t.id, name: t.name, modality: t.modality ?? "", technique: d?.technique ?? "", findings: d?.findings ?? (d ? "" : pub),
       conclusion: d?.conclusion ?? "", procedure_id: t.procedure_id ?? "", site_id: t.site_id ?? "", preferred: t.preferred });
+    setBlock(d?.signature_block ?? t.signature_block ?? BLOCK);
     setReviewed(false);
   }
   async function save(e: FormEvent) {
     e.preventDefault();
     await act.run(async () => {
       const body = { name: form.name, modality: form.modality || null, technique: form.technique, findings: form.findings,
-        conclusion: form.conclusion, procedure_id: form.procedure_id || null, site_id: form.site_id || null, preferred: form.preferred };
+        conclusion: form.conclusion, procedure_id: form.procedure_id || null, site_id: form.site_id || null, preferred: form.preferred,
+        signature_block: block };
       const r = form.id ? await put<{ id: string }>(`/report/templates/${form.id}`, body) : await post<{ id: string }>("/report/templates", body);
       setForm({ ...form, id: r.id }); setReviewed(false);
       await list.reload();
@@ -342,6 +391,25 @@ function Templates() {
         <Field label="Técnica"><textarea rows={3} value={form.technique} onChange={(e) => setForm({ ...form, technique: e.target.value })} /></Field>
         <Field label="Achados"><textarea rows={5} value={form.findings} onChange={(e) => setForm({ ...form, findings: e.target.value })} /></Field>
         <Field label="Conclusão"><textarea rows={3} value={form.conclusion} onChange={(e) => setForm({ ...form, conclusion: e.target.value })} /></Field>
+        <fieldset className="panel-inset" aria-label="Bloco de assinatura">
+          <legend>Bloco de assinatura no PDF</legend>
+          <p className="field-hint">Aparece só no laudo liberado. Rascunhos nunca têm assinatura. A imagem só entra se o próprio médico que liberou autorizou o uso.</p>
+          <div className="grid2">
+            <Field label="Posição"><select value={block.position} onChange={(e) => setBlock({ ...block, position: e.target.value as Block["position"] })}>
+              <option value="block">Bloco profissional após o texto</option><option value="footer">Rodapé da última página</option></select></Field>
+            <Field label="Alinhamento"><select value={block.align} onChange={(e) => setBlock({ ...block, align: e.target.value as Block["align"] })}>
+              <option value="left">Esquerda</option><option value="center">Centro</option><option value="right">Direita</option></select></Field>
+            <Field label={`Altura da imagem: ${block.height_mm} mm`} hint="Largura proporcional">
+              <input type="range" min={8} max={30} value={block.height_mm} aria-label="Altura da imagem da assinatura"
+                onChange={(e) => setBlock({ ...block, height_mm: Number(e.target.value) })} /></Field>
+          </div>
+          <div className="filters">
+            {([["show_image", "Imagem da assinatura manuscrita"], ["show_name", "Nome completo"], ["show_crm", "CRM e UF"],
+              ["show_specialty", "Especialidade"], ["show_rqe", "RQE"]] as [keyof Block, string][]).map(([k, label]) => (
+              <label key={k} className="check"><input type="checkbox" checked={Boolean(block[k])}
+                onChange={(e) => setBlock({ ...block, [k]: e.target.checked })} /> {label}</label>))}
+          </div>
+        </fieldset>
         <div className="row-actions">
           <button className="primary" disabled={act.busy}>Salvar rascunho</button>
           {form.id && <button type="button" className="link" onClick={() => { setForm(empty); setReviewed(false); }}>Novo modelo</button>}

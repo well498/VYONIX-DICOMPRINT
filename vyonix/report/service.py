@@ -52,7 +52,8 @@ def _out(r: Report, s: Session, *, versions: bool = False) -> dict[str, Any]:
          "row_version": r.row_version, "updated_at": r.updated_at.isoformat() if r.updated_at else None}
     if versions:
         d["versions"] = [{"version": v.version, "kind": v.kind, "body": v.body, "critical": v.critical,
-                          "signed_by": v.signed_by, "signed_at": v.signed_at.isoformat(), "sha256": v.sha256}
+                          "signed_by": v.signed_by, "signed_at": v.signed_at.isoformat(), "sha256": v.sha256,
+                          "signature_mode": "handwritten_image" if v.signature_image_id else "password"}
                          for v in s.execute(select(ReportVersion).where(ReportVersion.report_id == r.id)
                                             .order_by(ReportVersion.version)).scalars()]
     return d
@@ -153,8 +154,19 @@ def _signer(s: Session, r: Report, actor_id):
     return physicians.authorized(s, actor_id, site_id=st.site_id if st else None, on=today)
 
 
+def _applied(s: Session, r: Report, v: ReportVersion, phys, *, actor: str, actor_id, ip) -> None:
+    """Uso da imagem da assinatura manuscrita num documento: auditado por documento e versão."""
+    if v.signature_image_id is None:
+        return
+    from vyonix.report.models import SignatureImage
+    img = s.get(SignatureImage, v.signature_image_id)
+    audit.record(s, actor=actor, actor_id=actor_id, ip=ip, action="report.signature.applied", target_type="report",
+                 target_id=r.id, details={"version": v.version, "physician_id": str(phys.id),
+                                          "image_sha256": img.sha256 if img else None})
+
+
 def finalize(s: Session, report_id: uuid.UUID, *, expected_version: int | None = None, actor: str, actor_id=None,
-             ip=None) -> Report:
+             ip=None, batch: str | None = None) -> Report:
     """Libera o laudo (a API já confirmou a senha de quem libera)."""
     r = s.get(Report, report_id)
     if r is None:
@@ -186,7 +198,9 @@ def finalize(s: Session, report_id: uuid.UUID, *, expected_version: int | None =
         if o is not None and o.status not in ("completed", "cancelled"):
             clinical.set_order_status(s, o.id, "completed", actor=actor, actor_id=actor_id, ip=ip)
     audit.record(s, actor=actor, actor_id=actor_id, ip=ip, action="report.finalize", target_type="report",
-                 target_id=r.id, details={"version": v.version, "sha256": v.sha256, "critical": r.critical})
+                 target_id=r.id, details={"version": v.version, "sha256": v.sha256, "critical": r.critical,
+                                          **({"batch": batch} if batch else {})})
+    _applied(s, r, v, phys, actor=actor, actor_id=actor_id, ip=ip)
     publish(s, "report.finalized.v1", {"report_id": str(r.id), "study_id": str(r.study_id), "version": v.version},
             source="report", subject_kind="report", subject_id=r.id)
     if r.critical:
@@ -217,6 +231,7 @@ def addendum(s: Session, report_id: uuid.UUID, text: str, *, critical: bool = Fa
     s.flush()
     audit.record(s, actor=actor, actor_id=actor_id, ip=ip, action="report.addendum", target_type="report",
                  target_id=r.id, details={"version": v.version, "sha256": v.sha256, "critical": bool(critical)})
+    _applied(s, r, v, phys, actor=actor, actor_id=actor_id, ip=ip)
     publish(s, "report.amended.v1", {"report_id": str(r.id), "study_id": str(r.study_id), "version": v.version},
             source="report", subject_kind="report", subject_id=r.id)
     if critical:
@@ -276,18 +291,35 @@ def get(s: Session, report_id: uuid.UUID) -> dict[str, Any]:
     return _out(r, s, versions=True)
 
 
+def signature_block(s: Session, r: Report) -> dict[str, Any]:
+    """Configuração do bloco de assinatura do modelo usado no laudo (ou o padrão)."""
+    from vyonix.report import templates as tpl
+    from vyonix.report.models import TemplateVersion
+    cfg = None
+    if r.template_id and r.template_version:
+        tv = s.execute(select(TemplateVersion).where(TemplateVersion.template_id == r.template_id,
+                                                     TemplateVersion.version == r.template_version)).scalar_one_or_none()
+        cfg = tv.signature_block if tv else None
+    return tpl.block_settings(cfg)
+
+
 def pdf(s: Session, report_id: uuid.UUID, *, actor: str, actor_id=None, ip=None,
-        signature_key: bytes | None = None) -> tuple[bytes, str]:
-    """PDF do laudo liberado (gerado das versões imutáveis); a emissão fica na auditoria."""
+        signature_key: bytes | None = None, draft: bool = False) -> tuple[bytes, str]:
+    """PDF do laudo liberado (gerado das versões imutáveis) ou, com ``draft``, a prévia do **rascunho** — marcada
+    "RASCUNHO — NÃO FINALIZADO", sem bloco de assinatura e sem imagem. A emissão fica na auditoria."""
     from vyonix.clinical.models import PatientIdentifier
-    from vyonix.report import branding
+    from vyonix.report import branding, physicians
     from vyonix.report import pdf as render
+    from vyonix.report import signature
+    from vyonix.report.models import Physician, SignatureImage
     from vyonix.settings import service as settings
     r = s.get(Report, report_id)
     if r is None:
         raise NotFound("Laudo não encontrado.")
-    if r.status != "final":
-        raise Conflict("Só laudo liberado tem PDF.")
+    if draft and r.status != "draft":
+        raise Conflict("O laudo já foi liberado: use o PDF do laudo.")
+    if not draft and r.status != "final":
+        raise Conflict("Só laudo liberado tem PDF (o rascunho tem prévia marcada como não finalizada).")
     st = s.get(Study, r.study_id)
     p = s.get(Patient, st.patient_id) if st and st.patient_id else None
     o = s.get(Order, r.order_id) if r.order_id else None
@@ -296,12 +328,29 @@ def pdf(s: Session, report_id: uuid.UUID, *, actor: str, actor_id=None, ip=None,
         i = s.execute(select(PatientIdentifier).where(PatientIdentifier.patient_id == p.id)
                       .order_by(PatientIdentifier.issuer)).scalars().first()
         ident = f"{i.value} ({i.issuer})" if i else None
-    out = _out(r, s, versions=True)
-    from vyonix.report import signature
-    for v, row in zip(out["versions"], s.execute(select(ReportVersion).where(ReportVersion.report_id == r.id)
-                                                .order_by(ReportVersion.version)).scalars()):
-        if row.signature_image_id and signature_key:          # imagem autorizada pelo médico na liberação
-            v["signature_image"] = signature.decrypt(s, row.signature_image_id, key=signature_key)
+    block = signature_block(s, r)
+    if draft:
+        out = {"draft": True, "versions": [{"version": r.version + 1, "kind": "draft", "body": r.body or "",
+                                            "critical": r.critical}]}
+        eff = branding.effective(s, st.site_id if st else None)
+    else:
+        out = _out(r, s, versions=True)
+        rows = list(s.execute(select(ReportVersion).where(ReportVersion.report_id == r.id)
+                              .order_by(ReportVersion.version)).scalars())
+        for v, row in zip(out["versions"], rows):
+            ph = (s.execute(select(Physician).where(Physician.user_id == row.signed_by_id)).scalar_one_or_none()
+                  if row.signed_by_id else None)
+            if ph is not None:
+                v["signer"] = {"name": ph.full_name, "crm": f"CRM {ph.crm}/{ph.crm_uf}", "rqe": ph.rqe,
+                               "specialty": ", ".join(ph.specialties or []) or None,
+                               "identification": physicians.identification(ph)}
+            if row.signature_image_id and signature_key and block["show_image"]:
+                img = s.get(SignatureImage, row.signature_image_id)
+                # a imagem só entra no documento do próprio médico que liberou a versão
+                if img is not None and ph is not None and img.physician_id == ph.id:
+                    v["signature_image"] = signature.decrypt(s, row.signature_image_id, key=signature_key)
+        eff = branding.effective(s, st.site_id if st else None, org_version=r.branding_org_version or -1,
+                                 site_version=r.branding_site_version or -1)
     data = render.render(
         out,
         patient={"name": p.name if p else None, "identifier": ident, "sex": p.sex if p else None,
@@ -309,12 +358,11 @@ def pdf(s: Session, report_id: uuid.UUID, *, actor: str, actor_id=None, ip=None,
         study={"modality": st.modality if st else None, "description": st.description if st else None,
                "study_date": st.study_date.strftime("%d/%m/%Y") if st and st.study_date else None,
                "accession": st.accession if st else None, "requester": o.requester if o else None},
-        institution=settings.get(s, "core", "institution"),
-        branding=branding.effective(s, st.site_id if st else None, org_version=r.branding_org_version or -1,
-                                    site_version=r.branding_site_version or -1))
-    audit.record(s, actor=actor, actor_id=actor_id, ip=ip, action="report.pdf", target_type="report", target_id=r.id,
-                 details={"version": r.version})
-    return data, f"laudo-{(st.accession if st and st.accession else str(r.id)[:8])}.pdf"
+        institution=settings.get(s, "core", "institution"), branding=eff, block=block)
+    audit.record(s, actor=actor, actor_id=actor_id, ip=ip, action="report.draft_pdf" if draft else "report.pdf",
+                 target_type="report", target_id=r.id, details={"version": r.version})
+    base = st.accession if st and st.accession else str(r.id)[:8]
+    return data, (f"rascunho-{base}.pdf" if draft else f"laudo-{base}.pdf")
 
 
 def verify(s: Session, report_id: uuid.UUID) -> dict[str, Any]:

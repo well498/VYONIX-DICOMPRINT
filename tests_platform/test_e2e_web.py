@@ -526,15 +526,37 @@ class WebE2E(unittest.TestCase):
         nav = pg.get_by_role("navigation", name="Navegação principal")
         nav.get_by_role("link", name="Laudos").click()
         # imagem da assinatura: só a própria médica envia e autoriza
-        sigf = self.tmp / "assinatura.png"
+        sigf = self.tmp / "assinatura.jpg"
+        im_ = Image.new("RGB", (420, 150), (250, 250, 248))                 # traço sintético em "papel"
+        from PIL import ImageDraw as _Draw
+        _Draw.Draw(im_).line([(30, 110), (140, 30), (250, 100), (390, 40)], fill=(20, 30, 100), width=6)
         buf = _io.BytesIO()
-        Image.new("RGBA", (300, 90), (0, 0, 0, 0)).save(buf, "PNG")
+        im_.save(buf, "JPEG")
         sigf.write_bytes(buf.getvalue())
         pg.get_by_role("button", name="Minha assinatura").click()
         sp = pg.get_by_role("region", name="Minha assinatura")
-        sp.get_by_label("Imagem da assinatura", exact=True).set_input_files(str(sigf))
-        sp.get_by_role("button", name="Enviar imagem").click()
-        expect(sp.get_by_text("Imagem enviada.")).to_be_visible()
+        expect(sp.get_by_text("Assinatura digital ICP-Brasil (PAdES)")).to_be_visible()
+        sp.get_by_label("Arquivo da assinatura").set_input_files(str(sigf))
+        expect(sp.get_by_role("img", name="Pré-visualização da assinatura tratada")).to_be_visible()
+        sp.get_by_label("Recorte à esquerda").fill("5")
+        sp.get_by_role("button", name="Enviar para confirmação").click()
+        expect(sp.get_by_text("aguarda a confirmação do médico")).to_be_visible()
+        expect(sp.get_by_role("img", name="Assinatura pendente de confirmação")).to_be_visible()
+        self.assertGreater(sp.get_by_role("img", name="Assinatura pendente de confirmação")
+                           .evaluate("e => e.decode().then(() => e.naturalWidth)"), 100)      # imagem carregada (CSP)
+        expect(sp.get_by_label("Autorizo aplicar a imagem nos laudos que eu liberar")).to_have_count(0)  # ainda pendente
+        self.shot(pg, "11b-assinatura-pendente")
+        cf = sp.get_by_role("form", name="Confirmar assinatura")
+        cf.get_by_label("Sua senha").fill("Medica-2026xy")
+        cf.get_by_role("button", name="Confirmar que é a minha assinatura").click()
+        expect(sp.get_by_text("Imagem confirmada e ativa.")).to_be_visible()
+        expect(sp.get_by_role("img", name="Sua assinatura ativa")).to_be_visible()
+        vp = pg.viewport_size
+        pg.set_viewport_size({"width": 390, "height": 844})                  # celular: painel sem rolagem lateral
+        self.assertLessEqual(sp.evaluate("e => e.scrollWidth - e.clientWidth"), 0)
+        self.assertLessEqual(sp.bounding_box()["width"], 390)
+        self.shot(pg, "11c-assinatura-celular")
+        pg.set_viewport_size(vp)
         sp.get_by_label("Autorizo aplicar a imagem nos laudos que eu liberar").click()
         expect(sp.get_by_text("Uso autorizado nos próximos laudos que você liberar.")).to_be_visible()
         expect(sp.get_by_label("Autorizo aplicar a imagem nos laudos que eu liberar")).to_be_checked()
@@ -553,6 +575,11 @@ class WebE2E(unittest.TestCase):
         text.fill("Técnica: sequências padrão.\nAchados: sem alterações significativas.\nConclusão: exame normal.")
         editor.get_by_role("button", name="Salvar rascunho").click()
         expect(editor.get_by_text("Rascunho salvo.")).to_be_visible()
+        draft_url = editor.get_by_role("link", name="Prévia do rascunho (sem assinatura)").get_attribute("href")
+        draft_pdf = PdfReader(_io.BytesIO(pg.request.get(self.base + draft_url).body()))
+        self.assertIn("RASCUNHO", " ".join(p_.extract_text() for p_ in draft_pdf.pages))
+        n_draft = sum(len(p_.images) for p_ in draft_pdf.pages)                        # identidade visual, sem assinatura
+        expect(editor.get_by_text("A imagem da sua assinatura manuscrita será inserida")).to_be_visible()
         editor.get_by_label("Achado crítico").check()
         editor.get_by_label("Descrição do achado crítico").fill("Lesão nova — avisar solicitante")
         sign = editor.get_by_role("form", name="Liberar laudo")
@@ -574,6 +601,7 @@ class WebE2E(unittest.TestCase):
         pdf_url = editor.get_by_role("link", name="Baixar PDF do laudo").get_attribute("href")
         laudo_pdf = PdfReader(_io.BytesIO(pg.request.get(self.base + pdf_url).body()))
         self.assertGreaterEqual(sum(len(p_.images) for p_ in laudo_pdf.pages), 2)     # logomarca + assinatura
+        self.assertGreater(sum(len(p_.images) for p_ in laudo_pdf.pages), n_draft)    # assinatura só no liberado
         self.shot(pg, "12-laudo-liberado")
         editor.get_by_role("button", name="Fechar").click()
         crit = pg.get_by_role("region", name="Achados críticos a comunicar")

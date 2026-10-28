@@ -1,5 +1,5 @@
-import { useState, type FormEvent } from "react";
-import { fmtDate, get, post, upload, type Me } from "../api";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { blob, del, errorText, fmtDate, get, post, put, upload, type Me } from "../api";
 import { Field, Notice, useAction, useLoad } from "../ui";
 
 type Link = { id: string; site_id: string | null; valid_from: string; valid_to: string | null };
@@ -20,6 +20,7 @@ export function PhysiciansPanel({ me }: { me: Me }) {
   const sites = useLoad(async () => await get<Site[]>("/sites").catch(() => [] as Site[]), []);
   const [form, setForm] = useState({ user_id: "", full_name: "", crm: "", crm_uf: "CE", rqe: "", specialties: "" });
   const [link, setLink] = useState<{ pid: string; site: string; from: string } | null>(null);
+  const [sigFor, setSigFor] = useState<string | null>(null);
   const act = useAction();
   const siteName = (id: string | null) => (id ? sites.data?.find((x) => x.id === id)?.name ?? "unidade" : "toda a organização");
 
@@ -69,6 +70,11 @@ export function PhysiciansPanel({ me }: { me: Me }) {
                 <input type="date" required aria-label="Início da vigência" value={link.from} onChange={(e) => setLink({ ...link, from: e.target.value })} />
                 <button className="primary" disabled={act.busy}>Incluir vínculo</button>
               </form>) : <button className="link" onClick={() => setLink({ pid: p.id, site: "", from: today() })}>Incluir vínculo</button>}
+            {" "}<button className="link" onClick={() => setSigFor(sigFor === p.id ? null : p.id)}>Enviar assinatura (administrador designado)</button>
+            {sigFor === p.id && <div className="panel-inset">
+              <p className="field-hint">Só funciona se {p.full_name} designou você no próprio cadastro. A imagem fica pendente até o médico confirmar com a senha dele; você não pode usá-la.</p>
+              <SignatureEditor base={`/report/physicians/${p.id}/signature`} label={`Assinatura de ${p.full_name}`} onSent={() => setSigFor(null)} />
+            </div>}
           </li>))}
       </ul>
       <form aria-label="Cadastrar médico" onSubmit={submit}>
@@ -94,35 +100,150 @@ export function PhysiciansPanel({ me }: { me: Me }) {
   );
 }
 
-/** Imagem da assinatura manuscrita do próprio médico (TELELAUDO T5): só visual, aplicada apenas com autorização. */
-export function MySignaturePanel() {
-  const st = useLoad(async () => await get<{ has_image: boolean; use_signature_image: boolean; uploaded_at: string | null }>(
-    "/report/physicians/me/signature").catch(() => null), []);
+type SigStatus = {
+  has_image: boolean; use_signature_image: boolean; uploaded_at: string | null;
+  pending: { uploaded_by: string; uploaded_at: string } | null; delegate_user_id: string | null;
+  history: { status: string; uploaded_by: string; uploaded_at: string; confirmed_at: string | null; ended_at: string | null; sha256: string }[];
+};
+
+const STATUS: Record<string, string> = { active: "ativa", pending: "aguardando sua confirmação", replaced: "substituída",
+  deleted: "excluída", rejected: "descartada (nova imagem enviada antes da confirmação)" };
+
+function useObjectUrl() {
+  const [url, setUrl] = useState<string | null>(null);
+  useEffect(() => () => { if (url) URL.revokeObjectURL(url); }, [url]);
+  return [url, (b: Blob | null) => setUrl(b ? URL.createObjectURL(b) : null)] as const;
+}
+
+/** Carregar, tratar (recorte, brilho, contraste, fundo branco) e pré-visualizar antes de enviar. */
+export function SignatureEditor({ base, onSent, label }: { base: string; onSent: () => Promise<void> | void; label: string }) {
   const [file, setFile] = useState<File | undefined>();
+  const [p, setP] = useState({ l: 0, t: 0, r: 100, b: 100, bright: 100, contrast: 100, bg: true });
+  const [url, setUrl] = useObjectUrl();
+  const [err, setErr] = useState("");
   const act = useAction();
-  if (!st.data) return null;
+  const query = useMemo(() => {
+    const q = new URLSearchParams({ brightness: String(p.bright / 100), contrast: String(p.contrast / 100),
+      remove_background: String(p.bg) });
+    if (p.l > 0 || p.t > 0 || p.r < 100 || p.b < 100) q.set("crop", [p.l, p.t, p.r, p.b].map((x) => x / 100).join(","));
+    return q.toString();
+  }, [p]);
+  useEffect(() => {
+    if (!file) { setUrl(null); return; }
+    const h = setTimeout(() => {
+      blob("POST", `${base}/preview?${query}`, file).then((b) => { setUrl(b); setErr(""); })
+        .catch((e) => { setUrl(null); setErr(errorText(e)); });
+    }, 300);
+    return () => clearTimeout(h);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [file, query, base]);
+  const slider = (k: keyof typeof p, name: string, min: number, max: number) => (
+    <label className="field slider"><span className="field-label">{name}: {String(p[k])}%</span>
+      <input type="range" min={min} max={max} value={Number(p[k])} aria-label={name}
+        onChange={(e) => setP({ ...p, [k]: Number(e.target.value) })} /></label>);
   async function send(e: FormEvent) {
     e.preventDefault();
     if (!file) return;
-    await act.run(async () => { await upload("/report/physicians/me/signature", file); await st.reload(); },
-      "Imagem enviada. Ela só aparece nos laudos se você autorizar.");
+    const ok = await act.run(async () => { await upload(`${base}?${query}`, file); }, "Imagem enviada: aguarda a confirmação do médico com a senha.");
+    if (ok) { setFile(undefined); await onSent(); }
+  }
+  return (
+    <form className="sig-editor" aria-label={label} onSubmit={send}>
+      {act.view}
+      <Field label="Carregar imagem da assinatura" hint="Foto ou digitalização em JPG, JPEG, PNG ou WEBP, até 5 MB. Use papel branco e boa luz.">
+        <input type="file" accept="image/png,image/jpeg,image/webp,.jpg,.jpeg,.png,.webp" aria-label="Arquivo da assinatura"
+          onChange={(e) => setFile(e.target.files?.[0])} /></Field>
+      {file && <>
+        <div className="sig-preview" aria-live="polite">
+          {url ? <img src={url} alt="Pré-visualização da assinatura tratada" /> : <span>{err || "Gerando a pré-visualização…"}</span>}
+        </div>
+        <div className="grid2">
+          {slider("l", "Recorte à esquerda", 0, 45)}{slider("r", "Recorte à direita", 55, 100)}
+          {slider("t", "Recorte no topo", 0, 45)}{slider("b", "Recorte na base", 55, 100)}
+          {slider("bright", "Brilho", 30, 300)}{slider("contrast", "Contraste", 30, 300)}
+        </div>
+        <label className="check"><input type="checkbox" checked={p.bg} onChange={(e) => setP({ ...p, bg: e.target.checked })} /> Remover o fundo branco</label>
+        <button className="primary" disabled={!url || act.busy}>Enviar para confirmação</button>
+      </>}
+    </form>
+  );
+}
+
+/** Assinatura manuscrita do próprio médico: só visual; ativa após a confirmação dele e aplicada só com autorização. */
+export function MySignaturePanel() {
+  const base = "/report/physicians/me/signature";
+  const st = useLoad(async () => await get<SigStatus>(base).catch(() => null), []);
+  const delegates = useLoad(async () => (await get<{ items: User[] }>(`${base}/delegates`).catch(() => ({ items: [] as User[] }))).items, []);
+  const [active, setActive] = useObjectUrl();
+  const [pending, setPending] = useObjectUrl();
+  const [pw, setPw] = useState("");
+  const act = useAction();
+  const s = st.data;
+  useEffect(() => {
+    if (s?.has_image) blob("GET", `${base}/image`).then(setActive).catch(() => setActive(null)); else setActive(null);
+    if (s?.pending) blob("GET", `${base}/image?which=pending`).then(setPending).catch(() => setPending(null)); else setPending(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [s?.uploaded_at, s?.pending?.uploaded_at, s?.has_image]);
+  if (!s) return null;
+  async function confirm(e: FormEvent) {
+    e.preventDefault();
+    const ok = await act.run(async () => { await post(`${base}/confirm`, { password: pw }); await st.reload(); },
+      "Imagem confirmada e ativa. Ela só entra nos laudos se o uso estiver autorizado.");
+    if (ok) setPw("");
   }
   async function consent(allow: boolean) {
-    await act.run(async () => { await post("/report/physicians/me/signature/consent", { allow }); await st.reload(); },
+    await act.run(async () => { await post(`${base}/consent`, { allow }); await st.reload(); },
       allow ? "Uso autorizado nos próximos laudos que você liberar." : "Uso revogado para os próximos laudos.");
+  }
+  async function remove() {
+    await act.run(async () => { await del(base); await st.reload(); }, "Imagem excluída e uso revogado. Laudos já liberados não mudam.");
+  }
+  async function delegate(id: string) {
+    await act.run(async () => { await put(`${base}/delegate`, { user_id: id || null }); await st.reload(); },
+      id ? "Administrador designado: ele pode enviar uma imagem, que só vale após a sua confirmação." : "Designação removida.");
   }
   return (
     <section className="panel" aria-label="Minha assinatura">
-      <h2>Minha assinatura (imagem)</h2>
-      <p className="field-hint">Elemento apenas visual no PDF. Não substitui a liberação com a sua senha nem a assinatura digital. Só você envia, troca, autoriza ou revoga; ninguém baixa a imagem.</p>
+      <h2>Assinatura manuscrita</h2>
+      <ul className="sig-modes">
+        <li><strong>Confirmação por senha</strong> — é o que libera o laudo no VYONIX.</li>
+        <li><strong>Imagem da assinatura manuscrita</strong> — apenas visual no PDF, inserida só nos laudos que você liberar e com o uso autorizado.</li>
+        <li><strong>Assinatura digital ICP-Brasil (PAdES)</strong> — ainda não disponível. A imagem não é assinatura digital.</li>
+      </ul>
       {act.view}
-      <form className="filters" aria-label="Enviar imagem da assinatura" onSubmit={send}>
-        <input type="file" accept="image/png,image/jpeg" aria-label="Imagem da assinatura" onChange={(e) => setFile(e.target.files?.[0])} />
-        <button disabled={!file || act.busy}>Enviar imagem</button>
-      </form>
-      <p>{st.data.has_image ? `Imagem cadastrada em ${fmtDate(st.data.uploaded_at)}.` : "Nenhuma imagem cadastrada."}</p>
-      {st.data.has_image && <label className="check"><input type="checkbox" checked={st.data.use_signature_image}
-        onChange={(e) => void consent(e.target.checked)} /> Autorizo aplicar a imagem nos laudos que eu liberar</label>}
+      <div className="grid2">
+        <div>
+          <h3>Imagem ativa</h3>
+          {s.has_image && active ? <div className="sig-preview"><img src={active} alt="Sua assinatura ativa" /></div>
+            : <p>Nenhuma imagem ativa.</p>}
+          {s.has_image && <p className="field-hint">Ativa desde {fmtDate(s.uploaded_at)}.</p>}
+          {s.has_image && <label className="check"><input type="checkbox" checked={s.use_signature_image}
+            onChange={(e) => void consent(e.target.checked)} /> Autorizo aplicar a imagem nos laudos que eu liberar</label>}
+          {(s.has_image || s.pending) && <button className="link danger" onClick={() => void remove()}>Excluir imagem</button>}
+        </div>
+        <div>
+          {s.pending ? <>
+            <h3>Aguardando sua confirmação</h3>
+            {pending && <div className="sig-preview"><img src={pending} alt="Assinatura pendente de confirmação" /></div>}
+            <p className="field-hint">Enviada por {s.pending.uploaded_by} em {fmtDate(s.pending.uploaded_at)}. Confira antes de confirmar: ela substituirá a ativa.</p>
+            <form className="filters" aria-label="Confirmar assinatura" onSubmit={confirm}>
+              <input type="password" required autoComplete="current-password" aria-label="Sua senha" placeholder="Sua senha" value={pw} onChange={(e) => setPw(e.target.value)} />
+              <button className="primary" disabled={act.busy || !pw}>Confirmar que é a minha assinatura</button>
+            </form>
+          </> : <h3>{s.has_image ? "Substituir imagem" : "Cadastrar imagem"}</h3>}
+          <SignatureEditor base={base} label="Enviar imagem da assinatura" onSent={st.reload} />
+        </div>
+      </div>
+      <Field label="Administrador autorizado a enviar por mim" hint="Opcional. O envio dele fica pendente até você confirmar; ele não usa a sua assinatura.">
+        <select value={s.delegate_user_id ?? ""} onChange={(e) => void delegate(e.target.value)}>
+          <option value="">Ninguém (só eu)</option>
+          {(delegates.data ?? []).map((u) => <option key={u.id} value={u.id}>{u.display_name} ({u.username})</option>)}
+        </select></Field>
+      {s.history.length > 0 && <details><summary>Histórico ({s.history.length})</summary>
+        <ul className="history">{s.history.map((h, i) => (
+          <li key={i}>{fmtDate(h.uploaded_at)} — enviada por {h.uploaded_by} — {STATUS[h.status] ?? h.status}
+            {h.confirmed_at ? `, confirmada em ${fmtDate(h.confirmed_at)}` : ""}{h.ended_at ? `, encerrada em ${fmtDate(h.ended_at)}` : ""} · {h.sha256}</li>))}
+        </ul></details>}
     </section>
   );
 }

@@ -64,7 +64,7 @@ React 19 + TypeScript (esbuild), ReportLab, cryptography (Ed25519), PyInstaller,
 | BKL-08 | Testes manuais em Windows 10/11 limpos, impressoras físicas e equipamentos reais | Print | Essencial | Ambiente do cliente | Roteiro `docs/release/Roteiro_Testes_Manuais.md` executado | — | Aguarda ambiente | — | — |
 | BKL-09 | Identidade OpenID Connect para portais | CORE | Recomendada | Entrega 6 | — | — | Planejada | — | — |
 | BKL-10 | DICOM Print: trocar a raiz de UID do pydicom por raiz própria ou `2.25` | Print | Recomendada | Aprovação (Print em validação) | UIDs gerados sem raiz de terceiros; testes do Print | Baixo | Aprovado em 27/10 (próxima versão de laboratório); merge `215d83f` na develop após verificação das condições — `docs/homologacao/BKL-10_UIDs_DICOM_Print.md`; raiz própria: `Recomendacao_Raiz_UID_VYONIX.md` | Sim | `git revert -m 1 215d83f` |
-| BKL-11 | **VYONIX TELELAUDO multicliente** (TEL-01 a TEL-16): identidade visual por organização e unidade, modelos versionados por modalidade e procedimento, editor e importação DOCX assistida, cadastro de médicos (CRM/UF, RQE, vínculos), imagem de assinatura só visual e autorizada pelo médico, seleção automática com prioridade e fallback sem cruzar clientes, PDF final versionado, fila de telelaudo, DICOM/HL7/FHIR opcionais — `docs/platform/Telelaudo_Multicliente_Requisitos.md` | REPORT | Alta | REPORT (primeira entrega, feita); BLK-14 para assinatura digital; BLK-06 e revisão LGPD/CFM antes da comercialização | Etapas T1–T9 com testes de isolamento | Médio | **T1 a T8 feitos** (28/10); T9 (assinatura digital) depende de BLK-14 | Sim (comercialização, assinatura) | Desabilitar o módulo |
+| BKL-11 | **VYONIX TELELAUDO multicliente** (TEL-01 a TEL-16): identidade visual por organização e unidade, modelos versionados por modalidade e procedimento, editor e importação DOCX assistida, cadastro de médicos (CRM/UF, RQE, vínculos), imagem de assinatura só visual e autorizada pelo médico, seleção automática com prioridade e fallback sem cruzar clientes, PDF final versionado, fila de telelaudo, DICOM/HL7/FHIR opcionais — `docs/platform/Telelaudo_Multicliente_Requisitos.md` | REPORT | Alta | REPORT (primeira entrega, feita); BLK-14 para assinatura digital; BLK-06 e revisão LGPD/CFM antes da comercialização | Etapas T1–T9 com testes de isolamento | Médio | **T1 a T8 feitos** (28/10) e assinatura manuscrita digitalizada no cadastro médico (T5b); T9 (assinatura digital) depende de BLK-14 | Sim (comercialização, assinatura) | Desabilitar o módulo |
 
 ## 6. Dependências externas
 
@@ -309,6 +309,16 @@ Retornos agendados nesta sessão passam a garantir a continuidade.
 **CI de `f39b8e9` (TELELAUDO T1):** platform, viewer, deploy-windows **29/0/1** (40720905755) e Windows release
 aprovados. Depois, locais: T2 `285dfb8`, T3 `cc9140a`, T4 `50570e8`, T5 `6ca6896`, T6 `5c1c524`, T7 `2e30bf4` —
 platform **168** testes locais, e2e 8/8.
+
+**Assinatura manuscrita digitalizada no cadastro médico (pedido de 28/10, tarde) — implementada, não validada para
+uso clínico:** imagem JPG/JPEG/PNG/WEBP com recorte, brilho, contraste e remoção do fundo branco; fica pendente até o
+médico confirmar com a senha; administrador só envia se o médico o designou; cifrada, privada, auditada (envio,
+confirmação, autorização, exclusão, designação, visualização administrativa e uso em cada documento); inserida só no
+laudo liberado pelo próprio médico; rascunho com marca d'água e sem assinatura; bloco configurável no modelo;
+liberação em lote com confirmação explícita, senha e auditoria por laudo; PAdES preparado e recusando (BLK-14).
+Testes: `test_report_signature_lifecycle.py` 11/11, platform **182** local (2 ignorados por falta do Orthanc local,
+cobertos no CI), e2e 8/8. Regressão ajustada: `test_report_signature.py` (ciclo com confirmação). A imagem continua
+sendo apenas elemento visual; nada disso libera laudos clínicos reais.
 
 **Decisão pendente do proprietário (REPORT):** assinatura digital do laudo (ICP-Brasil: certificado A1/A3, padrão
 PAdES/CAdES, carimbo de tempo). Até lá a liberação é por confirmação de senha, registrada e verificável, e a tela

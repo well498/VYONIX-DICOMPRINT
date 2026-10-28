@@ -72,7 +72,9 @@ class Signature(ApiBase):
         r = self.med.post("/api/v1/report/physicians/me/signature/consent", json={"allow": True})
         self.assertEqual(r.status_code, 422)                                     # precisa enviar antes
         r = self.med.post("/api/v1/report/physicians/me/signature", content=png(), headers={"Content-Type": "image/png"})
-        self.assertEqual((r.status_code, r.json()["has_image"], r.json()["use_signature_image"]), (201, True, False))
+        self.assertEqual((r.status_code, r.json()["has_image"], r.json()["pending"] is not None), (201, False, True))
+        r = self.med.post("/api/v1/report/physicians/me/signature/confirm", json={"password": "Senha-Nova-9876!"})
+        self.assertEqual((r.status_code, r.json()["has_image"], r.json()["use_signature_image"]), (200, True, False))
         rid0 = self.release()
         self.assertEqual(images_in_pdf(self.med.get(f"/api/v1/report/reports/{rid0}/pdf").content), 0)
         # com autorização: aparece no PDF e fica registrada na versão
@@ -94,9 +96,10 @@ class Signature(ApiBase):
             img = s.execute(select(SignatureImage)).scalar_one()
             self.assertNotIn(b"PNG", img.ciphertext)                             # cifrada em repouso
             self.assertNotIn(b"IHDR", img.ciphertext)
-        # a API nunca devolve a imagem
+        # a situação não traz a imagem; só o próprio médico a obtém (rota privada, sem URL pública)
         st = self.med.get("/api/v1/report/physicians/me/signature").json()
-        self.assertEqual(set(st), {"has_image", "use_signature_image", "uploaded_at"})
+        self.assertNotIn("image", st)
+        self.assertEqual(self.admin.get("/api/v1/report/physicians/me/signature/image").status_code, 403)
         # imagem inválida
         r = self.med.post("/api/v1/report/physicians/me/signature", content=b"<svg/>", headers={"Content-Type": "image/svg+xml"})
         self.assertEqual(r.status_code, 422)

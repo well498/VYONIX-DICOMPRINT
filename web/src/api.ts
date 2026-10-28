@@ -51,6 +51,24 @@ export async function upload<T = unknown>(path: string, file: Blob): Promise<T> 
   return data as T;
 }
 
+/** Requisição que devolve binário (imagem/PDF privados), opcionalmente enviando um arquivo bruto. */
+export async function blob(method: string, path: string, file?: Blob): Promise<Blob> {
+  const headers: Record<string, string> = {};
+  if (method !== "GET" && csrf) headers["X-CSRF-Token"] = csrf;
+  if (file) headers["Content-Type"] = file.type || "application/octet-stream";
+  let r: Response;
+  try {
+    r = await fetch(`/api/v1${path}`, { method, headers, credentials: "same-origin", body: file });
+  } catch {
+    throw new ApiError(0, "network", "Sem conexão com o servidor VYONIX. Verifique a rede e tente de novo.", {});
+  }
+  if (!r.ok) {
+    const d = ((await r.json().catch(() => null)) ?? {}) as { error?: string; message?: string; details?: Record<string, unknown> };
+    throw new ApiError(r.status, d.error ?? "error", d.message ?? `Erro ${r.status}.`, d.details ?? {});
+  }
+  return await r.blob();
+}
+
 export const get = <T,>(p: string) => api<T>("GET", p);
 export const post = <T,>(p: string, b: unknown = {}) => api<T>("POST", p, b);
 export const put = <T,>(p: string, b: unknown) => api<T>("PUT", p, b);

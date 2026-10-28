@@ -41,6 +41,7 @@ class TemplateVersion(TenantMixin, Base):
     published_by: Mapped[str | None] = mapped_column(String(120))
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     import_report: Mapped[dict | None] = mapped_column(JSON)            # importação DOCX (T6)
+    signature_block: Mapped[dict | None] = mapped_column(JSON)          # bloco de identificação profissional no PDF
 
 
 class Report(TenantMixin, Base):
@@ -107,6 +108,7 @@ class Physician(TenantMixin, Base):
     footer: Mapped[str | None] = mapped_column(String(200))
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     use_signature_image: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    signature_delegate_user_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)   # administrador autorizado a enviar
 
 
 class PhysicianLink(TenantMixin, Base):
@@ -158,6 +160,13 @@ class SignatureImage(TenantMixin, Base):
     width: Mapped[int] = mapped_column(Integer, nullable=False)
     height: Mapped[int] = mapped_column(Integer, nullable=False)
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    status: Mapped[str] = mapped_column(String(12), nullable=False, default="pending", server_default="active")
+    media_type: Mapped[str | None] = mapped_column(String(20))
+    uploaded_by: Mapped[str | None] = mapped_column(String(120))
+    uploaded_by_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    processing: Mapped[dict | None] = mapped_column(JSON)
 
 
 class Assignment(TenantMixin, Base):
