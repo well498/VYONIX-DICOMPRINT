@@ -116,6 +116,20 @@ def _backup(plat) -> dict[str, Any]:
     return out
 
 
+def _integrity(plat) -> dict[str, Any]:
+    from vyonix.pacs.integrity_task import read_state
+    st = read_state(plat)
+    if st is None:
+        return {"verified": False, "problems": []}
+    fails = st.get("failures", [])
+    out = {"verified": True, "rounds": st.get("rounds", 0), "last_run_at": st.get("last_run_at"),
+           "failures": len(fails), "problems": []}
+    if fails:
+        out["problems"].append(f"{len(fails)} imagem(ns) do PACS com integridade violada ou ausente no motor "
+                               "(veja a auditoria pacs.integrity.failure; recupere pelo backup).")
+    return out
+
+
 def _license(plat, s: Session) -> dict[str, Any]:
     st = plat.licensing.status(s)
     mods = {code: {"licensed": v.licensed, "state": v.state} for code, v in st.items() if v.licensed or code == "core"}
@@ -132,7 +146,7 @@ def health_detail(plat, s: Session) -> dict[str, Any]:
         comps["database"] = {"ok": False, "problems": [f"Banco sem resposta: {type(exc).__name__}"]}
         return {"status": "falha", "components": comps, "problems": comps["database"]["problems"]}
     for name, fn in (("events", lambda: _events(s)), ("pacs", lambda: _pacs(plat, s)), ("dicom_qr", lambda: _qr(plat)),
-                     ("pacs_backup", lambda: _backup(plat)),
+                     ("pacs_backup", lambda: _backup(plat)), ("pacs_integrity", lambda: _integrity(plat)),
                      ("license", lambda: _license(plat, s))):
         try:
             comps[name] = fn()
@@ -140,6 +154,7 @@ def health_detail(plat, s: Session) -> dict[str, Any]:
             comps[name] = {"problems": [f"Não foi possível verificar ({type(exc).__name__})."]}
     problems = [p for c in comps.values() for p in c.get("problems", [])]
     fail = (comps.get("pacs", {}).get("engine", {}).get("reachable") is False
-            or not comps.get("license", {}).get("modules", {}).get("core", {}).get("licensed", True))
+            or not comps.get("license", {}).get("modules", {}).get("core", {}).get("licensed", True)
+            or bool(comps.get("pacs_integrity", {}).get("failures")))
     status = "falha" if fail else ("atenção" if problems else "ok")
     return {"status": status, "checked_at": utcnow().isoformat(), "components": comps, "problems": problems}

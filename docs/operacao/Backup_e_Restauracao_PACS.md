@@ -42,6 +42,14 @@ Ao ativar o PACS, o VYONIX DEPLOY configura o backup diário feito pelo serviço
 Destino em compartilhamento de rede não é suportado nesta versão (a conta virtual do serviço não tem credencial
 de rede).
 
+## Verificação contínua da integridade
+
+O VyonixWorker relê, a cada hora, um lote de 500 imagens do motor e confere o SHA-256 registrado na entrada; ao
+terminar o acervo, recomeça. Imagem corrompida ou ausente **não é alterada**: fica na auditoria
+(`pacs.integrity.failure`), no estado `ProgramData\VYONIX\Platform\pacs\integrity.json` e no monitoramento
+(estado “falha”), até ser recuperada pelo backup (`pacs-restore`) — a volta seguinte limpa a pendência.
+Teste: `tests_platform/test_pacs_integrity_task.py`.
+
 ## Cenários de recuperação testados (dados sintéticos)
 
 | Cenário | Resultado esperado | Teste |
