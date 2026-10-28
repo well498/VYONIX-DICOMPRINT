@@ -1,9 +1,12 @@
 # BKL-10 — UIDs DICOM no VYONIX DICOM Print: diagnóstico e proposta para aprovação
 
-Situação: **aguardando aprovação expressa do proprietário**. A correção está somente na branch
-`bkl-10-uid-root` (commit `caeab74`), sem merge em `develop` e sem alterar a versão em testes laboratoriais.
-Em `develop` entraram apenas testes de caracterização (`tests/test_uid_handling.py`, commit `a43ff48`), sem
-mudança no código do Print.
+Situação: **aprovado pelo proprietário em 27/10/2026, 21h38**, com condições, para a **próxima versão de testes
+laboratoriais**. Não autorizados: publicação comercial, atualização automática da instalação atual e ensaios em
+campo. A seção 8 mostra a verificação de cada condição antes do merge.
+
+Histórico:
+- correção desenvolvida na branch `bkl-10-uid-root` (commit `caeab74`);
+- testes de caracterização em `develop` (commit `a43ff48`).
 
 ## 1. Descrição
 
@@ -101,3 +104,32 @@ continuam na versão atual.
 Aprovar o merge de `bkl-10-uid-root` em `develop`, para entrar numa próxima versão de laboratório. Alternativa:
 o proprietário obtém uma raiz própria registrada e `new_uid()` passa a usá-la. Nos dois casos, validar no
 laboratório antes de qualquer ensaio em campo.
+
+## 8. Verificação das condições da aprovação (antes do merge)
+
+| Condição | Evidência |
+|---|---|
+| 1. Método conforme ao padrão e raiz válida | `2.25.<inteiro do UUID4>` (PS3.5 §B.2). Raiz `2.25` (UUID, ITU-T X.667) definida pelo próprio padrão. Até 44 caracteres; sem zero à esquerda; inteiro menor que 2^128; UUID versão 4; aceito pelo validador independente do pydicom (`UID.is_valid`). Teste: `tests/test_uid_root.Generator.test_conformance_ps3_5` (5 000 amostras). |
+| 2. Unicidade, compatibilidade e regressão | Unicidade: 50 000 gerações, mais os UIDs de 3 associações reais. Compatibilidade: modalidade simulada com pynetdicom (N-CREATE, N-SET, N-ACTION) recebe e usa os UIDs 2.25; entrada do PACS da plataforma (`tests_platform/test_print_uid_compat.py`). Regressão: suítes completas, na tabela abaixo. |
+| 3. UIDs originais preservados | Recepção byte a byte; UIDs informados pela modalidade no N-CREATE mantidos; só objetos novos recebem UID (`test_uid_handling`). |
+| 4. Dados armazenados e versão de laboratório intactos | Sem migração de banco. Objeto antigo com a raiz do pydicom continua idêntico (SHA-256) e o reenvio continua tratado como duplicata (`test_previously_stored_objects_untouched`). A versão de laboratório não muda: `RELEASE_TAG` continua `v1.0.0-r5`, e o pipeline não substitui uma release já publicada (`windows-release.yml`). Nenhuma atualização é enviada às instalações. |
+| 5. Reversão documentada | Seção 6, com o commit de merge na seção 9. |
+| 6. Resultados e impacto apresentados antes do merge | Mensagem ao proprietário em 27/10/2026, com esta tabela. |
+
+Resultados na branch (local, Linux; branch atualizada com `develop` antes dos testes):
+
+| Suíte | Resultado |
+|---|---|
+| DICOM Print (`tests/`) | 337 aprovados, 26 ignorados (dependem do Windows ou de hardware) |
+| Plataforma (`tests_platform/`, PostgreSQL real) | 130 aprovados, 2 ignorados (motor Orthanc real; roda no CI) |
+| DEPLOY (`tests_deploy/`) | 21 aprovados |
+| Interface Windows (CI `ui-windows`, run 40609234009, commit `caeab74`) | sucesso |
+
+**Achado de compatibilidade, não causado pela correção.** A imagem do Print sai sem Patient ID, por projeto: o
+DICOM Print não recebe dados do paciente. Por isso a entrada do PACS da plataforma a recusa pela falta do Patient
+ID, nunca pelos UIDs. Isso já acontecia antes do BKL-10. Um encaminhamento futuro do Print ao PACS vai exigir
+identificação do paciente, que hoje não existe no Print.
+
+**Identificadores separados (fora do BKL-10).** O Implementation Class UID da associação e do File Meta vem das
+bibliotecas (raízes do pynetdicom e do pydicom). A recomendação está em `Recomendacao_Raiz_UID_VYONIX.md` e a
+troca precisa de aprovação própria.

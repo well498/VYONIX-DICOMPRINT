@@ -37,10 +37,10 @@ PRINT_TS = ["1.2.840.10008.1.2.1", "1.2.840.10008.1.2"]   # Explicit e Implicit 
 class _Assoc:
     def __init__(self, key: int, peer: AssociationPeer, device_id: int | None, device_name: str | None,
                  session: pm.PrintSession) -> None:
-        from pydicom.uid import generate_uid
+        from app.dicom.uids import new_uid
         self.key, self.peer, self.device_id, self.device_name = key, peer, device_id, device_name
         self.session = session
-        self.study_uid = generate_uid(prefix="1.2.826.0.1.3680043.8.498.")
+        self.study_uid = new_uid()
         self.operations = 0
 
 

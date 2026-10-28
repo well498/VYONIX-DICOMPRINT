@@ -281,10 +281,10 @@ def _smoke(app: QApplication, window, ctx, result: dict, translations) -> None:
         Não envia N-ACTION: o autoteste nunca imprime numa impressora real.
         """
         from pydicom.dataset import Dataset
-        from pydicom.uid import generate_uid
         from pynetdicom import AE
         from app.dicom import print_model as pm
         from app.dicom.association_manager import SELFTEST_AE
+        from app.dicom.uids import new_uid
         st = ctx.print_scp.status()
         if not ctx.settings.get("dicom.print.enabled"):
             return "desativado em Configurações (não verificado)"
@@ -300,7 +300,7 @@ def _smoke(app: QApplication, window, ctx, result: dict, translations) -> None:
         try:
             status, printer = assoc.send_n_get([0x21100010], pm.PRINTER, pm.PRINTER_INSTANCE,
                                                meta_uid=pm.GRAYSCALE_META)
-            fs_uid, fb_uid = generate_uid(), generate_uid()
+            fs_uid, fb_uid = new_uid(), new_uid()
             fs = Dataset()
             fs.NumberOfCopies = 1
             s1, _ = assoc.send_n_create(fs, pm.FILM_SESSION, fs_uid, meta_uid=pm.GRAYSCALE_META)

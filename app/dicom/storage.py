@@ -102,6 +102,12 @@ class InstanceStore:
             if missing:
                 return self._discard(tmp, StoreOutcome(
                     STATUS_DATASET_MISMATCH, f"Atributos obrigatórios ausentes ou inválidos: {', '.join(missing)}"))
+            from app.dicom.uids import is_strict
+            lax = [n for n, val in (("SOPInstanceUID", sop), ("StudyInstanceUID", study),
+                                    ("SeriesInstanceUID", series)) if not is_strict(val)]
+            if lax:     # aceito e guardado sem alteração (equipamentos antigos); só registrado
+                log.warning("UID recebido fora da PS3.5 §9.1 (zero à esquerda); aceito sem alteração",
+                            extra={"attributes": ",".join(lax), "calling_ae": peer.calling_ae})
             modality = str(ds.get("Modality", "") or "") or None
             try:
                 frames = int(ds.get("NumberOfFrames", 1) or 1)

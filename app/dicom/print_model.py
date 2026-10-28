@@ -72,8 +72,8 @@ FILMBOX_KEYS = ("ImageDisplayFormat", "FilmOrientation", "FilmSizeID", "Magnific
 
 
 def _uid() -> str:
-    from pydicom.uid import generate_uid
-    return generate_uid(prefix="1.2.826.0.1.3680043.8.498.")
+    from app.dicom.uids import new_uid
+    return new_uid()
 
 
 def _attrs(ds, keys) -> dict[str, Any]:
