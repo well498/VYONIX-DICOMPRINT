@@ -87,6 +87,18 @@ jobs:
         run: |
           npm install --no-audit --no-fund
           npm run build
+      - name: Interface web — auditoria de dependências (npm audit, só pacotes distribuídos)
+        working-directory: web
+        run: |
+          npm audit --omit=dev --json > npm-audit.json || true
+          python3 - <<'PY'
+          import json
+          d = json.load(open("npm-audit.json"))
+          v = d.get("metadata", {}).get("vulnerabilities", {})
+          print(f"::notice title=npm audit (web)::{v}")
+          bad = v.get("high", 0) + v.get("critical", 0)
+          assert bad == 0, f"{bad} vulnerabilidade(s) alta(s)/crítica(s) nas dependências distribuídas da interface web"
+          PY
       - name: Testes da plataforma
         run: python -m pytest tests_platform tests_deploy -ra -v --junitxml=platform-junit.xml
       - name: Garantia de execução (nenhum teste pulado)
