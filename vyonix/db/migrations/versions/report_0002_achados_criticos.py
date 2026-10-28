@@ -13,6 +13,7 @@ down_revision = 'report_0001'
 branch_labels = None
 depends_on = None
 
+TENANT_TABLES = ("report.critical_alerts",)
 TENANT_EXPR = "nullif(current_setting('vyonix.tenant_id', true), '')::uuid"
 
 
@@ -32,11 +33,11 @@ def upgrade(role_prefix: str = "vyonix") -> None:
         sa.PrimaryKeyConstraint('id', name=op.f('pk_critical_alerts')), schema='report')
     op.create_index(op.f('ix_critical_alerts_tenant_id'), 'critical_alerts', ['tenant_id'], schema='report')
     op.create_index('ix_report_critical_open', 'critical_alerts', ['tenant_id', 'status'], schema='report')
-    t = "report.critical_alerts"
-    op.execute(f"ALTER TABLE {t} ENABLE ROW LEVEL SECURITY")
-    op.execute(f"ALTER TABLE {t} FORCE ROW LEVEL SECURITY")
-    op.execute(f"CREATE POLICY tenant_isolation ON {t} USING (tenant_id = {TENANT_EXPR}) "
-               f"WITH CHECK (tenant_id = {TENANT_EXPR})")
+    for t in TENANT_TABLES:
+        op.execute(f"ALTER TABLE {t} ENABLE ROW LEVEL SECURITY")
+        op.execute(f"ALTER TABLE {t} FORCE ROW LEVEL SECURITY")
+        op.execute(f"CREATE POLICY tenant_isolation ON {t} USING (tenant_id = {TENANT_EXPR}) "
+                   f"WITH CHECK (tenant_id = {TENANT_EXPR})")
 
 
 def downgrade(role_prefix: str = "vyonix") -> None:
