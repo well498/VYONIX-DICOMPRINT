@@ -126,6 +126,12 @@ def create_app(plat: Platform, *, cookie_secure: bool = True, web_dist: Path | N
     from vyonix.api import viewer
     viewer.mount(app, viewer_dist)
 
+    @app.get("/api/v1/health/detail")
+    def health_detail(c: Ctx = Depends(needs("core.settings.read"))):
+        from vyonix import monitoring
+        with c.session() as s:
+            return monitoring.health_detail(c.plat, s)
+
     dist = web_dist or WEB_DIST
     if (dist / "index.html").exists():
         root = dist.resolve()

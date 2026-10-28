@@ -232,3 +232,4 @@ própria do fornecedor ou `2.25`, numa revisão futura do Print, com aprovação
 | Backup e restauração do PACS (exportação verificada e incremental, verificação, restauração idempotente; motor perdido com índice intacto) | `tests_platform/test_pacs_backup.py` 6/6 local; teste com o Orthanc real no CI |
 | Comando `worker` passa a ter as mesmas tarefas periódicas do serviço do Windows (sincronização do PACS) | `vyonix/events/worker.py::build_worker` |
 | CI do commit do RIS (`326c458`): platform 142 testes, 0 pulados | platform run 40606680321 |
+| Saúde detalhada para o administrador (`GET /api/v1/health/detail`): banco, fila de eventos (worker parado), motor DICOM, índice, sincronização, porta de consulta DICOM e licença, com motivo legível e estado ok/atenção/falha | `tests_platform/test_monitoring.py` 5/5 local |
