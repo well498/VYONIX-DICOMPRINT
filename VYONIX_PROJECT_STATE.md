@@ -63,7 +63,7 @@ React 19 + TypeScript (esbuild), ReportLab, cryptography (Ed25519), PyInstaller,
 | BKL-07 | Assinatura de código dos instaladores | Segurança | Recomendada | Certificado (pago) | Instaladores assinados verificados no CI | Baixo | Aguarda aprovação | Sim (custo) | — |
 | BKL-08 | Testes manuais em Windows 10/11 limpos, impressoras físicas e equipamentos reais | Print | Essencial | Ambiente do cliente | Roteiro `docs/release/Roteiro_Testes_Manuais.md` executado | — | Aguarda ambiente | — | — |
 | BKL-09 | Identidade OpenID Connect para portais | CORE | Recomendada | Entrega 6 | — | — | Planejada | — | — |
-| BKL-10 | DICOM Print: trocar a raiz de UID do pydicom por raiz própria ou `2.25` | Print | Recomendada | Aprovação (Print em validação) | UIDs gerados sem raiz de terceiros; testes do Print | Baixo | Aguarda decisão | Sim | Reverter o commit |
+| BKL-10 | DICOM Print: trocar a raiz de UID do pydicom por raiz própria ou `2.25` | Print | Recomendada | Aprovação (Print em validação) | UIDs gerados sem raiz de terceiros; testes do Print | Baixo | Diagnóstico e correção na branch `bkl-10-uid-root` (caeab74), sem merge; aguarda aprovação — `docs/homologacao/BKL-10_UIDs_DICOM_Print.md` | Sim | Não fazer o merge / `git revert` |
 
 ## 6. Dependências externas
 
