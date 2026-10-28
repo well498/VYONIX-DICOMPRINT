@@ -260,7 +260,7 @@ falha (mesmo commit): Windows release aprovada e deploy-windows **28/0/1**. Regi
 observar** (rede do download; código de saída do pytest no Windows após todos os testes aprovados).
 
 | CI Windows: cache do Orthanc oficial conferido pelo SHA-256; código de saída do pytest com JUnit limpo vira aviso | `f6eb88f` | platform, deploy-windows **28/0/1** e Windows release aprovados (40621896693, 40621896676, 40621896652) |
-| RIS: **MPPS SCP** (N-CREATE/N-SET) — início, conclusão e interrupção na modalidade atualizam o agendamento (`ris_0003`) | `52671dd` | 3 testes com associação DICOM real; platform **172/0/0** (40625193378), viewer 5/5 (40625193340) |
+| RIS: **MPPS SCP** (N-CREATE/N-SET) — início, conclusão e interrupção na modalidade atualizam o agendamento (`ris_0003`) | `52671dd` | 3 testes com associação DICOM real; platform **172/0/0** (40625193378), viewer 5/5 (40625193340), deploy-windows **28/0/1** (40625193375), Windows release (40625193382; `v1.0.0-r5` não substituída) |
 
 **Pendências:** ensaios no laboratório da correção BKL-10 (modalidades de teste e impressora física) antes de uma
 nova versão de laboratório; troca do Implementation Class UID (aprovação própria, após raiz VYONIX); imagem do Print
