@@ -174,6 +174,7 @@ class Api(ApiBase):
                                                                  "row_version": rep["row_version"]})
         self.assertEqual(r.status_code, 200, r.text)
         rv = r.json()["row_version"]
+        self.assertEqual(med.get(f"/api/v1/report/reports/{rep['id']}/pdf").status_code, 409)     # rascunho
         r = med.post(f"/api/v1/report/reports/{rep['id']}/finalize", json={"password": "errada", "row_version": rv})
         self.assertEqual((r.status_code, r.json()["error"]), (403, "password_mismatch"))
         self.assertEqual(med.get(f"/api/v1/report/reports/{rep['id']}").json()["status"], "draft")
@@ -188,6 +189,16 @@ class Api(ApiBase):
                      json={"text": "Adendo sintético.", "password": "Senha-Nova-9876!"})
         self.assertEqual(r.status_code, 201, r.text)
         self.assertTrue(med.get(f"/api/v1/report/reports/{rep['id']}/verify").json()["valid"])
+        r = med.get(f"/api/v1/report/reports/{rep['id']}/pdf")
+        self.assertEqual((r.status_code, r.headers["content-type"]), (200, "application/pdf"))
+        self.assertIn("attachment", r.headers["content-disposition"])
+        import io
+        from pypdf import PdfReader
+        txt = " ".join(pg.extract_text() for pg in PdfReader(io.BytesIO(r.content)).pages)
+        for want in ("Laudo Sintetico Teste", "Exame normal.", "Adendo sintético.", "Dr(a). medica",
+                     "Não é assinatura digital", d["versions"][0]["sha256"][:16]):
+            self.assertIn(want, txt.replace("\n", " "))
+        self.assertEqual(tec.get(f"/api/v1/report/reports/{rep['id']}/pdf").status_code, 403)
         wl = med.get("/api/v1/report/worklist", params={"status": "final"}).json()["items"]
         self.assertEqual([x["report_id"] for x in wl], [rep["id"]])
         with db.session(self.t) as s:

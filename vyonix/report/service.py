@@ -211,6 +211,37 @@ def get(s: Session, report_id: uuid.UUID) -> dict[str, Any]:
     return _out(r, s, versions=True)
 
 
+def pdf(s: Session, report_id: uuid.UUID, *, actor: str, actor_id=None, ip=None) -> tuple[bytes, str]:
+    """PDF do laudo liberado (gerado das versões imutáveis); a emissão fica na auditoria."""
+    from vyonix.clinical.models import PatientIdentifier
+    from vyonix.report import pdf as render
+    from vyonix.settings import service as settings
+    r = s.get(Report, report_id)
+    if r is None:
+        raise NotFound("Laudo não encontrado.")
+    if r.status != "final":
+        raise Conflict("Só laudo liberado tem PDF.")
+    st = s.get(Study, r.study_id)
+    p = s.get(Patient, st.patient_id) if st and st.patient_id else None
+    o = s.get(Order, r.order_id) if r.order_id else None
+    ident = None
+    if p is not None:
+        i = s.execute(select(PatientIdentifier).where(PatientIdentifier.patient_id == p.id)
+                      .order_by(PatientIdentifier.issuer)).scalars().first()
+        ident = f"{i.value} ({i.issuer})" if i else None
+    data = render.render(
+        _out(r, s, versions=True),
+        patient={"name": p.name if p else None, "identifier": ident, "sex": p.sex if p else None,
+                 "birth_date": p.birth_date.strftime("%d/%m/%Y") if p and p.birth_date else None},
+        study={"modality": st.modality if st else None, "description": st.description if st else None,
+               "study_date": st.study_date.strftime("%d/%m/%Y") if st and st.study_date else None,
+               "accession": st.accession if st else None, "requester": o.requester if o else None},
+        institution=settings.get(s, "core", "institution"))
+    audit.record(s, actor=actor, actor_id=actor_id, ip=ip, action="report.pdf", target_type="report", target_id=r.id,
+                 details={"version": r.version})
+    return data, f"laudo-{(st.accession if st and st.accession else str(r.id)[:8])}.pdf"
+
+
 def verify(s: Session, report_id: uuid.UUID) -> dict[str, Any]:
     """Recalcula o SHA-256 de cada versão liberada (detecta alteração direta no banco)."""
     r = s.get(Report, report_id)

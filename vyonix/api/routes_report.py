@@ -112,6 +112,15 @@ def add_addendum(rid: uuid.UUID, body: AddendumIn, c: Ctx = Depends(needs("repor
         return rep.get(s, rid)
 
 
+@router.get("/reports/{rid}/pdf")
+def report_pdf(rid: uuid.UUID, c: Ctx = Depends(needs("report.read"))):
+    from fastapi.responses import Response
+    with c.session() as s:
+        data, name = rep.pdf(s, rid, **c.actor)
+    return Response(data, media_type="application/pdf",
+                    headers={"Content-Disposition": f'attachment; filename="{name}"', "Cache-Control": "no-store"})
+
+
 @router.get("/reports/{rid}/verify")
 def verify(rid: uuid.UUID, c: Ctx = Depends(needs("report.read"))):
     with c.session() as s:
