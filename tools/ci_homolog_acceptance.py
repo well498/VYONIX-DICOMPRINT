@@ -126,9 +126,14 @@ def main() -> int:
     def _():
         run([Path(a.setup).resolve(), "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", f"/DEPLOYCONFIG={cfg}",
              f"/LOG={OUT / 'setup.log'}"], env={"VYONIX_ADMIN_PASSWORD": ADMIN_PW})
-        for f in ("Preparar_Homologacao.cmd", "Enviar_Exame_Simulado.cmd", "LEIA-ME_HOMOLOGACAO.txt"):
+        for f in ("Preparar_Homologacao.cmd", "Enviar_Exame_Simulado.cmd", "LEIA-ME_HOMOLOGACAO.txt",
+                  "Abrir_VYONIX.url", "Assistente_Instalacao.cmd", "Diagnostico.cmd"):
             assert (APP / f).exists(), f"{f} ausente"
-        return f"instalado em {APP}"
+        menu = Path(os.environ.get("ProgramData", r"C:\ProgramData")) / r"Microsoft\Windows\Start Menu\Programs\VYONIX"
+        links = sorted(p.name for p in menu.glob("*")) if menu.exists() else []
+        for n in ("VYONIX - Abrir sistema", "VYONIX - Assistente de instalacao", "VYONIX - Diagnostico"):
+            assert any(x.startswith(n) for x in links), f"atalho {n} ausente: {links}"
+        return f"instalado em {APP}; atalhos: {', '.join(links)}"
 
     @step("2. Sistema no ar como homologação interna")
     def _():

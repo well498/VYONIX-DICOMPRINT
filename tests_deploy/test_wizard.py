@@ -89,5 +89,22 @@ class WizardTest(unittest.TestCase):
             self.assertTrue(any(b["id"] == "os" for b in body["blockers"]))
 
 
+
+class OpenBrowserTest(unittest.TestCase):
+    def test_windows_opens_url_shortcut_not_raw_url(self):
+        """explorer.exe com URL contendo "?" abre a pasta Documentos (relato da homologação de 28/10/2026)."""
+        from vyonix_deploy import wizard
+        calls = []
+        url = "http://127.0.0.1:54321/?t=abc-DEF_123"
+        link = wizard.open_browser_url(url, platform="win32", popen=calls.append)
+        self.assertEqual(len(calls), 1)
+        args = calls[0]
+        self.assertEqual(args[0], "explorer.exe")
+        self.assertNotIn("?", args[1])
+        self.assertTrue(args[1].endswith(".url"))
+        self.assertEqual(link.read_bytes(), f"[InternetShortcut]\r\nURL={url}\r\n".encode())
+        shutil.rmtree(link.parent, True)
+
+
 if __name__ == "__main__":
     unittest.main()

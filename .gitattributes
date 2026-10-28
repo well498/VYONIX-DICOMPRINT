@@ -1,3 +1,4 @@
 packaging/licenses/*.txt -text
 installer/homologacao/*.cmd text eol=crlf
 installer/homologacao/*.txt text eol=crlf
+installer/homologacao/*.url text eol=crlf

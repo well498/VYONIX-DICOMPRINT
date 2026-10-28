@@ -19,15 +19,23 @@
 1. Baixe o `VYONIX_Homologacao_Setup_x64.exe` (link no relatório de entrega) e execute-o como administrador.
    O Windows pode avisar que o editor é desconhecido (o instalador ainda não tem assinatura de código, BLK-07):
    clique em **Mais informações → Executar assim mesmo**.
-2. Ao final, o **assistente do VYONIX DEPLOY** abre no navegador. Preencha:
+2. Na última tela do instalador deixe marcado **"Abrir o assistente do VYONIX DEPLOY"** e clique em Concluir.
+   O assistente abre no navegador (endereço `http://127.0.0.1:…/?t=…`). Se não abrir — ou depois, a qualquer
+   momento —, use Menu Iniciar → **VYONIX → "VYONIX - Assistente de instalacao"** (aceite a pergunta do Windows).
+   Se o navegador ainda assim não abrir, a janela preta mostra o endereço `http://127.0.0.1:…/?t=…`: copie-o
+   inteiro e cole no navegador; deixe a janela preta aberta. Preencha:
    - Organização: `clinica-alfa` · Nome: `Clínica Alfa (fictícia)`
    - Administrador: `gestor.alfa` · Senha: uma senha sua com 10 caracteres ou mais (ex.: `Gestor-Alfa-2026!`)
    - Portas: deixe as sugeridas (8444 e 5544).
-   Revise o plano e aprove. O assistente gera um relatório PDF da implantação.
+   Revise o plano e aprove. O assistente gera um relatório PDF da implantação. **Sem essa aprovação nada fica
+   instalado e o endereço 8444 não abre.**
 3. Menu Iniciar → **VYONIX → "VYONIX Homologacao - Preparar modulos"**. Aceite a pergunta do Windows
    (administrador). A janela mostra PACS, RIS e Laudos sendo ativados; termina com "Pronto".
-4. Menu Iniciar → **VYONIX** (ou o navegador em `https://localhost:8444`). Na primeira vez, o navegador avisa que o
-   certificado não é confiável (certificado autoassinado da instalação): **Avançado → Continuar**.
+4. Menu Iniciar → **VYONIX → "VYONIX - Abrir sistema"** (ou o navegador em `https://localhost:8444` ou
+   `https://127.0.0.1:8444`). Na primeira vez, o navegador avisa que o certificado não é confiável (certificado
+   autoassinado da instalação): **Avançado → Continuar**.
+5. Se não abrir: `https://127.0.0.1:8444/api/v1/health` deve mostrar `"status": "ok"`; em Serviços do Windows os
+   serviços **Vyonix…** devem estar "Em execução"; Menu Iniciar → **"VYONIX - Diagnostico"** mostra o estado.
 
 ## 3. Credenciais fictícias
 
@@ -95,7 +103,7 @@ o que apareceu.
   mostra 1 e a lista mostra "Maria Ficticia — CT · TC de crânio (sintético) · 8 imagem(ns) · SIMULADOR_HML".
   Se ainda estiver "incompleto", aguarde 1 minuto e clique **Filtrar** (o sistema não presume que a transmissão
   terminou só porque a primeira imagem chegou).
-- **Falha:** nada aparece depois de 3 minutos → registre a hora e abra "VYONIX Diagnóstico" no Menu Iniciar.
+- **Falha:** nada aparece depois de 3 minutos → registre a hora e abra "VYONIX - Diagnostico" no Menu Iniciar.
 
 ### Teste 7 — Viewer
 - **Ação:** clique no exame (abre o **painel de ações**) → **Abrir Viewer**.

@@ -8,8 +8,13 @@ Esta instalacao e SOMENTE para testes internos com dados ficticios.
 - Instale em um computador ou maquina virtual SEM o VYONIX DICOM Print.
 
 Atalhos no Menu Iniciar > VYONIX:
-  VYONIX                         abre o sistema no navegador
-  VYONIX Homologacao - Preparar  ativa PACS, RIS e Laudos (uma vez, como administrador)
+  VYONIX - Assistente de instalacao   configura a instalacao (organizacao, administrador). Use uma vez, primeiro.
+  VYONIX Homologacao - Preparar modulos   ativa PACS, RIS e Laudos (uma vez, como administrador)
+  VYONIX - Abrir sistema              abre https://localhost:8444 no navegador
   VYONIX Homologacao - Enviar exame simulado   envia um estudo sintetico ao PACS local
+  VYONIX - Diagnostico                verifica servicos, portas e banco (somente leitura)
+
+Se o navegador nao abrir o assistente: na janela preta aparece "http://127.0.0.1:...?t=...";
+copie o endereco inteiro e cole no navegador. Deixe a janela preta aberta.
 
 Roteiro completo: docs/homologacao/Roteiro_Homologacao_Interna_Plataforma.md (entregue junto).

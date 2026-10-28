@@ -17,11 +17,11 @@ for %%M in (pacs ris report) do (
   vyonix-deploy.exe activate-module %%M --approve-all
   if errorlevel 1 (
     echo.
-    echo  FALHA ao ativar o modulo %%M. Abra "VYONIX Diagnostico" no Menu Iniciar e guarde o relatorio.
+    echo  FALHA ao ativar o modulo %%M. Abra "VYONIX - Diagnostico" no Menu Iniciar e guarde o relatorio.
     pause
     exit /b 1
   )
 )
 echo.
-echo  Pronto. Abra o atalho "VYONIX" e entre com o administrador criado no assistente.
+echo  Pronto. Abra "VYONIX - Abrir sistema" no Menu Iniciar (https://localhost:8444) e entre com o administrador.
 pause

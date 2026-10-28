@@ -22,6 +22,35 @@ HERE = Path(__file__).resolve().parent
 IDLE_LIMIT_S = 2 * 3600          # o assistente encerra sozinho após 2 h sem uso
 
 
+def open_browser_url(url: str, *, platform: str | None = None, popen=None) -> Path | None:
+    """Abre o assistente no navegador padrão do usuário.
+
+    No Windows o processo roda elevado; o navegador é aberto pelo explorer.exe para não herdar a elevação. O
+    explorer.exe não aceita URL com "?" na linha de comando (abre a pasta Documentos), então a URL vai num
+    atalho de Internet (.url) temporário, que o explorer entrega ao navegador padrão. O token é de uso único.
+    """
+    import subprocess
+    import sys
+    import tempfile
+    if (platform or sys.platform) != "win32":
+        webbrowser.open(url)
+        return None
+    folder = Path(tempfile.mkdtemp(prefix="vyonix-deploy-"))
+    link = folder / "Assistente VYONIX DEPLOY.url"
+    link.write_bytes(f"[InternetShortcut]\r\nURL={url}\r\n".encode("ascii"))
+    (popen or subprocess.Popen)(["explorer.exe", str(link)])
+
+    def cleanup():
+        time.sleep(120)
+        try:
+            link.unlink(missing_ok=True)
+            folder.rmdir()
+        except OSError:
+            pass
+    threading.Thread(target=cleanup, daemon=True).start()
+    return link
+
+
 class State:
     def __init__(self, deploy) -> None:
         self.d = deploy
@@ -136,13 +165,7 @@ def serve(d, *, port: int = 0, open_browser: bool = True, start: str | None = No
     url = f"http://127.0.0.1:{httpd.server_address[1]}/?t={st.token}"
     print(f"Assistente do VYONIX DEPLOY: {url}", flush=True)
     if open_browser:
-        import subprocess
-        import sys
-        if sys.platform == "win32":
-            # explorer.exe entrega a URL ao shell do usuário: o navegador não roda elevado
-            subprocess.Popen(["explorer.exe", url])
-        else:
-            webbrowser.open(url)
+        open_browser_url(url)
     last = {"t": time.monotonic()}
     orig = H.handle_one_request
 

@@ -73,6 +73,9 @@ Source: "homologacao\*"; DestDir: "{app}"; Flags: ignoreversion
 Name: "{commonprograms}\VYONIX\VYONIX Homologacao - Preparar modulos"; Filename: "{app}\Preparar_Homologacao.cmd"; WorkingDir: "{app}"
 Name: "{commonprograms}\VYONIX\VYONIX Homologacao - Enviar exame simulado"; Filename: "{app}\Enviar_Exame_Simulado.cmd"; WorkingDir: "{app}"
 Name: "{commonprograms}\VYONIX\LEIA-ME Homologacao"; Filename: "{app}\LEIA-ME_HOMOLOGACAO.txt"
+Name: "{commonprograms}\VYONIX\VYONIX - Abrir sistema"; Filename: "{app}\Abrir_VYONIX.url"
+Name: "{commonprograms}\VYONIX\VYONIX - Assistente de instalacao"; Filename: "{app}\Assistente_Instalacao.cmd"; WorkingDir: "{app}"
+Name: "{commonprograms}\VYONIX\VYONIX - Diagnostico"; Filename: "{app}\Diagnostico.cmd"; WorkingDir: "{app}"
 #endif
 
 [Run]
