@@ -153,7 +153,10 @@ jobs:
           e https://orthanc.uclouvain.be/downloads/sources/orthanc/
           Executado como processo separado pelo serviço VyonixPacsEngine, sem plugins.
           "@ | Out-File "$dst\LEIA-ME_ORTHANC.txt" -Encoding utf8
-          Invoke-WebRequest "https://www.gnu.org/licenses/gpl-3.0.txt" -OutFile "$dst\COPYING_GPLv3.txt" -UseBasicParsing
+          # texto da GPLv3 versionado no repositório (o download do gnu.org falhava de forma intermitente no CI)
+          Copy-Item packaging\licenses\GPL-3.0.txt "$dst\COPYING_GPLv3.txt"
+          if ((Get-FileHash "$dst\COPYING_GPLv3.txt" -Algorithm SHA256).Hash -ne "3972DC9744F6499F0F9B2DBF76696F2AE7AD8AF9B23DDE66D6AF86C9DFB36986") {
+            Write-Host "::error title=GPLv3::texto da licença diferente do oficial"; exit 1 }
           Write-Host "::notice title=Orthanc embutido::$env:ORTHANC_VERSION ($($info.FileVersion)) SHA-256 $sha"
 
       - name: Versão

@@ -97,6 +97,7 @@ jobs:
             if ($bad -ne 0 -or [int]$t.tests -eq 0) { exit 1 }
             Write-Host "::warning title=pytest::Código de saída $code com $($t.tests) testes e 0 falhas/erros no JUnit (encerramento do processo)."
           }
+          exit 0          # sem isto o pwsh do Actions devolve o $LASTEXITCODE do python
 
       - name: Versão, ícone e metadados
         id: ver
