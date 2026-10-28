@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, Text, Uuid
+from sqlalchemy import JSON, Boolean, Date, DateTime, ForeignKey, Index, Integer, String, Text, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from vyonix.db.base import Base, TenantMixin
@@ -67,3 +67,29 @@ class ReportVersion(TenantMixin, Base):
     signed_by_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
     signed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+
+
+class Physician(TenantMixin, Base):
+    """Médico da organização (TELELAUDO T1): ligado a um usuário do VYONIX; CRM/UF únicos na organização."""
+    __tablename__ = "physicians"
+    __table_args__ = (Index("uq_report_physicians_user", "tenant_id", "user_id", unique=True),
+                      Index("uq_report_physicians_crm", "tenant_id", "crm", "crm_uf", unique=True), SCHEMA)
+    user_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("auth.users.id"), nullable=False)
+    full_name: Mapped[str] = mapped_column(String(160), nullable=False)
+    crm: Mapped[str] = mapped_column(String(10), nullable=False)
+    crm_uf: Mapped[str] = mapped_column(String(2), nullable=False)
+    rqe: Mapped[str | None] = mapped_column(String(40))
+    specialties: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    footer: Mapped[str | None] = mapped_column(String(200))
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+
+class PhysicianLink(TenantMixin, Base):
+    """Vínculo do médico com a organização inteira (``site_id`` nulo) ou com uma unidade, com vigência."""
+    __tablename__ = "physician_links"
+    __table_args__ = SCHEMA
+    physician_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("report.physicians.id"), nullable=False, index=True)
+    site_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("tenancy.sites.id"))
+    valid_from: Mapped[date] = mapped_column(Date, nullable=False)
+    valid_to: Mapped[date | None] = mapped_column(Date)
+    created_by: Mapped[str] = mapped_column(String(120), nullable=False)

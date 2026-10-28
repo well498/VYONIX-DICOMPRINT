@@ -145,6 +145,18 @@ def _new_version(s: Session, r: Report, *, kind: str, body: str, critical: bool,
     return v
 
 
+def _signer(s: Session, r: Report, actor_id) -> str:
+    """Identificação do médico que libera: cadastro ativo com vínculo vigente na unidade do exame (TELELAUDO T1)."""
+    from datetime import timedelta, timezone
+    from vyonix.report import physicians
+    if actor_id is None:
+        from vyonix.errors import Forbidden
+        raise Forbidden("Liberação exige o médico autenticado.", code="physician_required")
+    st = s.get(Study, r.study_id)
+    today = utcnow().astimezone(timezone(timedelta(hours=-3))).date()
+    return physicians.identification(physicians.authorized(s, actor_id, site_id=st.site_id if st else None, on=today))
+
+
 def finalize(s: Session, report_id: uuid.UUID, *, expected_version: int | None = None, actor: str, actor_id=None,
              ip=None) -> Report:
     """Libera o laudo (a API já confirmou a senha de quem libera)."""
@@ -159,8 +171,9 @@ def finalize(s: Session, report_id: uuid.UUID, *, expected_version: int | None =
         raise ValidationFailed("Laudo vazio não pode ser liberado.")
     if r.critical and not r.critical_note:
         raise ValidationFailed("Descreva o achado crítico antes de liberar.")
-    v = _new_version(s, r, kind="final", body=r.body, critical=r.critical, actor=actor, actor_id=actor_id)
-    r.status, r.finalized_by, r.finalized_at = "final", actor[:120], v.signed_at
+    signer = _signer(s, r, actor_id)
+    v = _new_version(s, r, kind="final", body=r.body, critical=r.critical, actor=signer, actor_id=actor_id)
+    r.status, r.finalized_by, r.finalized_at = "final", signer[:120], v.signed_at
     s.flush()
     if r.order_id:                                   # laudo liberado conclui o pedido (pelo serviço do cadastro)
         from vyonix.clinical import service as clinical
@@ -190,7 +203,8 @@ def addendum(s: Session, report_id: uuid.UUID, text: str, *, critical: bool = Fa
     text = (text or "").strip()
     if not text or len(text) > MAX_BODY:
         raise ValidationFailed(f"Texto do adendo: 1 a {MAX_BODY} caracteres.")
-    v = _new_version(s, r, kind="addendum", body=text, critical=bool(critical), actor=actor, actor_id=actor_id)
+    signer = _signer(s, r, actor_id)
+    v = _new_version(s, r, kind="addendum", body=text, critical=bool(critical), actor=signer, actor_id=actor_id)
     if critical:
         r.critical = True
     s.flush()

@@ -141,7 +141,8 @@ REPORT = ModuleManifest(
     description="Laudos com modelos, rascunho, liberação com confirmação de senha, versões imutáveis e adendos "
                 "(primeira entrega; não é assinatura digital ICP-Brasil). Não liberado para uso clínico.",
     permissions={"report.read": "Consultar laudos", "report.write": "Redigir laudos (rascunho)",
-                 "report.sign": "Liberar laudos e registrar adendos", "report.templates.manage": "Gerenciar modelos"},
+                 "report.sign": "Liberar laudos e registrar adendos", "report.templates.manage": "Gerenciar modelos",
+                 "report.physicians.manage": "Cadastrar médicos e vínculos com unidades"},
     publishes=("report.finalized.v1", "report.amended.v1", "report.critical.v1"),
 )
 
@@ -171,7 +172,8 @@ DEFAULT_ROLES: dict[str, tuple[str, list[str]]] = {
     "supervisor": ("Supervisor", ["core.users.read", "core.settings.read", "core.audit.read", "core.license.read",
                                   "clinical.*", "print.*", "pacs.*", "ris.*", "report.read"]),
     "medico": ("Médico", ["core.license.read", "clinical.patients.read", "clinical.orders.read",
-                          "clinical.studies.read", "pacs.studies.read", "ris.schedule.read", "report.*"]),
+                          "clinical.studies.read", "pacs.studies.read", "ris.schedule.read", "report.read",
+                          "report.write", "report.sign", "report.templates.manage"]),     # sem cadastro de médicos
     "tecnico": ("Técnico", ["core.license.read", "clinical.patients.read", "clinical.orders.read",
                             "clinical.studies.read", "clinical.studies.reconcile", "print.jobs.read",
                             "print.jobs.manage", "pacs.studies.read", "pacs.studies.store", "ris.schedule.read"]),

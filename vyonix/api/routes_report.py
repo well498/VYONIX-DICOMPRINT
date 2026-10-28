@@ -13,6 +13,7 @@ from vyonix.api.app import Ctx, needs
 from vyonix.auth import service as auth
 from vyonix.errors import Forbidden, NotLicensed
 from vyonix.modules import registry
+from vyonix.report import physicians as phys
 from vyonix.report import service as rep
 
 router = APIRouter(prefix="/report")
@@ -168,3 +169,62 @@ def update_template(tid: uuid.UUID, body: TemplateIn, c: Ctx = Depends(needs("re
         t = rep.save_template(s, template_id=tid, name=body.name, body=body.body, modality=body.modality,
                               active=body.active, **c.actor)
         return {"id": str(t.id)}
+
+
+# ------------------------------------------------------------------ médicos (TELELAUDO T1)
+class PhysicianIn(BaseModel):
+    user_id: uuid.UUID
+    full_name: str = Field(min_length=5, max_length=160)
+    crm: str = Field(min_length=1, max_length=20)
+    crm_uf: str = Field(min_length=2, max_length=2)
+    rqe: str | None = Field(None, max_length=60)
+    specialties: list[str] = Field(default_factory=list, max_length=10)
+    footer: str | None = Field(None, max_length=200)
+    active: bool = True
+
+
+class LinkIn(BaseModel):
+    site_id: uuid.UUID | None = None
+    valid_from: date
+    valid_to: date | None = None
+
+
+class EndLinkIn(BaseModel):
+    valid_to: date
+
+
+@router.get("/physicians")
+def list_physicians(c: Ctx = Depends(needs("report.physicians.manage"))):
+    with c.session() as s:
+        return {"items": phys.listing(s)}
+
+
+@router.get("/physicians/me")
+def my_physician(c: Ctx = Depends(needs("report.read"))):
+    with c.session() as s:
+        return {"physician": phys.of_user(s, c.p.user_id)}
+
+
+@router.post("/physicians", status_code=201)
+def create_physician(body: PhysicianIn, c: Ctx = Depends(needs("report.physicians.manage"))):
+    with c.session() as s:
+        return {"id": str(phys.save(s, **body.model_dump(), **c.actor).id)}
+
+
+@router.put("/physicians/{pid}")
+def update_physician(pid: uuid.UUID, body: PhysicianIn, c: Ctx = Depends(needs("report.physicians.manage"))):
+    with c.session() as s:
+        return {"id": str(phys.save(s, physician_id=pid, **body.model_dump(), **c.actor).id)}
+
+
+@router.post("/physicians/{pid}/links", status_code=201)
+def add_link(pid: uuid.UUID, body: LinkIn, c: Ctx = Depends(needs("report.physicians.manage"))):
+    with c.session() as s:
+        return {"id": str(phys.add_link(s, pid, **body.model_dump(), **c.actor).id)}
+
+
+@router.post("/physician-links/{lid}/end")
+def end_link(lid: uuid.UUID, body: EndLinkIn, c: Ctx = Depends(needs("report.physicians.manage"))):
+    with c.session() as s:
+        phys.end_link(s, lid, valid_to=body.valid_to, **c.actor)
+        return {"ok": True}

@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { fmtDate, get, post, put, type Me } from "../api";
 import { Field, Notice, Page, useAction, useLoad } from "../ui";
+import { PhysiciansPanel } from "./physicians";
 
 type Row = { study_id: string; study_instance_uid: string; accession: string | null; modality: string | null;
   study_date: string | null; description: string | null; patient_name: string | null; report_id: string | null;
@@ -26,6 +27,7 @@ export function ReportsPage({ me }: { me: Me }) {
   const [open, setOpen] = useState<{ row: Row; report: Report | null } | null>(null);
   const [showTemplates, setShowTemplates] = useState(false);
   const [tick, setTick] = useState(0);
+  const [showPhysicians, setShowPhysicians] = useState(false);
   const act = useAction();
 
   const list = useLoad(async () => {
@@ -45,9 +47,13 @@ export function ReportsPage({ me }: { me: Me }) {
   return (
     <Page title="Laudos"
       intro="Laudos dos estudos de imagem: rascunho a partir de modelos, liberação com confirmação de senha e adendos. Não é assinatura digital ICP-Brasil. Não liberado para uso clínico."
-      actions={can("report.templates.manage") ? <button onClick={() => setShowTemplates(!showTemplates)}>
-        {showTemplates ? "Fechar modelos" : "Modelos de laudo"}</button> : undefined}>
+      actions={<>
+        {can("report.physicians.manage") && <button onClick={() => setShowPhysicians(!showPhysicians)}>
+          {showPhysicians ? "Fechar médicos" : "Médicos"}</button>}
+        {can("report.templates.manage") && <button onClick={() => setShowTemplates(!showTemplates)}>
+          {showTemplates ? "Fechar modelos" : "Modelos de laudo"}</button>}</>}>
       {act.view}
+      {showPhysicians && <PhysiciansPanel me={me} />}
       {showTemplates && <Templates />}
       <CriticalAlerts canAck={can("report.write")} tick={tick} />
       {open && <Editor me={me} row={open.row} initial={open.report}

@@ -1,6 +1,6 @@
 # VYONIX TELELAUDO multicliente — requisitos, arquitetura e plano incremental
 
-Situação: **requisitos registrados em 28/10/2026 (pedido do proprietário). Não iniciado.** Entra depois das
+Situação: requisitos registrados em 28/10/2026 (pedido do proprietário). **T1 entregue em 28/10** (cadastro de médicos e vínculos; liberação exige médico ativo com vínculo vigente na unidade do exame); T2–T9 planejadas. Entra depois das
 prioridades em andamento (PACS, Viewer, RIS, DEPLOY), respeitando os bloqueios BLK-06, BLK-13 e BLK-14. Constrói sobre
 o VYONIX REPORT (primeira entrega já feita), sem uma versão separada do sistema por cliente.
 
@@ -81,7 +81,7 @@ as mesmas versões.
 
 | Etapa | Entrega | Testes principais |
 |---|---|---|
-| T1 | Cadastro de médicos e vínculos; permissão de laudar por organização e unidade | Isolamento; médico sem vínculo não lauda |
+| T1 | Cadastro de médicos e vínculos; permissão de laudar por organização e unidade — **feito** (`report_0003`, `vyonix/report/physicians.py`, painel Médicos) | `test_report.Physicians` (validações, unicidade, outra organização, vínculo por unidade, vencido, inativo); e2e `test_7_report_flow` |
 | T2 | Identidade visual (organização e unidade) com versões e pré-visualização A4 | Herança; arquivos maliciosos recusados |
 | T3 | Modelos estruturados com campos dinâmicos, versões e publicação | Campos validados; versão publicada imutável |
 | T4 | Seleção automática com prioridade e fallback | Matriz de casos; nunca seleciona de outro cliente |

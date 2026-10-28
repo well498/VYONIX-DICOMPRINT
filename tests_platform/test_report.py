@@ -36,11 +36,27 @@ def make_study(tid, *, modality="CT", with_order=True):
         return st.id, oid
 
 
+def make_physician(tid, name="Dra. Ana Sintetica Medica", crm="123456", uf="CE", *, site_id=None, link=True):
+    from datetime import date as d
+    from vyonix.auth import service as auth
+    from vyonix.report import physicians
+    with db.session(tid) as s:
+        auth.ensure_default_roles(s)
+        u = auth.create_user(s, username=f"med{secrets.token_hex(3)}", display_name=name,
+                             password="Senha-Teste-1234", roles=[("medico", None)], actor="t")
+        p = physicians.save(s, user_id=u.id, full_name=name, crm=crm, crm_uf=uf, rqe="7788", actor="t")
+        if link:
+            physicians.add_link(s, p.id, site_id=site_id, valid_from=d(2026, 1, 1), actor="t")
+        return u.id, p.id
+
+
 class Service(unittest.TestCase):
     def setUp(self):
         from vyonix.report import service as rep
         self.rep = rep
         self.t = new_org(db)
+        self.uid, self.pid = make_physician(self.t)
+        self.who = "Dra. Ana Sintetica Medica — CRM 123456/CE — RQE 7788"
 
     def test_draft_finalize_addendum_and_integrity(self):
         from sqlalchemy import text
@@ -59,21 +75,22 @@ class Service(unittest.TestCase):
             self.assertEqual(self.rep.open_report(s, study_id, actor="outro").id, rid)       # um laudo por estudo
             with self.assertRaises(ValidationFailed):
                 self.rep.update_draft(s, rid, body="x", critical=True, actor="med") and \
-                    self.rep.finalize(s, rid, actor="Dra. Médica")                          # crítico sem descrição
+                    self.rep.finalize(s, rid, actor="Dra. Médica", actor_id=self.uid)                          # crítico sem descrição
         with db.session(self.t) as s:
             r = self.rep.update_draft(s, rid, body="Achados: nódulo de 8 mm.\nConclusão: controle.", critical=True,
                                       critical_note="Nódulo novo — avisar solicitante", actor="med")
             with self.assertRaises(Conflict):
                 self.rep.update_draft(s, rid, body="y", expected_version=r.row_version - 1, actor="med")
         with db.session(self.t) as s:
-            r = self.rep.finalize(s, rid, actor="Dra. Médica", actor_id=None)
-            self.assertEqual((r.status, r.version, r.finalized_by), ("final", 1, "Dra. Médica"))
+            r = self.rep.finalize(s, rid, actor="Dra. Médica", actor_id=self.uid)
+            self.assertEqual((r.status, r.version, r.finalized_by), ("final", 1, self.who))
             self.assertEqual(s.get(Order, oid).status, "completed")
             with self.assertRaises(Conflict):
                 self.rep.update_draft(s, rid, body="mudar depois de liberado", actor="med")
             with self.assertRaises(Conflict):
-                self.rep.finalize(s, rid, actor="Dra. Médica")
-            v2 = self.rep.addendum(s, rid, "Adendo: comparado com exame anterior, estável.", actor="Dra. Médica")
+                self.rep.finalize(s, rid, actor="Dra. Médica", actor_id=self.uid)
+            v2 = self.rep.addendum(s, rid, "Adendo: comparado com exame anterior, estável.", actor="Dra. Médica",
+                                 actor_id=self.uid)
             self.assertEqual((v2.version, v2.kind), (2, "addendum"))
         with db.session(self.t) as s:
             d = self.rep.get(s, rid)
@@ -107,8 +124,9 @@ class Service(unittest.TestCase):
             r = self.rep.open_report(s, study_id, actor="med")
             self.rep.update_draft(s, r.id, body="Pneumotórax extenso.", critical=True,
                                   critical_note="Pneumotórax — avisar plantão", actor="med")
-            self.rep.finalize(s, r.id, actor="Dra. Médica")
-            self.rep.addendum(s, r.id, "Novo achado crítico no adendo.", critical=True, actor="Dra. Médica")
+            self.rep.finalize(s, r.id, actor="Dra. Médica", actor_id=self.uid)
+            self.rep.addendum(s, r.id, "Novo achado crítico no adendo.", critical=True, actor="Dra. Médica",
+                             actor_id=self.uid)
             open_ = self.rep.critical_alerts(s)
             self.assertEqual([(a["version"], a["note"]) for a in open_],
                              [(1, "Pneumotórax — avisar plantão"), (2, "Novo achado crítico no adendo.")])
@@ -132,7 +150,7 @@ class Service(unittest.TestCase):
         with db.session(self.t) as s:
             r = self.rep.open_report(s, study_id, actor="med")
             self.rep.update_draft(s, r.id, body="Texto", actor="med")
-            self.rep.finalize(s, r.id, actor="med")
+            self.rep.finalize(s, r.id, actor="med", actor_id=self.uid)
             rid = r.id
         with self.assertRaises(ProgrammingError):                            # sem permissão de UPDATE na versão
             with db.session(self.t) as s:
@@ -159,6 +177,78 @@ class Service(unittest.TestCase):
                 self.rep.get(s, r.id)
 
 
+class Physicians(unittest.TestCase):
+    """TELELAUDO T1: cadastro de médicos, vínculos com vigência por unidade e regra de liberação."""
+
+    def setUp(self):
+        from vyonix.report import physicians, service as rep
+        self.ph, self.rep = physicians, rep
+        self.t = new_org(db)
+
+    def test_validations_and_uniqueness(self):
+        from vyonix.errors import Conflict, NotFound, ValidationFailed
+        uid, pid = make_physician(self.t, crm="1111", uf="SP")
+        uid2, _ = make_physician(self.t, name="Dr. Bruno Sintetico", crm="2222", uf="SP", link=False)
+        with db.session(self.t) as s:
+            for kw in ({"crm_uf": "XX"}, {"crm": "abc"}, {"full_name": "Dr"}):
+                with self.assertRaises(ValidationFailed, msg=kw):
+                    self.ph.save(s, **({"user_id": uid2, "full_name": "Dr. Bruno Sintetico", "crm": "3333",
+                                        "crm_uf": "SP"} | kw), actor="t")
+            with self.assertRaises(Conflict):                                   # CRM/UF repetido
+                self.ph.save(s, user_id=uid2, full_name="Dr. Bruno Sintetico", crm="1.111", crm_uf="sp", actor="t")
+            with self.assertRaises(Conflict):                                   # usuário já é médico
+                self.ph.save(s, user_id=uid, full_name="Outro Nome Qualquer", crm="9999", crm_uf="SP", actor="t")
+        other = new_org(db)
+        with db.session(other) as s:                                            # usuário de outra organização
+            with self.assertRaises(NotFound):
+                self.ph.save(s, user_id=uid, full_name="Dra. Ana Sintetica Medica", crm="1111", crm_uf="SP",
+                             actor="t")
+            self.assertEqual(self.ph.listing(s), [])
+
+    def test_release_requires_active_physician_with_valid_link_for_site(self):
+        from datetime import date as d
+        from vyonix.clinical.models import Study
+        from vyonix.errors import Forbidden
+        from vyonix.tenancy.models import Site
+        with db.session(self.t) as s:
+            a, b = Site(name="Unidade Norte"), Site(name="Unidade Sul")
+            s.add_all([a, b])
+            s.flush()
+            site_a, site_b = a.id, b.id
+        uid, pid = make_physician(self.t, link=False)
+        study_id, _ = make_study(self.t)
+        with db.session(self.t) as s:
+            s.get(Study, study_id).site_id = site_b
+            r = self.rep.open_report(s, study_id, actor="med")
+            self.rep.update_draft(s, r.id, body="Texto", actor="med")
+            rid = r.id
+
+        def release():
+            with db.session(self.t) as s:
+                return self.rep.finalize(s, rid, actor="med", actor_id=uid)
+        with self.assertRaises(Forbidden) as cm:
+            release()
+        self.assertEqual(cm.exception.code, "physician_not_linked")
+        with db.session(self.t) as s:
+            self.ph.add_link(s, pid, site_id=site_a, valid_from=d(2026, 1, 1), actor="t")            # outra unidade
+            self.ph.add_link(s, pid, site_id=None, valid_from=d(2025, 1, 1), valid_to=d(2025, 12, 31), actor="t")
+        with self.assertRaises(Forbidden):                                      # unidade errada e vínculo vencido
+            release()
+        with db.session(self.t) as s:
+            self.ph.save(s, physician_id=pid, user_id=uid, full_name="Dra. Ana Sintetica Medica", crm="123456",
+                         crm_uf="CE", active=False, actor="t")
+            self.ph.add_link(s, pid, site_id=site_b, valid_from=d(2026, 1, 1), actor="t")
+        with self.assertRaises(Forbidden) as cm:                                # cadastro inativo
+            release()
+        self.assertEqual(cm.exception.code, "physician_required")
+        with db.session(self.t) as s:
+            self.ph.save(s, physician_id=pid, user_id=uid, full_name="Dra. Ana Sintetica Medica", crm="123456",
+                         crm_uf="CE", rqe="7788", actor="t")
+        self.assertEqual(release().finalized_by, "Dra. Ana Sintetica Medica — CRM 123456/CE — RQE 7788")
+        with db.session(self.t) as s:
+            self.assertTrue(self.rep.verify(s, rid)["valid"])
+
+
 from tests_platform.test_pacs import ApiBase  # noqa: E402
 
 
@@ -174,6 +264,8 @@ class Api(ApiBase):
         r = c.post("/api/v1/users", json={"username": username, "display_name": f"Dr(a). {username}",
                                           "password": "Senha-Teste-1234", "roles": [{"role": role}]})
         self.assertEqual(r.status_code, 201, r.text)
+        self.ids = getattr(self, "ids", {})
+        self.ids[username] = r.json()["id"]
         u = self.login(username, "Senha-Teste-1234")
         u.post("/api/v1/auth/password", json={"current": "Senha-Teste-1234", "new": "Senha-Nova-9876!"})
         return self.login(username, "Senha-Nova-9876!")
@@ -187,6 +279,11 @@ class Api(ApiBase):
         self.license_report()
         med = self.user(admin, "medica", "medico")
         tec = self.user(admin, "tecnico", "tecnico")
+        r = admin.post("/api/v1/report/physicians", json={"user_id": self.ids["medica"], "full_name": "Dra. Medica Teste",
+                                                          "crm": "54.321", "crm_uf": "pb", "specialties": ["Radiologia"]})
+        self.assertEqual(r.status_code, 201, r.text)
+        pid = r.json()["id"]
+        self.assertEqual(med.get("/api/v1/report/physicians").status_code, 403)          # médico não gerencia cadastro
         self.assertEqual(med.post("/api/v1/report/templates", json={"name": "Normal", "body": "Sem alterações."})
                          .status_code, 201)
         tpl = med.get("/api/v1/report/templates").json()["items"][0]
@@ -200,6 +297,11 @@ class Api(ApiBase):
         self.assertEqual(r.status_code, 200, r.text)
         rv = r.json()["row_version"]
         self.assertEqual(med.get(f"/api/v1/report/reports/{rep['id']}/pdf").status_code, 409)     # rascunho
+        r = med.post(f"/api/v1/report/reports/{rep['id']}/finalize", json={"password": "Senha-Nova-9876!",
+                                                                           "row_version": rv})
+        self.assertEqual((r.status_code, r.json()["error"]), (403, "physician_not_linked"))       # sem vínculo
+        self.assertEqual(admin.post(f"/api/v1/report/physicians/{pid}/links",
+                                    json={"valid_from": "2026-01-01"}).status_code, 201)
         r = med.post(f"/api/v1/report/reports/{rep['id']}/finalize", json={"password": "errada", "row_version": rv})
         self.assertEqual((r.status_code, r.json()["error"]), (403, "password_mismatch"))
         self.assertEqual(med.get(f"/api/v1/report/reports/{rep['id']}").json()["status"], "draft")
@@ -207,7 +309,7 @@ class Api(ApiBase):
                                                                            "row_version": rv})
         self.assertEqual(r.status_code, 200, r.text)
         d = r.json()
-        self.assertEqual((d["status"], d["finalized_by"], len(d["versions"])), ("final", "Dr(a). medica", 1))
+        self.assertEqual((d["status"], d["finalized_by"], len(d["versions"])), ("final", "Dra. Medica Teste — CRM 54321/PB", 1))
         self.assertEqual(len(d["versions"][0]["sha256"]), 64)
         self.assertEqual(med.put(f"/api/v1/report/reports/{rep['id']}", json={"body": "x"}).status_code, 409)
         r = med.post(f"/api/v1/report/reports/{rep['id']}/addenda",
@@ -220,7 +322,7 @@ class Api(ApiBase):
         import io
         from pypdf import PdfReader
         txt = " ".join(pg.extract_text() for pg in PdfReader(io.BytesIO(r.content)).pages)
-        for want in ("Laudo Sintetico Teste", "Exame normal.", "Adendo sintético.", "Dr(a). medica",
+        for want in ("Laudo Sintetico Teste", "Exame normal.", "Adendo sintético.", "CRM 54321/PB",
                      "Não é assinatura digital", d["versions"][0]["sha256"][:16]):
             self.assertIn(want, txt.replace("\n", " "))
         self.assertEqual(tec.get(f"/api/v1/report/reports/{rep['id']}/pdf").status_code, 403)
