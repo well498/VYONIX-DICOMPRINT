@@ -13,7 +13,7 @@ function todayIso(): string {
 function Pending({ me }: { me: Me }) {
   const can = (p: string) => me.permissions.includes(p);
   const data = useLoad(async () => {
-    const out: { health?: Health; today?: number; toReport?: number; critical?: number } = {};
+    const out: { health?: Health; today?: number; toReport?: number; critical?: number; unreconciled?: number } = {};
     const jobs: Promise<void>[] = [];
     if (can("core.settings.read")) jobs.push(get<Health>("/health/detail").then((h) => { out.health = h; }).catch(() => {}));
     if (can("ris.schedule.read")) jobs.push(get<{ items: unknown[] }>(`/ris/worklist?date_from=${todayIso()}&date_to=${todayIso()}`)
@@ -22,11 +22,13 @@ function Pending({ me }: { me: Me }) {
       jobs.push(get<{ items: unknown[] }>("/report/worklist?status=pending").then((r) => { out.toReport = r.items.length; }).catch(() => {}));
       jobs.push(get<{ items: unknown[] }>("/report/critical").then((r) => { out.critical = r.items.length; }).catch(() => {}));
     }
+    if (can("clinical.studies.reconcile")) jobs.push(get<unknown[]>("/studies?unreconciled=true")
+      .then((r) => { out.unreconciled = r.length; }).catch(() => {}));
     await Promise.all(jobs);
     return out;
   }, []);
   const d = data.data;
-  if (!d || (d.health === undefined && d.today === undefined && d.toReport === undefined)) return null;
+  if (!d || (d.health === undefined && d.today === undefined && d.toReport === undefined && d.unreconciled === undefined)) return null;
   return (
     <>
       <h2 className="section">Pendências</h2>
@@ -36,6 +38,8 @@ function Pending({ me }: { me: Me }) {
           {d.health.problems.length > 0 && <span className="field-hint">{d.health.problems[0]}</span>}</a>}
         {d.today !== undefined && <a className="card" href="#/agenda"><span className="card-label">Exames hoje (a realizar)</span><strong>{d.today}</strong></a>}
         {d.toReport !== undefined && <a className="card" href="#/laudos"><span className="card-label">Estudos sem laudo</span><strong>{d.toReport}</strong></a>}
+        {d.unreconciled !== undefined && <a className="card" href="#/conciliacao"><span className="card-label">Estudos sem pedido conciliado</span>
+          <strong>{d.unreconciled}</strong></a>}
         {d.critical !== undefined && <a className="card" href="#/laudos"><span className="card-label">Achados críticos a comunicar</span>
           <strong>{d.critical}</strong></a>}
       </div>

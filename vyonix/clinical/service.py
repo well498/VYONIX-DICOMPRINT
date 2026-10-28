@@ -324,8 +324,10 @@ def set_order_status(s: Session, order_id: uuid.UUID, status: str, *, actor: str
 
 
 def orders(s: Session, *, patient_id: uuid.UUID | None = None, status: str | None = None,
-           limit: int = 100) -> list[Order]:
+           accession: str | None = None, limit: int = 100) -> list[Order]:
     q = select(Order).order_by(Order.created_at.desc()).limit(min(limit, 500))
+    if accession:
+        q = q.where(Order.accession == accession.strip())
     if patient_id:
         q = q.where(Order.patient_id == patient_id)
     if status:

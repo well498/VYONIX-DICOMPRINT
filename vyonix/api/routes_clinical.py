@@ -163,10 +163,16 @@ def save_procedure(body: ProcedureIn, c: Ctx = Depends(needs("clinical.procedure
 
 
 @router.get("/orders")
-def orders(patient_id: uuid.UUID | None = None, status: str | None = None,
+def orders(patient_id: uuid.UUID | None = None, status: str | None = None, accession: str | None = None,
            c: Ctx = Depends(needs("clinical.orders.read"))):
     with c.session() as s:
-        return [_order(o) for o in clinical.orders(s, patient_id=patient_id, status=status)]
+        out = [_order(o) for o in clinical.orders(s, patient_id=patient_id, status=status, accession=accession)]
+        if accession:                                   # busca por número de acesso: mostra o paciente para conferência
+            from vyonix.clinical.models import Patient
+            for o in out:
+                p = s.get(Patient, uuid.UUID(o["patient_id"]))
+                o["patient_name"] = p.name if p else None
+        return out
 
 
 @router.post("/orders", status_code=201)

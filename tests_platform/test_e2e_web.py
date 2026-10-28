@@ -503,6 +503,36 @@ class WebE2E(unittest.TestCase):
             self.assertEqual((r.status, r.version), ("final", 2))
             self.assertTrue(rep.verify(s, r.id)["valid"])
 
+    def test_8_reconcile_flow(self):
+        """Conciliação: estudo sem pedido conciliado pelo número de acesso, conferindo o paciente."""
+        import uuid
+        from datetime import date
+        from playwright.sync_api import expect
+        from vyonix.clinical import service as clinical
+        from vyonix.clinical.models import Study
+        with db.session(self.tenant) as s:
+            p = clinical.create_patient(s, name="Otavio Conciliacao Sintetico", birth_date=date(1990, 2, 3), sex="M",
+                                        identifiers=[("DICOM", "CC-321")], actor="t")
+            o = clinical.create_order(s, patient_id=p.id, actor="t")
+            st = clinical.register_study(s, study_instance_uid=f"2.25.{uuid.uuid4().int}", modality="US",
+                                         study_date=date(2026, 10, 28), description="US abdome sem pedido", actor="t")
+            sid, acc = st.id, o.accession
+        pg = self.page()
+        self.login(pg, "admin", ADMIN_PW)
+        pg.get_by_role("navigation", name="Navegação principal").get_by_role("link", name="Conciliação").click()
+        row = pg.get_by_role("row", name="US abdome sem pedido")
+        row.get_by_role("button", name="Conciliar").click()
+        form = pg.get_by_role("form", name="Buscar pedido")
+        form.get_by_label("Número de acesso do pedido").fill(acc)
+        form.get_by_role("button", name="Buscar pedido").click()
+        expect(pg.get_by_text("Otavio Conciliacao Sintetico")).to_be_visible()
+        pg.get_by_role("button", name="Confirmar conciliação").click()
+        expect(pg.get_by_text("Estudo conciliado com o pedido.")).to_be_visible()
+        expect(pg.get_by_role("row", name="US abdome sem pedido")).to_have_count(0)
+        with db.session(self.tenant) as s:
+            x = s.get(Study, sid)
+            self.assertEqual((x.order_id, x.patient_id), (o.id, p.id))
+
     def plat_client_get(self, user, pw, path):
         import httpx
         with httpx.Client(base_url=self.base, verify=False) as c:
