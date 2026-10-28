@@ -616,12 +616,16 @@ $ap = $r | Get-NetFirewallApplicationFilter
         p = sh([PATHS.core_exe, "--data", PATHS.data_dir, "pacs-backup", "--dest", dest], timeout=600)
         out = json.loads(p.stdout[p.stdout.index("{"):])
         assert out["instances"] >= 1 and not out["integrity_failures"], out
-        assert (dest / study / series / f"{sop}.dcm").read_bytes() == buf.getvalue(), "arquivo do backup difere do enviado"
+        # o motor regrava o File Meta ao receber por C-STORE: compara o conteúdo do objeto, não os bytes do arquivo
+        from pydicom import dcmread
+        got = dcmread(dest / study / series / f"{sop}.dcm")
+        assert (got.SOPInstanceUID, got.StudyInstanceUID, got.PatientID, bytes(got.PixelData)) == \
+            (sop, study, "CI-PACS-0001", bytes(128)), "objeto do backup difere do enviado"
         pv = sh([PATHS.core_exe, "pacs-verify", "--src", dest], timeout=300).stdout
         v = json.loads(pv[pv.index("{"):])
         assert v["valid"], v
         return (f"C-STORE → motor → indexado; backup {out['instances']} instância(s), {out['copied']} copiada(s), "
-                "arquivo idêntico ao enviado; verificação do manifesto válida")
+                "objeto idêntico ao enviado (UIDs, paciente, pixels); verificação do manifesto válida")
 
     # ---------------------------------------------------------------- 2.8 atualização
     @check("2.8", "Atualização: backup antes da migração; dados e configurações preservados")
