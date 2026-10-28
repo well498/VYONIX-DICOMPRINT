@@ -4,7 +4,7 @@ import { Field, Notice, Page, useAction, useLoad } from "../ui";
 
 type Item = {
   schedule_id: string; sps_id: string; status: string; accession: string; priority: string; modality: string;
-  station_aet: string | null; room: string | null; description: string | null; scheduled_at: string;
+  station_aet: string | null; room: string | null; description: string | null; scheduled_at: string; duration_min: number;
   patient_id: string; patient_name: string;
 };
 type Pending = { order_id: string; accession: string; priority: string; patient_name: string;
@@ -34,7 +34,7 @@ export function SchedulePage({ me }: { me: Me }) {
   const canManage = me.permissions.includes("ris.schedule.manage");
   const [filters, setFilters] = useState({ from: today(), to: today(), modality: "", done: false });
   const [query, setQuery] = useState(filters);
-  const [form, setForm] = useState({ order: "", when: `${today()}T08:00`, modality: "", aet: "", room: "", description: "" });
+  const [form, setForm] = useState({ order: "", when: `${today()}T08:00`, modality: "", aet: "", room: "", description: "", duration: "15" });
   const [creating, setCreating] = useState(false);
   const [cancel, setCancel] = useState<{ id: string; reason: string } | null>(null);
   const act = useAction();
@@ -53,7 +53,7 @@ export function SchedulePage({ me }: { me: Me }) {
     const ok = await act.run(async () => {
       await post("/ris/schedules", { order_id: form.order, scheduled_at: withOffset(form.when),
         modality: form.modality || null, station_aet: form.aet || null, room: form.room || null,
-        description: form.description || null });
+        description: form.description || null, duration_min: Number(form.duration) || 15 });
     }, "Exame agendado. Ele já aparece na worklist da modalidade.");
     if (ok) { setCreating(false); setForm({ ...form, order: "" }); await list.reload(); }
   }
@@ -89,6 +89,9 @@ export function SchedulePage({ me }: { me: Me }) {
           <div className="grid2">
             <Field label="Data e hora"><input type="datetime-local" required value={form.when}
               onChange={(e) => setForm({ ...form, when: e.target.value })} /></Field>
+            <Field label="Duração (min)" hint="Impede outro exame no mesmo horário na mesma estação ou sala">
+              <input type="number" min={1} max={480} required value={form.duration}
+                onChange={(e) => setForm({ ...form, duration: e.target.value })} /></Field>
             <Field label="Modalidade" hint="Ex.: CT, MR, CR, US"><input value={form.modality} maxLength={16}
               onChange={(e) => setForm({ ...form, modality: e.target.value.toUpperCase() })} /></Field>
             <Field label="AE Title da estação" hint="Opcional: restringe a worklist a esse equipamento">
@@ -121,7 +124,7 @@ export function SchedulePage({ me }: { me: Me }) {
             {(list.data ?? []).map((it) => [
               <tr key={it.schedule_id}>
                 <td className="nowrap">{new Date(it.scheduled_at).toLocaleDateString("pt-BR")}</td>
-                <td>{hour(it.scheduled_at)}</td>
+                <td className="nowrap">{hour(it.scheduled_at)} <span className="field-hint">{it.duration_min} min</span></td>
                 <td>{it.patient_name}</td>
                 <td className="nowrap">{it.patient_id}</td>
                 <td>{it.modality}</td>

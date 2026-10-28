@@ -37,9 +37,32 @@ def _aet(v: str | None) -> str | None:
     return t
 
 
+ACTIVE = ("scheduled", "in_progress")
+
+
+def conflicts(s: Session, *, start: datetime, minutes: int, station_aet: str | None, room: str | None,
+              exclude: uuid.UUID | None = None) -> list[Schedule]:
+    """Agendamentos ativos na mesma estação ou sala cujo intervalo se sobrepõe a [start, start+minutes)."""
+    from sqlalchemy import or_
+    if not station_aet and not room:
+        return []
+    end = start + timedelta(minutes=minutes)
+    same = []
+    if station_aet:
+        same.append(Schedule.station_aet == station_aet)
+    if room:
+        same.append(Schedule.room == room)
+    q = select(Schedule).where(Schedule.status.in_(ACTIVE), or_(*same), Schedule.scheduled_at < end,
+                               Schedule.scheduled_at > start - timedelta(hours=24))
+    if exclude:
+        q = q.where(Schedule.id != exclude)
+    return [x for x in s.execute(q).scalars()
+            if x.scheduled_at + timedelta(minutes=x.duration_min) > start]
+
+
 def schedule(s: Session, order_id: uuid.UUID, *, scheduled_at: datetime, modality: str | None = None,
-             station_aet: str | None = None, room: str | None = None, description: str | None = None, actor: str,
-             actor_id=None, ip=None) -> Schedule:
+             station_aet: str | None = None, room: str | None = None, description: str | None = None,
+             duration_min: int = 15, actor: str, actor_id=None, ip=None) -> Schedule:
     from pydicom.uid import generate_uid
     o = s.get(Order, order_id)
     if o is None:
@@ -52,9 +75,22 @@ def schedule(s: Session, order_id: uuid.UUID, *, scheduled_at: datetime, modalit
     mod = (modality or (proc.modality if proc else "") or "").strip().upper()
     if not mod or len(mod) > 16:
         raise ValidationFailed("Informe a modalidade (ex.: CT, MR, CR) ou cadastre-a no procedimento.")
-    st = Schedule(order_id=o.id, sps_id=f"S{secrets.token_hex(7).upper()}", study_instance_uid=generate_uid(prefix=None),   # 2.25.<UUID> (PS3.5 B.2), sem raiz de terceiros
-                  scheduled_at=scheduled_at, modality=mod, station_aet=_aet(station_aet),
-                  room=(room or "").strip()[:64] or None,
+    if not 1 <= int(duration_min) <= 480:
+        raise ValidationFailed("Duração do exame: de 1 a 480 minutos.")
+    aet, room_n = _aet(station_aet), (room or "").strip()[:64] or None
+    # serializa agendamentos da organização: duas recepções não reservam o mesmo horário ao mesmo tempo
+    from sqlalchemy import text
+    s.execute(text("SELECT pg_advisory_xact_lock(hashtext('ris.schedule:' || CAST(:t AS text)))"),
+              {"t": str(o.tenant_id)})
+    clash = conflicts(s, start=scheduled_at, minutes=int(duration_min), station_aet=aet, room=room_n)
+    if clash:
+        c = clash[0]
+        where = f"estação {c.station_aet}" if aet and c.station_aet == aet else f"sala {c.room}"
+        local = c.scheduled_at.astimezone(timezone(timedelta(hours=-3))).strftime("%d/%m %H:%M")
+        raise Conflict(f"Horário ocupado na {where}: exame às {local} ({c.duration_min} min). Escolha outro horário.")
+    st = Schedule(order_id=o.id, duration_min=int(duration_min), sps_id=f"S{secrets.token_hex(7).upper()}", study_instance_uid=generate_uid(prefix=None),   # 2.25.<UUID> (PS3.5 B.2), sem raiz de terceiros
+                  scheduled_at=scheduled_at, modality=mod, station_aet=aet,
+                  room=room_n,
                   description=((description or (proc.name if proc else "")) or "").strip()[:64] or None,
                   status="scheduled", created_by=actor[:120])
     s.add(st)
@@ -133,7 +169,7 @@ def worklist(s: Session, *, date_from: date | None = None, date_to: date | None 
         local = st.scheduled_at.astimezone(tz)
         out.append({"schedule_id": str(st.id), "order_id": str(o.id), "sps_id": st.sps_id, "status": st.status,
                     "study_instance_uid": st.study_instance_uid, "accession": o.accession, "priority": o.priority,
-                    "modality": st.modality, "station_aet": st.station_aet, "room": st.room,
+                    "modality": st.modality, "station_aet": st.station_aet, "room": st.room, "duration_min": st.duration_min,
                     "description": st.description, "requester": o.requester,
                     "scheduled_date": local.strftime("%Y%m%d"), "scheduled_time": local.strftime("%H%M%S"),
                     "scheduled_at": st.scheduled_at.isoformat(), "patient_id": pid,

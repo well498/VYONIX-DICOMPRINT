@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Index, String, Uuid
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from vyonix.db.base import Base, TenantMixin
@@ -30,3 +30,4 @@ class Schedule(TenantMixin, Base):
     description: Mapped[str | None] = mapped_column(String(64))
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="scheduled")
     created_by: Mapped[str] = mapped_column(String(120), nullable=False)
+    duration_min: Mapped[int] = mapped_column(Integer, nullable=False, default=15, server_default="15")

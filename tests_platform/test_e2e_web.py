@@ -274,6 +274,7 @@ class WebE2E(unittest.TestCase):
                                         identifiers=[("DICOM", "AG-901")], actor="t")
             proc = clinical.save_procedure(s, code="RX-TORAX", name="RX de tórax", modality="CR", actor="t")
             acc = clinical.create_order(s, patient_id=p.id, procedure_id=proc.id, actor="t").accession
+            acc2 = clinical.create_order(s, patient_id=p.id, procedure_id=proc.id, actor="t").accession
         pg = self.page()
         self.login(pg, "recep1", "Recepcao-2026")
         nav = pg.get_by_role("navigation", name="Navegação principal")
@@ -293,6 +294,14 @@ class WebE2E(unittest.TestCase):
         expect(row.get_by_role("cell", name="CR_SALA1")).to_be_visible()
         expect(row.get_by_role("cell", name="23:30")).to_be_visible()
         self.shot(pg, "10-agenda")
+        pg.get_by_role("button", name="Agendar exame").click()          # mesmo horário e estação: recusado
+        form = pg.get_by_role("form", name="Agendar exame")
+        form.get_by_label("Pedido").select_option(label=f"Carlos Agenda Sintetico — {acc2} — RX de tórax")
+        form.get_by_label("Data e hora").fill(f"{date.today().isoformat()}T23:40")
+        form.get_by_label("AE Title da estação").fill("CR_SALA1")
+        form.get_by_role("button", name="Confirmar agendamento").click()
+        expect(pg.get_by_text("Horário ocupado na estação CR_SALA1")).to_be_visible()
+        form.get_by_role("button", name="Cancelar").click()
         row.get_by_role("button", name="Iniciar").click()
         expect(row.get_by_role("cell", name="Em realização")).to_be_visible()
         row.get_by_role("button", name="Cancelar").click()

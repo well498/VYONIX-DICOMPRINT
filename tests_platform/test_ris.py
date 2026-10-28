@@ -63,6 +63,41 @@ class Scheduling(unittest.TestCase):
             self.assertEqual(s.get(Order, oid).status, "scheduled")
             self.assertEqual(len(audit.query(s, action="ris.schedule.create")), 1)
 
+    def test_no_overlap_on_same_station_or_room(self):
+        from vyonix.errors import Conflict, ValidationFailed
+        at = lambda h, m=0: datetime(2026, 11, 5, h, m, tzinfo=BRT)   # noqa: E731
+        orders = [make_order(self.t)[0] for _ in range(7)]
+        with db.session(self.t) as s:
+            first = self.ris.schedule(s, orders[0], scheduled_at=at(9), station_aet="TC_SALA1", room="Sala 1",
+                                      duration_min=30, actor="recep")
+        cases = [  # (início, estação, sala, duração, deve conflitar)
+            (at(9, 15), "TC_SALA1", None, 15, True),        # dentro do exame, mesma estação
+            (at(8, 45), None, "Sala 1", 30, True),          # termina depois do início, mesma sala
+            (at(9, 30), "TC_SALA1", "Sala 1", 15, False),   # começa quando o anterior termina
+            (at(8, 30), "TC_SALA1", None, 30, False),       # termina quando o primeiro começa
+            (at(9, 10), "TC_SALA2", "Sala 2", 15, False),   # outra estação e sala
+        ]
+        for i, (when, aet, room, dur, clash) in enumerate(cases, start=1):
+            with db.session(self.t) as s:
+                if clash:
+                    with self.assertRaises(Conflict, msg=str(when)) as cm:
+                        self.ris.schedule(s, orders[i], scheduled_at=when, station_aet=aet, room=room,
+                                          duration_min=dur, actor="recep")
+                    self.assertIn("09:00", str(cm.exception))
+                else:
+                    self.ris.schedule(s, orders[i], scheduled_at=when, station_aet=aet, room=room,
+                                      duration_min=dur, actor="recep")
+        with db.session(self.t) as s:                       # cancelado libera o horário
+            self.ris.set_status(s, first.id, "cancelled", reason="teste", actor="recep")
+            self.ris.schedule(s, orders[6], scheduled_at=at(9, 15), station_aet="TC_SALA1", duration_min=15,
+                              actor="recep")
+            with self.assertRaises(ValidationFailed):
+                self.ris.schedule(s, orders[6], scheduled_at=at(14), duration_min=0, actor="recep")
+        other = new_org(db)                                  # outra organização não interfere
+        o2, _, _ = make_order(other)
+        with db.session(other) as s:
+            self.ris.schedule(s, o2, scheduled_at=at(9, 30), station_aet="TC_SALA1", duration_min=15, actor="r")
+
     def test_validations(self):
         from vyonix.errors import Conflict, NotFound, ValidationFailed
         oid, _, _ = make_order(self.t)

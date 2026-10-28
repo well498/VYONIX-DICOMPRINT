@@ -23,6 +23,7 @@ class ScheduleIn(BaseModel):
     station_aet: str | None = Field(None, max_length=16)
     room: str | None = Field(None, max_length=64)
     description: str | None = Field(None, max_length=64)
+    duration_min: int = Field(15, ge=1, le=480)
 
 
 class StatusIn(BaseModel):
@@ -41,7 +42,8 @@ def create(body: ScheduleIn, c: Ctx = Depends(needs("ris.schedule.manage"))):
     with c.session() as s:
         _require(c, s)
         st = ris.schedule(s, body.order_id, scheduled_at=body.scheduled_at, modality=body.modality,
-                          station_aet=body.station_aet, room=body.room, description=body.description, **c.actor)
+                          station_aet=body.station_aet, room=body.room, description=body.description,
+                          duration_min=body.duration_min, **c.actor)
         return {"id": str(st.id), "sps_id": st.sps_id, "study_instance_uid": st.study_instance_uid,
                 "status": st.status}
 
