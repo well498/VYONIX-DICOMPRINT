@@ -24,6 +24,7 @@ export function UsersPage({ me }: { me: Me }) {
       actions={manage && <button className="primary" onClick={() => setCreating(true)}>Novo usuário</button>}>
       {act.view}
       <Notice kind="error">{users.error}</Notice>
+      {manage && <ProfilesPanel onChange={() => void roles.reload()} />}
       {creating && roles.data && sites.data && (
         <NewUser roles={roles.data} sites={sites.data} onClose={() => setCreating(false)}
           onSaved={() => { setCreating(false); void users.reload(); }} />
@@ -87,6 +88,7 @@ function GrantsInput({ roles, sites, value, onChange }: { roles: Role[]; sites: 
 function NewUser({ roles, sites, onClose, onSaved }: { roles: Role[]; sites: Site[]; onClose: () => void; onSaved: () => void }) {
   const [f, setF] = useState({ username: "", display_name: "", email: "", password: "", mfa_required: false });
   const [grants, setGrants] = useState<Grant[]>([{ role: "recepcionista", site_id: null }]);
+  const [avail, setAvail] = useState<boolean | null>(null);
   const act = useAction();
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -97,7 +99,9 @@ function NewUser({ roles, sites, onClose, onSaved }: { roles: Role[]; sites: Sit
       <h2>Novo usuário</h2>
       <div className="grid2">
         <Field label="Nome completo"><input value={f.display_name} onChange={(e) => setF({ ...f, display_name: e.target.value })} required /></Field>
-        <Field label="Usuário" hint="Sem espaços"><input value={f.username} onChange={(e) => setF({ ...f, username: e.target.value })} required /></Field>
+        <Field label="Usuário (login)" hint={avail === false ? "Este login já está em uso na plataforma: escolha outro." : avail ? "Login disponível." : "Sem espaços; único na plataforma VYONIX"}>
+          <input value={f.username} onChange={(e) => { setF({ ...f, username: e.target.value }); setAvail(null); }} required aria-invalid={avail === false}
+            onBlur={() => { if (f.username.trim()) get<{ available: boolean }>(`/users/login-available?login=${encodeURIComponent(f.username.trim())}`).then((r) => setAvail(r.available)).catch(() => setAvail(null)); }} /></Field>
         <Field label="E-mail"><input type="email" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} /></Field>
         <Field label="Senha provisória" hint="Trocada no primeiro acesso"><input type="password" value={f.password} onChange={(e) => setF({ ...f, password: e.target.value })} required autoComplete="new-password" /></Field>
       </div>
@@ -124,5 +128,36 @@ function RoleEditor({ user, roles, sites, onSaved }: { user: User; roles: Role[]
         <button onClick={() => setOpen(false)}>Cancelar</button>
       </div>
     </div>
+  );
+}
+
+type Templates = { templates: { code: string; name: string; description: string; active: boolean }[];
+  structures: { code: string; name: string; roles: string[] }[] };
+
+/** Perfis opcionais: a instituição ativa só os que usa (modelos personalizáveis depois). */
+function ProfilesPanel({ onChange }: { onChange: () => void }) {
+  const [open, setOpen] = useState(false);
+  const t = useLoad(async () => (open ? await get<Templates>("/role-templates") : null), [open]);
+  const act = useAction();
+  async function run(path: string, msg: string) {
+    await act.run(async () => { await post(path); await t.reload(); onChange(); }, msg);
+  }
+  return (
+    <section className="panel" aria-label="Perfis da instituição">
+      <div className="row-actions"><h2>Perfis da instituição</h2>
+        <button className="link" onClick={() => setOpen(!open)}>{open ? "Fechar" : "Modelos de perfil"}</button></div>
+      {open && <>
+        <p className="field-hint">Os perfis são sugestões: ative só os que a instituição usa. Um usuário pode ter várias funções; ninguém concede permissões que não possui.</p>
+        {act.view}
+        <div className="row-actions" role="group" aria-label="Estruturas sugeridas">
+          {(t.data?.structures ?? []).map((s) => <button key={s.code} onClick={() => void run(`/role-templates/structure/${s.code}`, `Perfis sugeridos para ${s.name} ativados.`)}>
+            {s.name}{s.roles.length ? "" : " (só os perfis básicos)"}</button>)}
+        </div>
+        <ul className="history">{(t.data?.templates ?? []).map((x) => (
+          <li key={x.code}><strong>{x.name}</strong> — {x.description} {x.active ? <span className="tag">ativo</span>
+            : <button className="link" onClick={() => void run(`/role-templates/${x.code}/activate`, `Perfil ${x.name} ativado.`)}>Ativar</button>}</li>))}
+        </ul>
+      </>}
+    </section>
   );
 }

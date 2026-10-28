@@ -87,4 +87,4 @@ Decisões desta auditoria:
 | 28/10 | 2 | Painel do técnico (`/ris/technician-panel`, página própria): exames do dia, recebidos no PACS, recusas na recepção DICOM, pendências de qualidade; técnico registra chegada/início/conclusão (`ris.exam.perform`), não agenda, não cancela, não libera laudos | `test_ris_technician.py`; e2e `test_5` |
 
 Pendências da Fase 2: reenvio de estudo a uma estação DICOM cadastrada e "encaminhar para a fila de laudos"
-pelo técnico; interface de gestão de modelos de perfil na tela de Usuários.
+pelo técnico; (feito em seguida: painel "Perfis da instituição" e conferência do login na tela de Usuários).

@@ -132,6 +132,17 @@ class WebE2E(unittest.TestCase):
             form.get_by_role("button", name="Criar usuário").click()
             expect(pg.get_by_role("cell", name=user)).to_be_visible()
         self.shot(pg, "02-usuarios")
+        prof = pg.get_by_role("region", name="Perfis da instituição")            # perfis opcionais
+        prof.get_by_role("button", name="Modelos de perfil").click()
+        prof.get_by_role("listitem").filter(has_text="Coordenador do CDI").get_by_role("button", name="Ativar").click()
+        expect(prof.get_by_text("Perfil Coordenador do CDI ativado.")).to_be_visible()
+        pg.get_by_role("button", name="Novo usuário").click()
+        form = pg.get_by_role("form", name="Novo usuário")
+        form.get_by_label("Usuário (login)").fill("tecnico1")
+        form.get_by_label("Nome completo").click()                             # sai do campo: confere o login
+        expect(form.get_by_text("Este login já está em uso na plataforma")).to_be_visible()
+        expect(form.get_by_label("Papel").locator("option", has_text="Coordenador do CDI")).to_have_count(1)
+        form.get_by_role("button", name="Cancelar").click()
 
         # pedido de demonstração (painel comercial)
         nav.get_by_role("link", name="Contratar e demonstrar").click()
