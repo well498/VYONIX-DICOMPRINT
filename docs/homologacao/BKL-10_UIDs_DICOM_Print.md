@@ -133,3 +133,10 @@ identificação do paciente, que hoje não existe no Print.
 **Identificadores separados (fora do BKL-10).** O Implementation Class UID da associação e do File Meta vem das
 bibliotecas (raízes do pynetdicom e do pydicom). A recomendação está em `Recomendacao_Raiz_UID_VYONIX.md` e a
 troca precisa de aprovação própria.
+
+## 9. Merge
+
+O merge `215d83f` entrou em `develop` em 27/10/2026.
+
+Reversão: `git revert -m 1 215d83f` e depois um push. Não há dados a desfazer. Os UIDs `2.25` já gerados em testes
+continuam válidos.
