@@ -245,6 +245,14 @@ própria do fornecedor ou `2.25`, numa revisão futura do Print, com aprovação
 | RIS/Viewer: exame com imagens recebidas abre no Viewer pela Agenda | `d24e022` | e2e agendamento → PACS → recebido → link |
 | DEPLOY: diagnóstico aponta backup do PACS ausente, com falha, atrasado ou sem espaço | `6d1ce2b` | `test_diagnose_reports_pacs_backup` |
 
+| RIS: check-in (ARRIVED) e situação do passo na MWL | `96470f0` | `test_check_in_keeps_worklist_and_updates_order`; e2e |
+| PACS/RIS: tela Estações DICOM; escolha da estação no agendamento | `d76a54b` | e2e `test_6_dicom_stations`; `test_stations_for_scheduling` |
+
+**CI após o merge do BKL-10:** `7c39c4c` — UI Windows (40610705126), deploy-windows **28/0/1** (40610705105) e Windows
+release (40610705173, release `v1.0.0-r5` não substituída) aprovados; platform 40610705143 com 162 testes e 0 falhas,
+mas 1 pulado (falta de numpy, corrigido em `a71acde`). `96470f0` — platform **167 testes, 0 pulados** (40614419360),
+viewer **5/5** (40614419201), deploy-windows **28/0/1** (40614419271), Windows release (40614419238) aprovados.
+
 **Pendências:** ensaios no laboratório da correção BKL-10 (modalidades de teste e impressora física) antes de uma
 nova versão de laboratório; troca do Implementation Class UID (aprovação própria, após raiz VYONIX); imagem do Print
 sem Patient ID não entra no PACS (por projeto; encaminhamento futuro exige identificação); salas/recursos cadastrados,
