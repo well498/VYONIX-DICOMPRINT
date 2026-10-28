@@ -227,6 +227,7 @@ class WebE2E(unittest.TestCase):
         amended = self.lm.amend_modules(self.lm_admin, self.license_id,
                                         {"core": {"kind": "demo", "days": 15}, "ris": {"kind": "demo", "days": 15},
                                          "pacs": {"kind": "demo", "days": 15}}, reason="teste do PACS")
+        type(self).license_id = amended["license_id"]
         with db.session(self.tenant) as s:
             self.plat.licensing.install(s, amended["document"], actor="admin")
             registry.enable(s, "pacs", actor="admin", license_check=self.plat.licensing.module_ok)
@@ -384,6 +385,85 @@ class WebE2E(unittest.TestCase):
         from vyonix.audit import service as audit
         with db.session(self.tenant) as s:
             self.assertEqual(len(audit.query(s, action="pacs.node.remove")), 1)
+
+    def test_7_report_flow(self):
+        """Laudos (REPORT): médico cria rascunho a partir de modelo, senha errada não libera, libera com a senha,
+        registra adendo; o texto liberado não é editável."""
+        import uuid
+        from datetime import date
+        from playwright.sync_api import expect
+        from vyonix.clinical import service as clinical
+        from vyonix.modules import registry
+        from vyonix.report import service as rep
+        amended = self.lm.amend_modules(self.lm_admin, self.license_id,
+                                        {"core": {"kind": "demo", "days": 15}, "ris": {"kind": "demo", "days": 15},
+                                         "pacs": {"kind": "demo", "days": 15}, "report": {"kind": "demo", "days": 15}},
+                                        reason="teste do REPORT")
+        with db.session(self.tenant) as s:
+            self.plat.licensing.install(s, amended["document"], actor="admin")
+            registry.enable(s, "report", actor="admin", license_check=self.plat.licensing.module_ok)
+            p = clinical.create_patient(s, name="Helena Laudo Sintetica", birth_date=date(1980, 1, 1), sex="F",
+                                        identifiers=[("DICOM", "LD-777")], actor="t")
+            o = clinical.create_order(s, patient_id=p.id, actor="t")
+            st = clinical.register_study(s, study_instance_uid=f"2.25.{uuid.uuid4().int}", accession=o.accession,
+                                         modality="MR", study_date=date(2026, 10, 27), description="RM de joelho",
+                                         actor="t")
+            clinical.reconcile(s, st.id, o.id, actor="t")
+            rep.save_template(s, name="RM normal", modality="MR", body="Técnica: sequências padrão.\nAchados: ",
+                              actor="t")
+        pg = self.page()
+        self.login(pg, "admin", ADMIN_PW)
+        nav = pg.get_by_role("navigation", name="Navegação principal")
+        nav.get_by_role("link", name="Usuários e papéis").click()
+        pg.get_by_role("button", name="Novo usuário").click()
+        form = pg.get_by_role("form", name="Novo usuário")
+        form.get_by_label("Nome completo").fill("Marta Médica")
+        form.get_by_label("Usuário").fill("medica1")
+        form.get_by_label("Senha provisória").fill("Provisoria-123")
+        form.get_by_label("Papel").select_option(label="Médico")
+        form.get_by_role("button", name="Criar usuário").click()
+        expect(pg.get_by_role("cell", name="medica1")).to_be_visible()
+        pg = self.page()
+        self.login(pg, "medica1", "Provisoria-123")
+        pg.get_by_label("Senha atual").fill("Provisoria-123")
+        pg.get_by_label("Nova senha", exact=True).fill("Medica-2026xy")
+        pg.get_by_label("Repita a nova senha").fill("Medica-2026xy")
+        pg.get_by_role("button", name="Salvar senha").click()
+        nav = pg.get_by_role("navigation", name="Navegação principal")
+        nav.get_by_role("link", name="Laudos").click()
+        row = pg.get_by_role("row", name="Helena Laudo Sintetica")
+        expect(row.get_by_role("cell", name="Sem laudo")).to_be_visible()
+        row.get_by_role("button", name="Laudar").click()
+        editor = pg.get_by_role("region", name="Laudo")
+        editor.get_by_label("Modelo").select_option(label="RM normal")
+        editor.get_by_role("button", name="Iniciar laudo").click()
+        text = editor.get_by_label("Texto do laudo")
+        expect(text).to_have_value("Técnica: sequências padrão.\nAchados: ")
+        text.fill("Técnica: sequências padrão.\nAchados: sem alterações significativas.\nConclusão: exame normal.")
+        editor.get_by_role("button", name="Salvar rascunho").click()
+        expect(editor.get_by_text("Rascunho salvo.")).to_be_visible()
+        sign = editor.get_by_role("form", name="Liberar laudo")
+        sign.get_by_label("Sua senha para liberar").fill("senha-errada")
+        sign.get_by_role("button", name="Liberar laudo").click()
+        expect(editor.get_by_text("Senha incorreta: o laudo não foi liberado.")).to_be_visible()
+        sign.get_by_label("Sua senha para liberar").fill("Medica-2026xy")
+        sign.get_by_role("button", name="Liberar laudo").click()
+        expect(editor.get_by_text("Laudo liberado.")).to_be_visible()
+        v1 = editor.get_by_role("article", name="Versão 1")
+        expect(v1.get_by_text("Conclusão: exame normal.")).to_be_visible()
+        expect(v1.get_by_text("Marta Médica")).to_be_visible()
+        expect(editor.get_by_label("Texto do laudo")).to_have_count(0)                  # não editável
+        add = editor.get_by_role("form", name="Registrar adendo")
+        add.get_by_label("Adendo", exact=True).fill("Adendo: correlacionar com a clínica.")
+        add.get_by_label("Sua senha para o adendo").fill("Medica-2026xy")
+        add.get_by_role("button", name="Registrar adendo").click()
+        expect(editor.get_by_role("article", name="Versão 2")).to_be_visible()
+        self.shot(pg, "12-laudo-liberado")
+        with db.session(self.tenant) as s:
+            from vyonix.report.models import Report
+            r = s.query(Report).filter(Report.study_id == st.id).one()
+            self.assertEqual((r.status, r.version), ("final", 2))
+            self.assertTrue(rep.verify(s, r.id)["valid"])
 
     def plat_client_get(self, user, pw, path):
         import httpx

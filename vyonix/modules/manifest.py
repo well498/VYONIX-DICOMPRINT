@@ -135,11 +135,19 @@ RIS = ModuleManifest(
     publishes=("ris.schedule.created.v1",), consumes=("pacs.study.received.v1",),
 )
 
+REPORT = ModuleManifest(
+    code="report", name="VYONIX REPORT", version="0.1.0", depends=("core",),
+    description="Laudos com modelos, rascunho, liberação com confirmação de senha, versões imutáveis e adendos "
+                "(primeira entrega; não é assinatura digital ICP-Brasil). Não liberado para uso clínico.",
+    permissions={"report.read": "Consultar laudos", "report.write": "Redigir laudos (rascunho)",
+                 "report.sign": "Liberar laudos e registrar adendos", "report.templates.manage": "Gerenciar modelos"},
+    publishes=("report.finalized.v1", "report.amended.v1", "report.critical.v1"),
+)
+
 _PLANNED = [
     ("edge", "VYONIX EDGE", "Agente local: descoberta, sincronização e operação offline."),
     ("cloud", "VYONIX CLOUD", "Ambiente central multi-clínica."),
     ("viewer", "VYONIX VIEWER", "Visualização web de imagens."),
-    ("report", "VYONIX REPORT", "Laudos e modelos."),
     ("patient", "VYONIX PATIENT", "Portal do paciente."),
     ("notify", "VYONIX NOTIFY", "Mensagens e avisos."),
     ("flow", "VYONIX FLOW", "Regras e automações."),
@@ -149,7 +157,7 @@ _PLANNED = [
 PLANNED = [ModuleManifest(code=c, name=n, version="planejado", description=d, depends=("core",), available=False)
            for c, n, d in _PLANNED]
 
-MANIFESTS: dict[str, ModuleManifest] = {m.code: m for m in [CORE, CLINICAL, PRINT, PACS, RIS, *PLANNED]}
+MANIFESTS: dict[str, ModuleManifest] = {m.code: m for m in [CORE, CLINICAL, PRINT, PACS, RIS, REPORT, *PLANNED]}
 LICENSABLE = tuple(m.code for m in MANIFESTS.values() if m.requires_license)
 
 
@@ -160,7 +168,9 @@ def all_permissions() -> dict[str, tuple[str, str]]:
 DEFAULT_ROLES: dict[str, tuple[str, list[str]]] = {
     "administrador": ("Administrador", ["*"]),
     "supervisor": ("Supervisor", ["core.users.read", "core.settings.read", "core.audit.read", "core.license.read",
-                                  "clinical.*", "print.*", "pacs.*", "ris.*"]),
+                                  "clinical.*", "print.*", "pacs.*", "ris.*", "report.read"]),
+    "medico": ("Médico", ["core.license.read", "clinical.patients.read", "clinical.orders.read",
+                          "clinical.studies.read", "pacs.studies.read", "ris.schedule.read", "report.*"]),
     "tecnico": ("Técnico", ["core.license.read", "clinical.patients.read", "clinical.orders.read",
                             "clinical.studies.read", "clinical.studies.reconcile", "print.jobs.read",
                             "print.jobs.manage", "pacs.studies.read", "pacs.studies.store", "ris.schedule.read"]),

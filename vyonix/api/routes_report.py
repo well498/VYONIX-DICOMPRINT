@@ -1,0 +1,140 @@
+"""REPORT: laudos e modelos (primeira entrega). Redigir e liberar exige o módulo habilitado e licenciado; consultar
+laudos existentes não depende de licença vigente (como os estudos do PACS)."""
+
+from __future__ import annotations
+
+import uuid
+from datetime import date
+
+from fastapi import APIRouter, Depends
+from pydantic import BaseModel, Field
+
+from vyonix.api.app import Ctx, needs
+from vyonix.auth import service as auth
+from vyonix.errors import Forbidden, NotLicensed
+from vyonix.modules import registry
+from vyonix.report import service as rep
+
+router = APIRouter(prefix="/report")
+
+
+def _require(c: Ctx, s) -> None:
+    if not registry.is_enabled(s, "report"):
+        raise NotLicensed("O módulo VYONIX REPORT não está habilitado nesta organização.", code="module_disabled")
+    c.plat.licensing.require_module(s, "report")
+
+
+class OpenIn(BaseModel):
+    study_id: uuid.UUID
+    template_id: uuid.UUID | None = None
+
+
+class DraftIn(BaseModel):
+    body: str = Field("", max_length=rep.MAX_BODY)
+    critical: bool = False
+    critical_note: str | None = Field(None, max_length=300)
+    row_version: int | None = None
+
+
+class SignIn(BaseModel):
+    password: str = Field(min_length=1, max_length=200)
+    row_version: int | None = None
+
+
+class AddendumIn(BaseModel):
+    text: str = Field(min_length=1, max_length=rep.MAX_BODY)
+    critical: bool = False
+    password: str = Field(min_length=1, max_length=200)
+
+
+class TemplateIn(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    body: str = Field("", max_length=rep.MAX_BODY)
+    modality: str | None = Field(None, max_length=16)
+    active: bool = True
+
+
+@router.get("/worklist")
+def worklist(status: str | None = None, modality: str | None = None, date_from: date | None = None,
+             date_to: date | None = None, c: Ctx = Depends(needs("report.read"))):
+    with c.session() as s:
+        return {"items": rep.worklist(s, status=status, modality=modality, date_from=date_from, date_to=date_to)}
+
+
+@router.post("/reports", status_code=201)
+def open_report(body: OpenIn, c: Ctx = Depends(needs("report.write"))):
+    with c.session() as s:
+        _require(c, s)
+        r = rep.open_report(s, body.study_id, template_id=body.template_id, **c.actor)
+        return rep.get(s, r.id)
+
+
+@router.get("/reports/{rid}")
+def get_report(rid: uuid.UUID, c: Ctx = Depends(needs("report.read"))):
+    with c.session() as s:
+        return rep.get(s, rid)
+
+
+@router.put("/reports/{rid}")
+def save_draft(rid: uuid.UUID, body: DraftIn, c: Ctx = Depends(needs("report.write"))):
+    with c.session() as s:
+        _require(c, s)
+        rep.update_draft(s, rid, body=body.body, critical=body.critical, critical_note=body.critical_note,
+                         expected_version=body.row_version, **c.actor)
+        return rep.get(s, rid)
+
+
+@router.post("/reports/{rid}/finalize")
+def finalize(rid: uuid.UUID, body: SignIn, c: Ctx = Depends(needs("report.sign"))):
+    with c.session() as s:
+        _require(c, s)
+    with c.session() as s:                         # tentativa falha fica registrada mesmo sem liberar
+        ok = auth.confirm_password(s, c.p, body.password, purpose="report.finalize", ip=c.ip)
+    if not ok:
+        raise Forbidden("Senha incorreta: o laudo não foi liberado.", code="password_mismatch")
+    with c.session() as s:
+        rep.finalize(s, rid, expected_version=body.row_version, actor=c.p.display_name or c.p.username,
+                     actor_id=c.p.user_id, ip=c.ip)
+        return rep.get(s, rid)
+
+
+@router.post("/reports/{rid}/addenda", status_code=201)
+def add_addendum(rid: uuid.UUID, body: AddendumIn, c: Ctx = Depends(needs("report.sign"))):
+    with c.session() as s:
+        _require(c, s)
+    with c.session() as s:
+        ok = auth.confirm_password(s, c.p, body.password, purpose="report.addendum", ip=c.ip)
+    if not ok:
+        raise Forbidden("Senha incorreta: o adendo não foi registrado.", code="password_mismatch")
+    with c.session() as s:
+        rep.addendum(s, rid, body.text, critical=body.critical, actor=c.p.display_name or c.p.username,
+                     actor_id=c.p.user_id, ip=c.ip)
+        return rep.get(s, rid)
+
+
+@router.get("/reports/{rid}/verify")
+def verify(rid: uuid.UUID, c: Ctx = Depends(needs("report.read"))):
+    with c.session() as s:
+        return rep.verify(s, rid)
+
+
+@router.get("/templates")
+def list_templates(modality: str | None = None, include_inactive: bool = False,
+                   c: Ctx = Depends(needs("report.read"))):
+    with c.session() as s:
+        return {"items": rep.templates(s, modality=modality, include_inactive=include_inactive)}
+
+
+@router.post("/templates", status_code=201)
+def create_template(body: TemplateIn, c: Ctx = Depends(needs("report.templates.manage"))):
+    with c.session() as s:
+        t = rep.save_template(s, name=body.name, body=body.body, modality=body.modality, active=body.active, **c.actor)
+        return {"id": str(t.id)}
+
+
+@router.put("/templates/{tid}")
+def update_template(tid: uuid.UUID, body: TemplateIn, c: Ctx = Depends(needs("report.templates.manage"))):
+    with c.session() as s:
+        t = rep.save_template(s, template_id=tid, name=body.name, body=body.body, modality=body.modality,
+                              active=body.active, **c.actor)
+        return {"id": str(t.id)}

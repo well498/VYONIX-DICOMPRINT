@@ -125,11 +125,11 @@ class Api(unittest.TestCase):
         self.assertEqual(r.status_code, 402)
         mods = {m["code"]: m for m in c.get("/api/v1/modules").json()}
         self.assertTrue(mods["print"]["licensed"])
-        self.assertFalse(mods["report"]["available"])                   # planejado
+        self.assertFalse(mods["notify"]["available"])                   # planejado
         self.assertTrue(mods["pacs"]["available"])
         self.assertFalse(mods["pacs"]["licensed"])
         self.assertEqual(c.post("/api/v1/modules/print/enable").status_code, 200)
-        self.assertEqual(c.post("/api/v1/modules/report/enable").status_code, 422)
+        self.assertEqual(c.post("/api/v1/modules/notify/enable").status_code, 422)
         self.assertEqual(c.post("/api/v1/modules/pacs/enable").status_code, 402)     # entregue, sem licença
         bad = c.post("/api/v1/license/install", json={"document": lic["document"][:-30] + "x" * 30})
         self.assertEqual(bad.status_code, 422)

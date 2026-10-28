@@ -277,6 +277,12 @@ check-in e MPPS no RIS.
 | RIS: situação informada pela modalidade (MPPS) na Agenda | `82a5e0e` | `test_mpps_in_progress_completed_and_rules` |
 | PACS: verificação contínua da integridade do armazenamento (Worker, lotes com cursor, só registra; monitoramento “falha”) | `26945f5` | `test_pacs_integrity_task.py` 2/2; platform **174/0/0** (40673396971), viewer 5/5 (40673396856) |
 
+| **VYONIX REPORT — primeira entrega**: modelos, rascunho, liberação com confirmação de senha, versões imutáveis (SHA-256; banco sem UPDATE/DELETE para a aplicação), adendos, achado crítico (evento), verificação, papel Médico, tela Laudos | (este commit) | `test_report.py` 4/4; e2e 7/7; platform 146 local |
+
+**Decisão pendente do proprietário (REPORT):** assinatura digital do laudo (ICP-Brasil: certificado A1/A3, padrão
+PAdES/CAdES, carimbo de tempo). Até lá a liberação é por confirmação de senha, registrada e verificável, e a tela
+informa que não é assinatura digital.
+
 **Instabilidade conhecida:** o processo do pytest no Windows às vezes termina com `0xC0000409` depois de todos os
 testes aprovados (encerramento do interpretador). A Windows release registra aviso quando o JUnit está limpo e
 continua reprovando qualquer falha ou erro de teste. Investigar a origem (Qt/threads no encerramento).

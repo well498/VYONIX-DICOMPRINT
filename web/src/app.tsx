@@ -7,6 +7,7 @@ import { Dashboard } from "./pages/dashboard";
 import { ImagesPage } from "./pages/images";
 import { LicensePage } from "./pages/license";
 import { PatientsPage } from "./pages/patients";
+import { ReportsPage } from "./pages/reports";
 import { SchedulePage } from "./pages/schedule";
 import { SettingsPage } from "./pages/settings";
 import { SitesPage } from "./pages/sites";
@@ -19,6 +20,7 @@ const ROUTES: Route[] = [
   { id: "inicio", label: "Início", view: (me) => <Dashboard me={me} /> },
   { id: "pacientes", label: "Pacientes", perm: "clinical.patients.read", view: (me) => <PatientsPage me={me} /> },
   { id: "agenda", label: "Agenda", perm: "ris.schedule.read", view: (me) => <SchedulePage me={me} /> },
+  { id: "laudos", label: "Laudos", perm: "report.read", view: (me) => <ReportsPage me={me} /> },
   { id: "imagens", label: "Imagens", perm: "pacs.studies.read", view: (me) => <ImagesPage me={me} /> },
   { id: "estacoes", label: "Estações DICOM", perm: "pacs.admin", view: (me) => <StationsPage me={me} /> },
   { id: "usuarios", label: "Usuários e papéis", perm: "core.users.read", view: (me) => <UsersPage me={me} /> },

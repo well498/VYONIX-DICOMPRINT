@@ -324,7 +324,7 @@ class SettingsAndModules(unittest.TestCase):
                 registry.enable(s, "print", actor="t", license_check=no)
         with self.assertRaises(ValidationFailed):
             with db.session(self.t) as s:
-                registry.enable(s, "report", actor="t", license_check=yes)    # planejado
+                registry.enable(s, "notify", actor="t", license_check=yes)    # planejado
         with self.assertRaises(ValidationFailed):
             with db.session(self.t) as s:
                 registry.disable(s, "core", actor="t")

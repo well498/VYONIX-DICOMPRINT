@@ -158,3 +158,5 @@ tr.detail-row table { margin-top: .5rem; }
 .filters.filters-grid .check { grid-column: 1 / -1; }
 td.nowrap { white-space: nowrap; }
 th.num, td.num { text-align: right; }
+.report-text { white-space: pre-wrap; font-family: inherit; margin: .5rem 0; }
+.panel textarea { width: 100%; font-family: inherit; font-size: .95rem; line-height: 1.5; }

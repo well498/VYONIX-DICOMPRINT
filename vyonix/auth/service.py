@@ -390,6 +390,17 @@ def logout(s: Session, p: Principal, ip: str | None = None) -> None:
                      target_id=ses.id, ip=ip)
 
 
+def confirm_password(s: Session, p: Principal, password: str, *, purpose: str, ip: str | None = None) -> bool:
+    """Confirmação de identidade no ato (ex.: liberar laudo). Falha fica na auditoria (a sessão precisa ser
+    confirmada pelo chamador antes de recusar a operação)."""
+    u = s.get(User, p.user_id)
+    if u is None or not password or not passwords.check_password(password, u.pw_hash):
+        audit.record(s, actor=p.username, actor_id=p.user_id, action="auth.confirm_failed", ip=ip,
+                     details={"purpose": purpose})
+        return False
+    return True
+
+
 def change_password(s: Session, p: Principal, current: str, new: str, ip: str | None = None) -> None:
     u = s.get(User, p.user_id)
     if not passwords.check_password(current, u.pw_hash):
