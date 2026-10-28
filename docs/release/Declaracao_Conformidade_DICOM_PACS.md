@@ -68,11 +68,11 @@ mesmas validações do STOW-RS (seção 4.1):
   feita pelo DEPLOY. Instâncias recusadas na
 indexação ficam no motor, mas **não** aparecem na pesquisa nem na recuperação e a recusa é auditada.
 
-### 3.4 Consulta/recuperação pelo Core (C-FIND / C-MOVE)
+### 3.4 Consulta/recuperação pelo Core (C-FIND / C-MOVE / C-GET)
 
 | AE | AE Title | Porta | Classes SOP |
 |---|---|---|---|
-| Consulta/recuperação | `VYONIX_QR` (modo cloud: o AE Title roteado da organização) | 4243 (configurável: `pacs_qr_port`) | Verification `1.2.840.10008.1.1`; Study Root Q/R FIND `1.2.840.10008.5.1.4.1.2.2.1`; Study Root Q/R MOVE `1.2.840.10008.5.1.4.1.2.2.2` |
+| Consulta/recuperação | `VYONIX_QR` (modo cloud: o AE Title roteado da organização) | 4243 (configurável: `pacs_qr_port`) | Verification `1.2.840.10008.1.1`; Study Root Q/R FIND `1.2.840.10008.5.1.4.1.2.2.1`; Study Root Q/R MOVE `1.2.840.10008.5.1.4.1.2.2.2`; Study Root Q/R GET `1.2.840.10008.5.1.4.1.2.2.3` (com as classes de armazenamento padrão do pynetdicom em papel SCU, por negociação SCP/SCU) |
 
 * **Associação:** aceita só de nós DICOM cadastrados pela organização com permissão de consultar (`/api/v1/pacs/nodes`,
   permissão `pacs.admin`); se o nó tiver IP cadastrado, o endereço precisa conferir. AE desconhecido, IP divergente,
@@ -83,8 +83,12 @@ indexação ficam no motor, mas **não** aparecem na pesquisa nem na recuperaç�
 * **C-MOVE:** níveis STUDY, SERIES e IMAGE, só para destinos da mesma organização cadastrados para receber (IP e
   porta); destino desconhecido: `0xA801`. Arquivos enviados na sintaxe de transferência original, sem recompressão,
   com o SHA-256 conferido (divergência: instância não enviada e contada como falha).
+* **C-GET:** níveis STUDY, SERIES e IMAGE; as instâncias voltam na própria associação, só se o nó solicitante também
+  estiver cadastrado com permissão de **receber** (sem ela: `0xC002`, nada enviado). O solicitante precisa propor as
+  classes de armazenamento com o papel SCP (SCP/SCU Role Selection). Mesma sintaxe original e mesma conferência do
+  SHA-256 do C-MOVE.
 * **Auditoria:** cada consulta (nível, AE, quantidade — sem dados do paciente) e cada envio (destino, quantidades,
-  falhas de integridade); o envio também registra a abertura do estudo (finalidade `dimse-move`).
+  falhas de integridade); o envio também registra a abertura do estudo (finalidade `dimse-move` ou `dimse-get`).
 
 ### 3.5 Modality Worklist (módulo VYONIX RIS)
 

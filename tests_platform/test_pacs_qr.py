@@ -195,6 +195,53 @@ class QREdge(QRBase):
         self.assertEqual(moves[0].details["sent"], 2)
         self.assertTrue(any(e.details.get("purpose") == "dimse-move" for e in self.audit("pacs.study.open")))
 
+    def get_assoc(self, calling):
+        from pynetdicom import AE, build_role, evt
+        from pynetdicom.sop_class import CTImageStorage, MRImageStorage, StudyRootQueryRetrieveInformationModelGet
+        got: dict[str, bytes] = {}
+
+        def store(event):
+            got[str(event.dataset.SOPInstanceUID)] = bytes(event.dataset.PixelData)
+            return 0x0000
+        ae = AE(ae_title=calling)
+        ae.add_requested_context(StudyRootQueryRetrieveInformationModelGet)
+        roles = []
+        for c in (CTImageStorage, MRImageStorage):
+            ae.add_requested_context(c)
+            roles.append(build_role(c, scp_role=True))
+        a = ae.associate("127.0.0.1", self.port, ae_title="VYONIX_QR", ext_neg=roles,
+                         evt_handlers=[(evt.EVT_C_STORE, store)])
+        return a, got
+
+    def test_get_only_for_node_allowed_to_receive(self):
+        from pynetdicom.sop_class import StudyRootQueryRetrieveInformationModelGet as GET
+        self.node("SOCONSULTA", host="127.0.0.1")                      # pode consultar, não pode receber
+        a, got = self.get_assoc("SOCONSULTA")
+        try:
+            st = [s.Status for s, _ in a.send_c_get(self.query("STUDY", StudyInstanceUID=uid(1)), GET) if s]
+        finally:
+            a.release()
+        self.assertNotEqual(st[-1], 0x0000)
+        self.assertEqual(got, {})
+        self.node("VIEWER_GET", host="127.0.0.1", port=11112, can_receive=True)
+        a, got = self.get_assoc("VIEWER_GET")
+        try:
+            st = [s.Status for s, _ in a.send_c_get(self.query("STUDY", StudyInstanceUID=uid(1)), GET) if s]
+            self.assertEqual(st[-1], 0x0000)
+            st = [s.Status for s, _ in a.send_c_get(self.query("IMAGE", StudyInstanceUID=uid(1),
+                  SeriesInstanceUID=uid(1, 1), SOPInstanceUID=uid(1, 1, 2)), GET) if s]
+            self.assertEqual(st[-1], 0x0000)
+        finally:
+            a.release()
+        from pydicom import dcmread
+        import io
+        self.assertEqual(sorted(got), sorted(self.data))
+        for sop, data in self.data.items():
+            self.assertEqual(got[sop], bytes(dcmread(io.BytesIO(data)).PixelData))
+        gets = self.audit("pacs.qr.get")
+        self.assertEqual(sorted(e.details["sent"] for e in gets), [1, 2])
+        self.assertTrue(any(e.details.get("purpose") == "dimse-get" for e in self.audit("pacs.study.open")))
+
     def test_corrupted_file_in_engine_is_not_sent(self):
         from pynetdicom.sop_class import StudyRootQueryRetrieveInformationModelMove as MOVE
         self.node("ESTACAO", host="127.0.0.1")
@@ -210,6 +257,15 @@ class QREdge(QRBase):
             a.release()
         self.assertEqual(sorted(rx.received), [uid(1, 1, 2)])
         self.assertEqual(self.audit("pacs.qr.move")[0].details["integrity_failures"], 1)
+        from pynetdicom.sop_class import StudyRootQueryRetrieveInformationModelGet as GET
+        self.node("VIEWER_GET", host="127.0.0.1", port=11112, can_receive=True)
+        a, got = self.get_assoc("VIEWER_GET")                          # C-GET: mesma conferência
+        try:
+            list(a.send_c_get(self.query("STUDY", StudyInstanceUID=uid(1)), GET))
+        finally:
+            a.release()
+        self.assertEqual(sorted(got), [uid(1, 1, 2)])
+        self.assertEqual(self.audit("pacs.qr.get")[0].details["integrity_failures"], 1)
 
     def test_node_validation(self):
         from vyonix.errors import Conflict, ValidationFailed
