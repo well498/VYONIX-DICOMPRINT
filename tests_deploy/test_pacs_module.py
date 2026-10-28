@@ -86,6 +86,33 @@ class PacsModuleTest(unittest.TestCase):
         st.rollback(self.ctx, before)
         self.assertNotIn("pacs_orthanc_url", json.loads(f.read_text(encoding="utf-8")))
 
+    def test_backup_settings_default_custom_and_validation(self):
+        from vyonix_deploy.errors import DeployError
+        from vyonix_deploy.steps import pacs
+        from vyonix_deploy.steps.core import core_config
+        f = self.paths.data_dir / "config.json"
+        f.write_text(json.dumps(core_config(self.ctx)), encoding="utf-8")
+        pacs.CoreSettingsStep().apply(self.ctx)
+        cur = json.loads(f.read_text(encoding="utf-8"))
+        self.assertEqual(cur["pacs_backup_dir"], str(self.paths.backups / "PACS"))
+        self.assertEqual(cur["pacs_backup_hour"], 2)
+        self.assertEqual(core_config(self.ctx)["pacs_backup_dir"], cur["pacs_backup_dir"])   # sobrevive ao reparo
+        self.ctx.cfg = DeployConfig.from_dict({"organization": "clinica-x", "pacs_backup_dir": r"E:\\VYONIX-Backup",
+                                                "pacs_backup_hour": 23})
+        st = pacs.CoreSettingsStep()
+        self.assertFalse(st.check(self.ctx))
+        st.apply(self.ctx)
+        cur = json.loads(f.read_text(encoding="utf-8"))
+        self.assertEqual((cur["pacs_backup_dir"], cur["pacs_backup_hour"]), (r"E:\\VYONIX-Backup", 23))
+        with self.assertRaises(DeployError):
+            DeployConfig(pacs_backup_hour=24).validate()
+        steps = {s.id: s for s in pacs.engine_steps(self.ctx)}
+        acl = steps["acl.pacs.backup"]
+        self.assertEqual(sorted(a for a, _ in acl.grants)[-1], "NT SERVICE\\VyonixWorker")
+        self.assertNotIn("Everyone", str(acl.grants))
+        ids = list(steps)
+        self.assertLess(ids.index("dir.pacs.backup"), ids.index("acl.pacs.backup"))
+
     def test_activation_plan_order(self):
         from vyonix_deploy.modules import activation_steps
         ids = [s.id for s in activation_steps(self.ctx, "pacs")]

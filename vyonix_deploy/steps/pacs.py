@@ -62,9 +62,16 @@ def engine_config(ctx: Context, password: str) -> dict:
     }
 
 
-def core_settings() -> dict:
-    return {"pacs_orthanc_url": f"http://127.0.0.1:{HTTP_PORT}", "pacs_orthanc_username": USER,
-            "pacs_qr_port": QR_PORT, "pacs_qr_aet": QR_AET}
+def backup_dir(ctx: Context) -> Path:
+    return Path(ctx.cfg.pacs_backup_dir) if ctx.cfg.pacs_backup_dir else ctx.paths.backups / "PACS"
+
+
+def core_settings(ctx: Context | None = None) -> dict:
+    out = {"pacs_orthanc_url": f"http://127.0.0.1:{HTTP_PORT}", "pacs_orthanc_username": USER,
+           "pacs_qr_port": QR_PORT, "pacs_qr_aet": QR_AET}
+    if ctx is not None:      # backup diário feito pelo VyonixWorker (vyonix/pacs/backup_task.py)
+        out |= {"pacs_backup_dir": str(backup_dir(ctx)), "pacs_backup_hour": int(ctx.cfg.pacs_backup_hour)}
+    return out
 
 
 class EngineConfigStep(Step):
@@ -138,10 +145,10 @@ class CoreSettingsStep(Step):
             cur = json.loads(self._file(ctx).read_text(encoding="utf-8"))
         except (OSError, ValueError):
             return {"config_file": False}
-        return {"config_file": True, **{k: cur.get(k) for k in core_settings()}}
+        return {"config_file": True, **{k: cur.get(k) for k in core_settings(ctx)}}
 
     def desired(self, ctx: Context) -> dict:
-        return {"config_file": True, **core_settings()}
+        return {"config_file": True, **core_settings(ctx)}
 
     def check(self, ctx: Context) -> bool:
         return self.observe(ctx) == self.desired(ctx)
@@ -155,7 +162,7 @@ class CoreSettingsStep(Step):
             cur = json.loads(f.read_text(encoding="utf-8"))
         except (OSError, ValueError) as exc:
             raise DeployError("Configuração do Core ausente: execute o reparo do VYONIX antes.") from exc
-        cur.update(core_settings())
+        cur.update(core_settings(ctx))
         f.write_text(json.dumps(cur, indent=2, ensure_ascii=False), encoding="utf-8")
         restart_core(ctx)
 
@@ -165,7 +172,7 @@ class CoreSettingsStep(Step):
             cur = json.loads(f.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             return
-        for k in core_settings():
+        for k in core_settings(ctx):
             if before.get(k) is None:
                 cur.pop(k, None)
             else:
@@ -174,18 +181,19 @@ class CoreSettingsStep(Step):
 
 
 def restart_core(ctx: Context) -> None:
-    """O Core lê a configuração na partida: reinicia o serviço se ele estiver em execução."""
+    """O Core e o Worker leem a configuração na partida: reinicia os que estiverem em execução."""
     from vyonix_deploy.sysrun import IS_WINDOWS
     if not IS_WINDOWS:
         return
-    from vyonix_deploy.plans import CORE_SVC
+    from vyonix_deploy.plans import CORE_SVC, WORKER_SVC
     from vyonix_deploy.steps.services import SC, query_service, stop_service
     from vyonix_deploy.sysrun import run
-    q = query_service(CORE_SVC)
-    if q and q["state"] == "Running":
-        ctx.log("INFO", "Reiniciando o VYONIX Core para usar o motor DICOM.")
-        stop_service(CORE_SVC)
-        run([SC, "start", CORE_SVC])
+    for svc in (CORE_SVC, WORKER_SVC):
+        q = query_service(svc)
+        if q and q["state"] == "Running":
+            ctx.log("INFO", f"Reiniciando {svc} para usar a nova configuração do PACS.")
+            stop_service(svc)
+            run([SC, "start", svc])
 
 
 def engine_probe(ctx: Context) -> tuple[bool, str]:
@@ -207,6 +215,7 @@ def engine_probe(ctx: Context) -> tuple[bool, str]:
 
 
 def engine_steps(ctx: Context) -> list[Step]:
+    from vyonix_deploy.plans import WORKER_SVC
     from vyonix_deploy.steps.core import service_binpath
     from vyonix_deploy.steps.files import ADMINS, SYSTEM, AclGrantStep, AclStep, DirectoryStep
     from vyonix_deploy.steps.firewall import FirewallRuleStep
@@ -224,6 +233,10 @@ def engine_steps(ctx: Context) -> list[Step]:
                 [(SYSTEM, "F"), (ADMINS, "F"), (svc, "RX")]),
         DirectoryStep("logs", p.data_dir / "logs", "de registros do VYONIX"),
         AclGrantStep("logs.pacs", p.data_dir / "logs", "registros", svc, "M"),
+        # backup diário: contém dados de pacientes; só o sistema, os administradores e o VyonixWorker
+        DirectoryStep("pacs.backup", backup_dir(ctx), "do backup do PACS"),
+        AclStep("pacs.backup", backup_dir(ctx), "backup do PACS",
+                [(SYSTEM, "F"), (ADMINS, "F"), (f"NT SERVICE\\{WORKER_SVC}", "M")]),
         FirewallRuleStep("pacs-dicom", "PACS DICOM", DICOM_PORT, str(binary(ctx)), ctx.cfg.firewall_sources),
         FirewallRuleStep("pacs-qr", "PACS consulta DICOM", QR_PORT, str(p.core_exe), ctx.cfg.firewall_sources),
         ServiceRunningStep(SERVICE, "VYONIX PACS (motor DICOM)", probe=engine_probe, timeout=120),

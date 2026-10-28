@@ -53,6 +53,8 @@ class DeployConfig:
     modules: list[str] = field(default_factory=list)                # módulos a habilitar além do core
     shortcuts: bool = True
     restore_backup: str | None = None                               # só na execução "restore"
+    pacs_backup_dir: str | None = None          # backup diário do PACS; vazio = ProgramData\VYONIX\Backups\PACS
+    pacs_backup_hour: int = 2                   # hora local (0–23) a partir da qual o backup diário roda
 
     def validate(self) -> None:
         if not ORG_RE.match(self.organization):
@@ -67,6 +69,8 @@ class DeployConfig:
                 ipaddress.ip_network(s, strict=False)
             except ValueError:
                 raise DeployError(f"Origem de firewall inválida: {s}") from None
+        if not 0 <= int(self.pacs_backup_hour) <= 23:
+            raise DeployError("Hora do backup do PACS: de 0 a 23.")
         self.network.validate()
 
     def to_dict(self) -> dict[str, Any]:
