@@ -59,6 +59,11 @@ function optionsForm(kind) {
     <label class="f">Certificado da instituição (.pfx) <span>Caminho no servidor. Vazio = autoassinado (pendência registrada).</span>
       <input name="tls_pfx" value="${esc(c.tls_pfx || "")}"></label>
     </div>
+    <h2>Backup do PACS</h2><div class="grid">
+    <label class="f">Pasta do backup diário das imagens <span>Vazio = ProgramData\\VYONIX\\Backups\\PACS (mesmo disco). Prefira outro disco. Vale quando o PACS estiver ativado.</span>
+      <input name="pacs_backup_dir" value="${esc(c.pacs_backup_dir || "")}"></label>
+    <label class="f">Hora do backup (0–23, hora local) <input name="pacs_backup_hour" type="number" min="0" max="23" value="${c.pacs_backup_hour ?? 2}"></label>
+    </div>
     <h2>Rede</h2>
     <label><input type="radio" name="netmode" value="keep" ${n.mode !== "static" ? "checked" : ""}> Manter o IP atual (recomendado)</label><br>
     <label><input type="radio" name="netmode" value="static" ${n.mode === "static" ? "checked" : ""}> Definir IP fixo (exige confirmação)</label>
@@ -82,7 +87,8 @@ function readOptions(f) {
   return {
     config: { organization: v("organization"), organization_name: v("organization_name"), admin_user: v("admin_user"),
       https_port: Number(v("https_port")), pg_port: Number(v("pg_port")), firewall_sources: list("firewall_sources"),
-      tls_pfx: v("tls_pfx") || null,
+      tls_pfx: v("tls_pfx") || null, pacs_backup_dir: v("pacs_backup_dir") || null,
+      pacs_backup_hour: Number(v("pacs_backup_hour") ?? 2),
       network: mode === "keep" ? { mode: "keep" } : { mode: "static", interface: v("interface"), ip: v("ip"),
         prefix: Number(v("prefix")), gateway: v("gateway"), dns: list("dns"), confirmed: true } },
     secrets: { admin_password: f.elements.admin_password?.value || "", pfx_password: f.elements.pfx_password?.value || "" },

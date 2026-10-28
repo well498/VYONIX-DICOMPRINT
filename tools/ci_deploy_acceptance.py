@@ -571,6 +571,58 @@ $ap = $r | Get-NetFirewallApplicationFilter
         return (f"{msg}; Core: {st['engine'].get('version')} alcançável; porta DICOM 4242 aberta; consulta DICOM 4243 "
                 "escutando e recusando estação não cadastrada; backup diário do PACS configurado")
 
+    @check("2.9", "PACS no Windows: C-STORE de modalidade simulada indexado pelo Worker; backup e verificação pelo "
+                  "comando do produto")
+    def _():
+        import io
+        from pydicom.dataset import FileDataset, FileMetaDataset
+        from pydicom.uid import ExplicitVRLittleEndian, generate_uid
+        from pynetdicom import AE
+        study, series, sop = (generate_uid(prefix=None) for _ in range(3))
+        meta = FileMetaDataset()
+        meta.MediaStorageSOPClassUID, meta.MediaStorageSOPInstanceUID = "1.2.840.10008.5.1.4.1.1.2", sop
+        meta.TransferSyntaxUID = ExplicitVRLittleEndian
+        ds = FileDataset(None, {}, file_meta=meta, preamble=b"\0" * 128)
+        ds.SOPClassUID, ds.SOPInstanceUID = meta.MediaStorageSOPClassUID, sop
+        ds.StudyInstanceUID, ds.SeriesInstanceUID = study, series
+        ds.PatientName, ds.PatientID, ds.Modality = "TESTE^SINTETICO CI", "CI-PACS-0001", "CT"
+        ds.StudyDate, ds.InstanceNumber, ds.SeriesNumber = "20261028", 1, 1
+        ds.Rows = ds.Columns = 8
+        ds.BitsAllocated, ds.BitsStored, ds.HighBit, ds.PixelRepresentation = 16, 16, 15, 0
+        ds.SamplesPerPixel, ds.PhotometricInterpretation = 1, "MONOCHROME2"
+        ds.PixelData = bytes(128)
+        buf = io.BytesIO()
+        ds.save_as(buf, enforce_file_format=True)
+        ae = AE(ae_title="CI_MODALIDADE")
+        ae.add_requested_context(meta.MediaStorageSOPClassUID, ExplicitVRLittleEndian)
+        a = ae.associate("127.0.0.1", 4242, ae_title="VYONIX_PACS")
+        assert a.is_established, "motor DICOM recusou a associação de C-STORE"
+        try:
+            st = a.send_c_store(ds)
+            assert st and st.Status == 0, f"C-STORE: {st}"
+        finally:
+            a.release()
+        port = state.get("port", 8444)
+        api = Api(port)
+        api.login()
+        deadline = time.monotonic() + 180                  # sincronização do Worker a cada 15 s
+        found = []
+        while time.monotonic() < deadline and not found:
+            found = api.call("GET", f"/pacs/dicomweb/studies?StudyInstanceUID={study}") or []
+            if not found:
+                time.sleep(5)
+        assert found, "estudo enviado por C-STORE não foi indexado pelo VyonixWorker em 180 s"
+        dest = OUT / "pacs-backup"
+        p = sh([PATHS.core_exe, "--data", PATHS.data_dir, "pacs-backup", "--dest", dest], timeout=600)
+        out = json.loads(p.stdout[p.stdout.index("{"):])
+        assert out["instances"] >= 1 and not out["integrity_failures"], out
+        assert (dest / study / series / f"{sop}.dcm").read_bytes() == buf.getvalue(), "arquivo do backup difere do enviado"
+        pv = sh([PATHS.core_exe, "pacs-verify", "--src", dest], timeout=300).stdout
+        v = json.loads(pv[pv.index("{"):])
+        assert v["valid"], v
+        return (f"C-STORE → motor → indexado; backup {out['instances']} instância(s), {out['copied']} copiada(s), "
+                "arquivo idêntico ao enviado; verificação do manifesto válida")
+
     # ---------------------------------------------------------------- 2.8 atualização
     @check("2.8", "Atualização: backup antes da migração; dados e configurações preservados")
     def _():
