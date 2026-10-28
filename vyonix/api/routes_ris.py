@@ -90,7 +90,13 @@ def stations(c: Ctx = Depends(needs("ris.schedule.manage"))):
 
 
 @router.patch("/schedules/{sid}/status")
-def status(sid: uuid.UUID, body: StatusIn, c: Ctx = Depends(needs("ris.schedule.manage"))):
+def status(sid: uuid.UUID, body: StatusIn, c: Ctx = Depends(needs("ris.schedule.read"))):
+    """Agendamento (recepção) muda qualquer situação; o técnico (``ris.exam.perform``) registra chegada, início e
+    conclusão — cancelar continua com quem agenda."""
+    from vyonix.errors import Forbidden
+    if not c.p.has("ris.schedule.manage") and not (c.p.has("ris.exam.perform") and
+                                                   body.status in ("arrived", "in_progress", "completed")):
+        raise Forbidden("Sem permissão para esta mudança de situação.", code="forbidden")
     with c.session() as s:
         st = ris.set_status(s, sid, body.status, reason=body.reason, **c.actor)
         return {"id": str(st.id), "status": st.status}
@@ -118,3 +124,11 @@ def exam_center(date_from: date, date_to: date, modality: str | None = None, sta
     with c.session() as s:
         return tracking.exam_center(s, date_from=date_from, date_to=date_to, modality=modality, stage=stage,
                                     late_only=late_only)
+
+
+@router.get("/technician-panel")
+def technician_panel(day: date | None = None, c: Ctx = Depends(needs("ris.schedule.read"))):
+    """Painel do Técnico em Radiologia: exames do dia, estudos recebidos, recusas na recepção e pendências."""
+    from vyonix.ris import technician
+    with c.session() as s:
+        return technician.panel(s, day=day, with_images=c.p.has("pacs.studies.read"))

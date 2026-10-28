@@ -89,7 +89,7 @@ def process(data: bytes, *, crop: tuple[float, float, float, float] | None = Non
         im = im.resize((MAX_OUT_W, max(1, round(im.height * MAX_OUT_W / im.width))))
     rgba = im.convert("RGBA")
     if remove_background:
-        px = rgba.getdata()
+        px = rgba.get_flattened_data() if hasattr(rgba, "get_flattened_data") else rgba.getdata()
         rgba.putdata([(r_, g_, b_, 0) if min(r_, g_, b_) >= threshold else (r_, g_, b_, a_) for r_, g_, b_, a_ in px])
     if rgba.width < 20 or rgba.height < 10:
         raise ValidationFailed("Imagem pequena demais depois do recorte.")

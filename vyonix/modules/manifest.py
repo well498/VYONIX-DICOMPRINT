@@ -138,6 +138,7 @@ RIS = ModuleManifest(
                 "fluxo de exames ainda planejados). Não liberado para uso clínico.",
     permissions={"ris.schedule.read": "Consultar agendamentos e worklist",
                  "ris.schedule.manage": "Agendar, alterar e cancelar exames",
+                 "ris.exam.perform": "Registrar chegada, início e conclusão do exame (técnico)",
                  "ris.rooms.manage": "Cadastrar salas de exame"},
     publishes=("ris.schedule.created.v1",), consumes=("pacs.study.received.v1",),
 )
@@ -208,7 +209,8 @@ DEFAULT_ROLES: dict[str, tuple[str, list[str]]] = {
                           "report.write", "report.sign", "report.templates.manage"]),     # sem cadastro de médicos
     "tecnico": ("Técnico", ["core.license.read", "clinical.patients.read", "clinical.orders.read",
                             "clinical.studies.read", "clinical.studies.reconcile", "print.jobs.read",
-                            "print.jobs.manage", "pacs.studies.read", "pacs.studies.store", "ris.schedule.read"]),
+                            "print.jobs.manage", "pacs.studies.read", "pacs.studies.store", "ris.schedule.read",
+                            "ris.exam.perform"]),
     "recepcionista": ("Recepcionista", ["clinical.patients.read", "clinical.patients.write", "clinical.orders.read",
                                         "clinical.orders.write", "clinical.studies.read", "ris.schedule.read",
                                         "ris.schedule.manage"]),

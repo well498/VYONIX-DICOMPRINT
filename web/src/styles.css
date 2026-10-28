@@ -175,3 +175,4 @@ button.link.danger { color: #b42318; }
 .shell > * { min-width: 0; }
 .sig-editor input[type="file"] { max-width: 100%; }
 .exam-filters input:not([type="checkbox"]), .exam-filters select { min-width: 9rem; }
+.card-warn { border-color: var(--amber); }

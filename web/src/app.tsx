@@ -13,6 +13,7 @@ import { ReportsPage } from "./pages/reports";
 import { SchedulePage } from "./pages/schedule";
 import { SettingsPage } from "./pages/settings";
 import { SitesPage } from "./pages/sites";
+import { TechnicianPage } from "./pages/technician";
 import { StationsPage } from "./pages/stations";
 import { UsersPage } from "./pages/users";
 
@@ -22,6 +23,7 @@ const ROUTES: Route[] = [
   { id: "inicio", label: "Início", view: (me) => <Dashboard me={me} /> },
   { id: "pacientes", label: "Pacientes", perm: "clinical.patients.read", view: (me) => <PatientsPage me={me} /> },
   { id: "agenda", label: "Agenda", perm: "ris.schedule.read", view: (me) => <SchedulePage me={me} /> },
+  { id: "tecnico", label: "Painel do técnico", perm: "ris.exam.perform", view: (me) => <TechnicianPage me={me} /> },
   { id: "central", label: "Central de exames", perm: "ris.schedule.read", view: (me) => <ExamCenterPage me={me} /> },
   { id: "laudos", label: "Laudos", perm: "report.read", view: (me) => <ReportsPage me={me} /> },
   { id: "conciliacao", label: "Conciliação", perm: "clinical.studies.reconcile", view: (me) => <ReconcilePage me={me} /> },

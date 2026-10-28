@@ -332,6 +332,10 @@ class WebE2E(unittest.TestCase):
         expect(pg.get_by_role("row", name="Carlos Agenda Sintetico").first).to_be_visible()
         expect(pg.get_by_role("group", name="Resumo do período")).to_contain_text("Pedidos")
         self.shot(pg, "10b-central-exames")
+        nav.get_by_role("link", name="Painel do técnico").click()             # painel próprio do técnico
+        expect(pg.get_by_role("heading", name="Painel do técnico")).to_be_visible()
+        expect(pg.get_by_role("group", name="Resumo do dia")).to_contain_text("Recusas na recepção DICOM")
+        self.shot(pg, "10c-painel-tecnico")
         from vyonix.audit import service as audit
         with db.session(self.tenant) as s:
             self.assertEqual(len(audit.query(s, action="ris.schedule.status")), 3)

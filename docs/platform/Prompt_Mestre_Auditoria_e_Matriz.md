@@ -35,7 +35,7 @@ está dito); **Falta** = não implementado. Nada aqui é validação para uso cl
 | 7 | Login só com usuário e senha; instituição identificada pelo servidor; login único na plataforma | **Parcial** | Instalação local (edge): já é só usuário e senha. Nuvem (várias instituições no mesmo servidor): hoje exige o campo "Organização" e o login só é único dentro da organização → falta o **diretório global de logins** |
 | 8 | Perfis dinâmicos e opcionais (modelos) | **Parcial** | Papéis personalizados existem; papéis padrão são sempre criados. Faltam os modelos Coordenador do CDI, Gestor de Telelaudos, Financeiro, Técnico de Suporte e a ativação só dos necessários |
 | 9 | Várias funções na mesma conta | **Existe** | Vários papéis por usuário; permissões calculadas no servidor. Falta impedir acúmulo que contorne restrições (ex.: técnico não libera laudo mesmo com outro papel sem CRM) |
-| 10 | Painel do Técnico em Radiologia | **Parcial** | Agenda, MPPS, Central de exames, Imagens (qualidade), Conciliação. Faltam painel próprio consolidado, falhas de transmissão, reenvio e "encaminhar para fila de laudos" |
+| 10 | Painel do Técnico em Radiologia | **Parcial → painel feito (28/10)** | Agenda, MPPS, Central de exames, Imagens (qualidade), Conciliação. Faltam painel próprio consolidado, falhas de transmissão, reenvio e "encaminhar para fila de laudos" |
 | 11 | Médicos: próprio, vários, rede VYONIX, híbrido | **Parcial** | A e B existem (cadastro, vínculos, fila). C (médicos da rede VYONIX entre instituições) e D: **falta** — exige acesso entre organizações controlado por contrato |
 | 12 | Distribuição dinâmica (automática, reserva transacional, recuperação de reservas, transferência) | **Parcial** | Atribuição manual com prioridade/prazo e reatribuição existem. Faltam atribuição automática, reserva ("pegar" exame) com expiração e regras |
 | 13 | Estação de laudos (painel, estação, perfil) | **Parcial** | Lista, editor, modelos, Viewer em nova aba, rascunho salvo manualmente. Falta reorganizar em três áreas, salvamento automático, produção diária/mensal, histórico. **Pré-visualização da assinatura pendente: corrigida** (`0d3e05d`: política de conteúdo permite `blob:`; teste e2e confere a imagem carregada) |
@@ -77,3 +77,14 @@ Decisões desta auditoria:
 * Médicos da rede VYONIX entre instituições mudam o modelo de isolamento (acesso entre organizações): será feito
   por compartilhamento explícito por exame/contrato, nunca por acesso amplo.
 * Remuneração: valores e regras são política comercial — o sistema não define valores sozinho.
+
+## 5. Andamento
+
+| Data | Fase | Entrega | Testes |
+|---|---|---|---|
+| 28/10 | 1 | Esta auditoria e matriz | — |
+| 28/10 | 2 | Diretório global de logins (`core_0002`), login só com usuário e senha na nuvem, delegação limitada, modelos de perfil opcionais e estruturas | `test_access_multiinst.py` 4/4 |
+| 28/10 | 2 | Painel do técnico (`/ris/technician-panel`, página própria): exames do dia, recebidos no PACS, recusas na recepção DICOM, pendências de qualidade; técnico registra chegada/início/conclusão (`ris.exam.perform`), não agenda, não cancela, não libera laudos | `test_ris_technician.py`; e2e `test_5` |
+
+Pendências da Fase 2: reenvio de estudo a uma estação DICOM cadastrada e "encaminhar para a fila de laudos"
+pelo técnico; interface de gestão de modelos de perfil na tela de Usuários.
