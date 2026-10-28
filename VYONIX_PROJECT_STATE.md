@@ -285,6 +285,10 @@ check-in e MPPS no RIS.
 **CI de `5767a66` (REPORT incluído):** platform **180/0/0** (40682713999), viewer **5/5** (40682713953), deploy-windows
 **29/0/1** (40682713933, com o backup do PACS real no Windows), Windows release (40682714100; `v1.0.0-r5` não substituída).
 
+**CI de `b98dc02`:** platform **181/0/0** (40687347852), viewer **5/5** (40687347846), deploy-windows **29/0/1**
+(40687347923), Windows release (40687347828; `v1.0.0-r5` não substituída). Local depois: `063076e` (laudo na ficha
+do paciente) — e2e 7/7.
+
 **Decisão pendente do proprietário (REPORT):** assinatura digital do laudo (ICP-Brasil: certificado A1/A3, padrão
 PAdES/CAdES, carimbo de tempo). Até lá a liberação é por confirmação de senha, registrada e verificável, e a tela
 informa que não é assinatura digital.
