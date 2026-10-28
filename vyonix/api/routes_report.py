@@ -15,6 +15,7 @@ from vyonix.errors import Forbidden, NotLicensed
 from vyonix.modules import registry
 from vyonix.report import branding as brand
 from vyonix.report import physicians as phys
+from vyonix.report import signature as sig
 from vyonix.report import service as rep
 from vyonix.report import templates as tpl
 
@@ -144,7 +145,7 @@ def add_addendum(rid: uuid.UUID, body: AddendumIn, c: Ctx = Depends(needs("repor
 def report_pdf(rid: uuid.UUID, c: Ctx = Depends(needs("report.read"))):
     from fastapi.responses import Response
     with c.session() as s:
-        data, name = rep.pdf(s, rid, **c.actor)
+        data, name = rep.pdf(s, rid, signature_key=_sig_key(c), **c.actor)
     return Response(data, media_type="application/pdf",
                     headers={"Content-Disposition": f'attachment; filename="{name}"', "Cache-Control": "no-store"})
 
@@ -328,3 +329,40 @@ def preview_branding(site_id: uuid.UUID | None = None, c: Ctx = Depends(needs("r
         data = pdf.preview(brand.effective(s, site_id), settings.get(s, "core", "institution"), pages=2)
     return Response(data, media_type="application/pdf",
                     headers={"Content-Disposition": 'inline; filename="previa-identidade.pdf"', "Cache-Control": "no-store"})
+
+
+# ------------------------------------------------------------------ imagem da assinatura (TELELAUDO T5)
+def _sig_key(c: Ctx) -> bytes:
+    from vyonix.secrets import SecretStore
+    return SecretStore(c.plat.cfg.data_dir).get_or_create(sig.KEY_NAME)
+
+
+class ConsentIn(BaseModel):
+    allow: bool
+
+
+@router.get("/physicians/me/signature")
+def my_signature(c: Ctx = Depends(needs("report.sign"))):
+    """Situação da imagem do próprio médico (a imagem em si nunca é devolvida pela API)."""
+    with c.session() as s:
+        return sig.status(s, c.p.user_id)
+
+
+@router.post("/physicians/me/signature", status_code=201)
+async def upload_signature(request: Request, c: Ctx = Depends(needs("report.sign"))):
+    from vyonix.errors import ValidationFailed
+    data = bytearray()
+    async for chunk in request.stream():
+        data += chunk
+        if len(data) > sig.MAX_BYTES:
+            raise ValidationFailed("Imagem acima de 512 KB.")
+    with c.session() as s:
+        sig.upload(s, c.p.user_id, bytes(data), key=_sig_key(c), actor=c.p.username, ip=c.ip)
+        return sig.status(s, c.p.user_id)
+
+
+@router.post("/physicians/me/signature/consent")
+def signature_consent(body: ConsentIn, c: Ctx = Depends(needs("report.sign"))):
+    with c.session() as s:
+        sig.set_consent(s, c.p.user_id, body.allow, actor=c.p.username, ip=c.ip)
+        return sig.status(s, c.p.user_id)

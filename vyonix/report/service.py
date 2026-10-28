@@ -127,12 +127,13 @@ def canonical(study_uid: str | None, version: int, kind: str, body: str, critica
                       ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
 
 
-def _new_version(s: Session, r: Report, *, kind: str, body: str, critical: bool, actor: str, actor_id) -> ReportVersion:
+def _new_version(s: Session, r: Report, *, kind: str, body: str, critical: bool, actor: str, actor_id,
+                 signature_image_id: uuid.UUID | None = None) -> ReportVersion:
     st = s.get(Study, r.study_id)
     now = utcnow()
     n = r.version + 1
     v = ReportVersion(report_id=r.id, version=n, kind=kind, body=body, critical=critical, signed_by=actor[:120],
-                      signed_by_id=actor_id, signed_at=now,
+                      signed_by_id=actor_id, signed_at=now, signature_image_id=signature_image_id,
                       sha256=hashlib.sha256(canonical(st.study_instance_uid if st else None, n, kind, body, critical,
                                                       actor[:120], _ts(now))).hexdigest())
     s.add(v)
@@ -140,7 +141,7 @@ def _new_version(s: Session, r: Report, *, kind: str, body: str, critical: bool,
     return v
 
 
-def _signer(s: Session, r: Report, actor_id) -> str:
+def _signer(s: Session, r: Report, actor_id):
     """Identificação do médico que libera: cadastro ativo com vínculo vigente na unidade do exame (TELELAUDO T1)."""
     from datetime import timedelta, timezone
     from vyonix.report import physicians
@@ -149,7 +150,7 @@ def _signer(s: Session, r: Report, actor_id) -> str:
         raise Forbidden("Liberação exige o médico autenticado.", code="physician_required")
     st = s.get(Study, r.study_id)
     today = utcnow().astimezone(timezone(timedelta(hours=-3))).date()
-    return physicians.identification(physicians.authorized(s, actor_id, site_id=st.site_id if st else None, on=today))
+    return physicians.authorized(s, actor_id, site_id=st.site_id if st else None, on=today)
 
 
 def finalize(s: Session, report_id: uuid.UUID, *, expected_version: int | None = None, actor: str, actor_id=None,
@@ -166,12 +167,15 @@ def finalize(s: Session, report_id: uuid.UUID, *, expected_version: int | None =
         raise ValidationFailed("Laudo vazio não pode ser liberado.")
     if r.critical and not r.critical_note:
         raise ValidationFailed("Descreva o achado crítico antes de liberar.")
-    signer = _signer(s, r, actor_id)
+    from vyonix.report import physicians, signature
+    phys = _signer(s, r, actor_id)
+    signer, sig = physicians.identification(phys), signature.for_release(s, phys)
     from vyonix.report import branding
     st_ = s.get(Study, r.study_id)
     eff = branding.effective(s, st_.site_id if st_ else None)            # identidade vigente fica registrada
     r.branding_org_version, r.branding_site_version = eff["org_version"], eff["site_version"]
-    v = _new_version(s, r, kind="final", body=r.body, critical=r.critical, actor=signer, actor_id=actor_id)
+    v = _new_version(s, r, kind="final", body=r.body, critical=r.critical, actor=signer, actor_id=actor_id,
+                     signature_image_id=sig)
     r.status, r.finalized_by, r.finalized_at = "final", signer[:120], v.signed_at
     s.flush()
     if r.order_id:                                   # laudo liberado conclui o pedido (pelo serviço do cadastro)
@@ -202,8 +206,10 @@ def addendum(s: Session, report_id: uuid.UUID, text: str, *, critical: bool = Fa
     text = (text or "").strip()
     if not text or len(text) > MAX_BODY:
         raise ValidationFailed(f"Texto do adendo: 1 a {MAX_BODY} caracteres.")
-    signer = _signer(s, r, actor_id)
-    v = _new_version(s, r, kind="addendum", body=text, critical=bool(critical), actor=signer, actor_id=actor_id)
+    from vyonix.report import physicians, signature
+    phys = _signer(s, r, actor_id)
+    v = _new_version(s, r, kind="addendum", body=text, critical=bool(critical), actor=physicians.identification(phys),
+                     actor_id=actor_id, signature_image_id=signature.for_release(s, phys))
     if critical:
         r.critical = True
     s.flush()
@@ -267,7 +273,8 @@ def get(s: Session, report_id: uuid.UUID) -> dict[str, Any]:
     return _out(r, s, versions=True)
 
 
-def pdf(s: Session, report_id: uuid.UUID, *, actor: str, actor_id=None, ip=None) -> tuple[bytes, str]:
+def pdf(s: Session, report_id: uuid.UUID, *, actor: str, actor_id=None, ip=None,
+        signature_key: bytes | None = None) -> tuple[bytes, str]:
     """PDF do laudo liberado (gerado das versões imutáveis); a emissão fica na auditoria."""
     from vyonix.clinical.models import PatientIdentifier
     from vyonix.report import branding
@@ -286,8 +293,14 @@ def pdf(s: Session, report_id: uuid.UUID, *, actor: str, actor_id=None, ip=None)
         i = s.execute(select(PatientIdentifier).where(PatientIdentifier.patient_id == p.id)
                       .order_by(PatientIdentifier.issuer)).scalars().first()
         ident = f"{i.value} ({i.issuer})" if i else None
+    out = _out(r, s, versions=True)
+    from vyonix.report import signature
+    for v, row in zip(out["versions"], s.execute(select(ReportVersion).where(ReportVersion.report_id == r.id)
+                                                .order_by(ReportVersion.version)).scalars()):
+        if row.signature_image_id and signature_key:          # imagem autorizada pelo médico na liberação
+            v["signature_image"] = signature.decrypt(s, row.signature_image_id, key=signature_key)
     data = render.render(
-        _out(r, s, versions=True),
+        out,
         patient={"name": p.name if p else None, "identifier": ident, "sex": p.sex if p else None,
                  "birth_date": p.birth_date.strftime("%d/%m/%Y") if p and p.birth_date else None},
         study={"modality": st.modality if st else None, "description": st.description if st else None,

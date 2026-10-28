@@ -89,6 +89,7 @@ class ReportVersion(TenantMixin, Base):
     signed_by_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
     signed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    signature_image_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)          # imagem aplicada (autorizada)
 
 
 class Physician(TenantMixin, Base):
@@ -104,6 +105,7 @@ class Physician(TenantMixin, Base):
     specialties: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     footer: Mapped[str | None] = mapped_column(String(200))
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    use_signature_image: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
 
 
 class PhysicianLink(TenantMixin, Base):
@@ -141,3 +143,17 @@ class BrandingVersion(TenantMixin, Base):
     logo_asset_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("report.assets.id"))
     letterhead_asset_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("report.assets.id"))
     created_by: Mapped[str] = mapped_column(String(120), nullable=False)
+
+
+class SignatureImage(TenantMixin, Base):
+    """Imagem da assinatura manuscrita do médico: só visual, cifrada (AES-GCM, chave do cofre local), enviada pelo
+    próprio médico; nunca baixada pela API. Trocar desativa a anterior (histórico preservado)."""
+    __tablename__ = "signature_images"
+    __table_args__ = SCHEMA
+    physician_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("report.physicians.id"), nullable=False)
+    ciphertext: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    nonce: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    width: Mapped[int] = mapped_column(Integer, nullable=False)
+    height: Mapped[int] = mapped_column(Integer, nullable=False)
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)

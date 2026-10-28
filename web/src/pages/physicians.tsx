@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { fmtDate, get, post, type Me } from "../api";
+import { fmtDate, get, post, upload, type Me } from "../api";
 import { Field, Notice, useAction, useLoad } from "../ui";
 
 type Link = { id: string; site_id: string | null; valid_from: string; valid_to: string | null };
@@ -90,6 +90,39 @@ export function PhysiciansPanel({ me }: { me: Me }) {
         </div>
         <button className="primary" disabled={act.busy}>Cadastrar médico</button>
       </form>
+    </section>
+  );
+}
+
+/** Imagem da assinatura manuscrita do próprio médico (TELELAUDO T5): só visual, aplicada apenas com autorização. */
+export function MySignaturePanel() {
+  const st = useLoad(async () => await get<{ has_image: boolean; use_signature_image: boolean; uploaded_at: string | null }>(
+    "/report/physicians/me/signature").catch(() => null), []);
+  const [file, setFile] = useState<File | undefined>();
+  const act = useAction();
+  if (!st.data) return null;
+  async function send(e: FormEvent) {
+    e.preventDefault();
+    if (!file) return;
+    await act.run(async () => { await upload("/report/physicians/me/signature", file); await st.reload(); },
+      "Imagem enviada. Ela só aparece nos laudos se você autorizar.");
+  }
+  async function consent(allow: boolean) {
+    await act.run(async () => { await post("/report/physicians/me/signature/consent", { allow }); await st.reload(); },
+      allow ? "Uso autorizado nos próximos laudos que você liberar." : "Uso revogado para os próximos laudos.");
+  }
+  return (
+    <section className="panel" aria-label="Minha assinatura">
+      <h2>Minha assinatura (imagem)</h2>
+      <p className="field-hint">Elemento apenas visual no PDF. Não substitui a liberação com a sua senha nem a assinatura digital. Só você envia, troca, autoriza ou revoga; ninguém baixa a imagem.</p>
+      {act.view}
+      <form className="filters" aria-label="Enviar imagem da assinatura" onSubmit={send}>
+        <input type="file" accept="image/png,image/jpeg" aria-label="Imagem da assinatura" onChange={(e) => setFile(e.target.files?.[0])} />
+        <button disabled={!file || act.busy}>Enviar imagem</button>
+      </form>
+      <p>{st.data.has_image ? `Imagem cadastrada em ${fmtDate(st.data.uploaded_at)}.` : "Nenhuma imagem cadastrada."}</p>
+      {st.data.has_image && <label className="check"><input type="checkbox" checked={st.data.use_signature_image}
+        onChange={(e) => void consent(e.target.checked)} /> Autorizo aplicar a imagem nos laudos que eu liberar</label>}
     </section>
   );
 }

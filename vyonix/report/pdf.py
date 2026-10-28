@@ -147,8 +147,13 @@ def render(report: dict[str, Any], *, patient: dict[str, Any], study: dict[str, 
         story.append(para(title, "k"))
         if v["critical"]:
             story.append(para("Achado crítico", "w"))
-        story += [Spacer(1, 1.5 * mm), para(v["body"]), Spacer(1, 2 * mm),
-                  para(f"Liberado por {v['signed_by']} em {_when(v['signed_at'])} · SHA-256 {v['sha256']}", "s"),
+        story += [Spacer(1, 1.5 * mm), para(v["body"]), Spacer(1, 2 * mm)]
+        if v.get("signature_image"):                         # elemento visual autorizado pelo médico (não é assinatura)
+            from reportlab.platypus import Image as RLImage
+            data_, w_, h_ = v["signature_image"]
+            hh = 14 * mm
+            story.append(RLImage(io.BytesIO(data_), width=hh * w_ / max(h_, 1), height=hh, hAlign="LEFT"))
+        story += [para(f"Liberado por {v['signed_by']} em {_when(v['signed_at'])} · SHA-256 {v['sha256']}", "s"),
                   Spacer(1, 4 * mm)]
     story += [HRFlowable(width="100%", color=colors.HexColor("#c8d0d6")), Spacer(1, 2 * mm),
               para("Liberação registrada no VYONIX com confirmação de senha do médico. Não é assinatura digital "
