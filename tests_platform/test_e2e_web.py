@@ -511,6 +511,7 @@ class WebE2E(unittest.TestCase):
         expect(row.get_by_role("cell", name="Sem laudo")).to_be_visible()
         row.get_by_role("button", name="Laudar").click()
         editor = pg.get_by_role("region", name="Laudo")
+        expect(editor.get_by_text("Modelo selecionado: RM normal (regra: organização + modalidade).")).to_be_visible()
         editor.get_by_label("Modelo").select_option(label="RM normal")
         editor.get_by_role("button", name="Iniciar laudo").click()
         text = editor.get_by_label("Texto do laudo")

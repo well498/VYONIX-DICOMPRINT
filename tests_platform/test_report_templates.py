@@ -84,5 +84,90 @@ class Templates(unittest.TestCase):
                 self.rep.open_report(s, study_id, template_id=t.id, actor="med")
 
 
+
+class Selection(unittest.TestCase):
+    """TELELAUDO T4 — seleção automática: prioridade, fallback, empate e nunca de outra organização."""
+
+    def setUp(self):
+        import uuid
+        from datetime import date
+        from vyonix.clinical import service as clinical
+        from vyonix.report import templates as tpl
+        from vyonix.tenancy.models import Site
+        self.tpl = tpl
+        self.t = new_org(db)
+        with db.session(self.t) as s:
+            site = Site(name="Unidade Leste")
+            s.add(site)
+            s.flush()
+            self.site = site.id
+            proc = clinical.save_procedure(s, code="TCCR", name="TC de crânio", modality="CT", actor="t")
+            self.proc = proc.id
+            p = clinical.create_patient(s, name="Selecao Sintetica Teste", birth_date=date(1980, 1, 1), sex="F",
+                                        identifiers=[("DICOM", "SEL-1")], actor="t")
+            o = clinical.create_order(s, patient_id=p.id, procedure_id=proc.id, actor="t")
+            st = clinical.register_study(s, study_instance_uid=f"2.25.{uuid.uuid4().int}", accession=o.accession,
+                                         modality="CT", study_date=date(2026, 10, 28), site_id=site.id, actor="t")
+            clinical.reconcile(s, st.id, o.id, actor="t")
+            self.study = st.id
+
+    def add(self, name, **kw):
+        with db.session(self.t) as s:
+            t, _ = self.tpl.save(s, name=name, findings=f"Modelo {name}", actor="adm", **kw)
+            self.tpl.publish(s, t.id, reviewed=True, actor="adm")
+            return t.id
+
+    def pick(self):
+        with db.session(self.t) as s:
+            return self.tpl.select_for(s, self.study)
+
+    def test_priority_and_fallback(self):
+        self.assertEqual(self.pick()["status"], "none")
+        self.add("Genérico")
+        self.assertEqual(self.pick()["name"], "Genérico")
+        self.add("Org CT", modality="CT")
+        self.assertEqual(self.pick()["name"], "Org CT")
+        self.add("Org MR", modality="MR")                        # outra modalidade não interfere
+        self.add("Org procedimento", procedure_id=self.proc)
+        self.assertEqual(self.pick()["name"], "Org procedimento")
+        self.add("Unidade CT", modality="CT", site_id=self.site)
+        self.assertEqual(self.pick()["level"], "unidade + modalidade")
+        self.add("Unidade procedimento", procedure_id=self.proc, site_id=self.site)
+        r = self.pick()
+        self.assertEqual((r["name"], r["level"]), ("Unidade procedimento", "unidade + procedimento"))
+        with db.session(self.t) as s:                            # rascunho não conta: só publicada
+            self.tpl.save(s, name="Só rascunho", findings="x", procedure_id=self.proc, site_id=self.site, actor="a")
+        self.assertEqual(self.pick()["name"], "Unidade procedimento")
+
+    def test_tie_requires_preferred(self):
+        from vyonix.errors import Conflict
+        from vyonix.report import service as rep
+        a = self.add("CT A", modality="CT")
+        self.add("CT B", modality="CT")
+        r = self.pick()
+        self.assertEqual((r["status"], len(r["candidates"])), ("ambiguous", 2))
+        with db.session(self.t) as s:
+            with self.assertRaises(Conflict):
+                rep.open_report(s, self.study, auto=True, actor="med")
+            self.tpl.save(s, template_id=a, name="CT A", modality="CT", preferred=True, findings="Modelo CT A",
+                          actor="adm")
+            self.tpl.publish(s, a, reviewed=True, actor="adm")
+        self.assertEqual(self.pick()["name"], "CT A")
+        with db.session(self.t) as s:
+            r = rep.open_report(s, self.study, auto=True, actor="med")
+            self.assertEqual((r.template_id, r.body), (a, "Achados:\nModelo CT A"))
+
+    def test_never_from_other_organization(self):
+        from vyonix.report import service as rep
+        other = new_org(db)
+        with db.session(other) as s:
+            t, _ = self.tpl.save(s, name="Genérico de outra clínica", findings="NÃO USAR", actor="x")
+            self.tpl.publish(s, t.id, reviewed=True, actor="x")
+        self.assertEqual(self.pick()["status"], "none")
+        with db.session(self.t) as s:
+            r = rep.open_report(s, self.study, auto=True, actor="med")
+            self.assertEqual((r.template_id, r.body), (None, self.tpl.BLANK))
+
+
 if __name__ == "__main__":
     unittest.main()

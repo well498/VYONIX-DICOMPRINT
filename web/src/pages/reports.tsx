@@ -104,18 +104,21 @@ function Editor({ me, row, initial, onClose }: { me: Me; row: Row; initial: Repo
   const [report, setReport] = useState<Report | null>(initial);
   const [draft, setDraft] = useState({ body: initial?.body ?? "", critical: initial?.critical ?? false,
     note: initial?.critical_note ?? "" });
-  const [template, setTemplate] = useState("");
+  const [template, setTemplate] = useState("auto");
   const [password, setPassword] = useState("");
   const [add, setAdd] = useState({ text: "", critical: false, password: "" });
   const act = useAction();
   const templates = useLoad(async () => (!report && can("report.write")
     ? (await get<{ items: Template[] }>(`/report/templates?${new URLSearchParams({ published: "true", ...(row.modality ? { modality: row.modality } : {}) })}`)).items
     : []), [report]);
+  const suggestion = useLoad(async () => (!report && can("report.write")
+    ? await get<{ status: string; name?: string; level?: string; message?: string }>(`/report/suggest?study_id=${row.study_id}`) : null), [report]);
   const title = `Laudo — ${row.patient_name ?? "paciente"} — ${row.modality ?? ""} ${day(row.study_date)}`;
 
   async function create() {
     await act.run(async () => {
-      const r = await post<Report>("/report/reports", { study_id: row.study_id, template_id: template || null });
+      const r = await post<Report>("/report/reports", template === "auto" ? { study_id: row.study_id, auto: true }
+        : { study_id: row.study_id, template_id: template || null });
       setReport(r); setDraft({ body: r.body, critical: r.critical, note: r.critical_note ?? "" });
     }, "Rascunho criado.");
   }
@@ -157,11 +160,14 @@ function Editor({ me, row, initial, onClose }: { me: Me; row: Row; initial: Repo
         <div className="grid2">
           <Field label="Modelo" hint="Opcional: o texto do modelo vira o rascunho">
             <select value={template} onChange={(e) => setTemplate(e.target.value)}>
+              <option value="auto">Automático (regras da organização)</option>
               <option value="">Sem modelo</option>
               {(templates.data ?? []).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
             </select>
           </Field>
-          <div><button className="primary" disabled={act.busy} onClick={() => void create()}>Iniciar laudo</button></div>
+          <div><button className="primary" disabled={act.busy} onClick={() => void create()}>Iniciar laudo</button>
+            {template === "auto" && suggestion.data && <p className="field-hint">{suggestion.data.status === "selected"
+              ? `Modelo selecionado: ${suggestion.data.name} (regra: ${suggestion.data.level}).` : suggestion.data.message}</p>}</div>
         </div>) : <Notice kind="info">Sem laudo para este estudo.</Notice>)}
       {report?.status === "draft" && (
         <>
@@ -213,7 +219,7 @@ function Editor({ me, row, initial, onClose }: { me: Me; row: Row; initial: Repo
   );
 }
 
-type TplItem = Template & { published_version: number | null; preferred: boolean;
+type TplItem = Template & { published_version: number | null; preferred: boolean; procedure_id: string | null; site_id: string | null;
   draft: null | { version: number; technique: string; findings: string; conclusion: string };
   versions: { version: number; status: string; created_by: string; published_by: string | null; published_at: string | null }[] };
 const TPL_STATUS: Record<string, string> = { draft: "rascunho", published: "publicada", archived: "arquivada" };
@@ -221,7 +227,9 @@ const TPL_STATUS: Record<string, string> = { draft: "rascunho", published: "publ
 /** Modelos de laudo com versões (TELELAUDO T3): rascunho, pré-visualização A4 e publicação após conferência. */
 function Templates() {
   const list = useLoad(async () => await get<{ items: TplItem[]; fields: Record<string, string> }>("/report/templates?include_inactive=true"), []);
-  const empty = { id: "", name: "", modality: "", technique: "", findings: "", conclusion: "" };
+  const empty = { id: "", name: "", modality: "", technique: "", findings: "", conclusion: "", procedure_id: "", site_id: "", preferred: false };
+  const procs = useLoad(async () => await get<{ id: string; name: string }[]>("/procedures").catch(() => []), []);
+  const sites = useLoad(async () => await get<{ id: string; name: string }[]>("/sites").catch(() => []), []);
   const [form, setForm] = useState(empty);
   const [reviewed, setReviewed] = useState(false);
   const act = useAction();
@@ -229,14 +237,14 @@ function Templates() {
     const d = t.draft;
     const pub = t.body;
     setForm({ id: t.id, name: t.name, modality: t.modality ?? "", technique: d?.technique ?? "", findings: d?.findings ?? (d ? "" : pub),
-      conclusion: d?.conclusion ?? "" });
+      conclusion: d?.conclusion ?? "", procedure_id: t.procedure_id ?? "", site_id: t.site_id ?? "", preferred: t.preferred });
     setReviewed(false);
   }
   async function save(e: FormEvent) {
     e.preventDefault();
     await act.run(async () => {
       const body = { name: form.name, modality: form.modality || null, technique: form.technique, findings: form.findings,
-        conclusion: form.conclusion };
+        conclusion: form.conclusion, procedure_id: form.procedure_id || null, site_id: form.site_id || null, preferred: form.preferred };
       const r = form.id ? await put<{ id: string }>(`/report/templates/${form.id}`, body) : await post<{ id: string }>("/report/templates", body);
       setForm({ ...form, id: r.id }); setReviewed(false);
       await list.reload();
@@ -259,7 +267,16 @@ function Templates() {
         <div className="grid2">
           <Field label="Nome do modelo"><input required maxLength={120} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
           <Field label="Modalidade" hint="Vazio = todas"><input maxLength={16} value={form.modality} onChange={(e) => setForm({ ...form, modality: e.target.value.toUpperCase() })} /></Field>
+          <Field label="Procedimento" hint="Regra mais específica">
+            <select value={form.procedure_id} onChange={(e) => setForm({ ...form, procedure_id: e.target.value })}>
+              <option value="">Qualquer procedimento</option>
+              {(procs.data ?? []).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></Field>
+          <Field label="Unidade" hint="Vazio = toda a organização">
+            <select value={form.site_id} onChange={(e) => setForm({ ...form, site_id: e.target.value })}>
+              <option value="">Toda a organização</option>
+              {(sites.data ?? []).map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select></Field>
         </div>
+        <label className="check"><input type="checkbox" checked={form.preferred} onChange={(e) => setForm({ ...form, preferred: e.target.checked })} /> Preferencial (desempata modelos da mesma regra)</label>
         <p className="field-hint">Campos dinâmicos (preenchidos com os dados do exame): {Object.keys(list.data?.fields ?? {}).map((f) => `{{${f}}}`).join("  ")}</p>
         <Field label="Técnica"><textarea rows={3} value={form.technique} onChange={(e) => setForm({ ...form, technique: e.target.value })} /></Field>
         <Field label="Achados"><textarea rows={5} value={form.findings} onChange={(e) => setForm({ ...form, findings: e.target.value })} /></Field>

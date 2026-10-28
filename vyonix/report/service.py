@@ -58,9 +58,10 @@ def _out(r: Report, s: Session, *, versions: bool = False) -> dict[str, Any]:
     return d
 
 
-def open_report(s: Session, study_id: uuid.UUID, *, template_id: uuid.UUID | None = None, actor: str, actor_id=None,
-                ip=None) -> Report:
-    """Abre o laudo do estudo (cria o rascunho, opcionalmente a partir de um modelo); se já existe, devolve-o."""
+def open_report(s: Session, study_id: uuid.UUID, *, template_id: uuid.UUID | None = None, auto: bool = False,
+                actor: str, actor_id=None, ip=None) -> Report:
+    """Abre o laudo do estudo (cria o rascunho, a partir do modelo informado ou — ``auto`` — do selecionado pelas
+    regras de prioridade do TELELAUDO T4); se já existe, devolve-o."""
     st = s.get(Study, study_id)
     if st is None:
         raise NotFound("Estudo não encontrado.")
@@ -68,6 +69,15 @@ def open_report(s: Session, study_id: uuid.UUID, *, template_id: uuid.UUID | Non
     if r is not None:
         return r
     body, tver = "", None
+    if auto and not template_id:
+        from vyonix.report import templates as tpl
+        sel = tpl.select_for(s, st.id)
+        if sel["status"] == "ambiguous":
+            raise Conflict(sel["message"], details={"candidates": sel["candidates"]})
+        if sel["status"] == "selected":
+            template_id = uuid.UUID(sel["template_id"])
+        else:
+            body = tpl.BLANK
     if template_id:
         from vyonix.report import templates as tpl
         t = s.get(ReportTemplate, template_id)

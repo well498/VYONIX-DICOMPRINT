@@ -30,6 +30,7 @@ def _require(c: Ctx, s) -> None:
 class OpenIn(BaseModel):
     study_id: uuid.UUID
     template_id: uuid.UUID | None = None
+    auto: bool = False
 
 
 class DraftIn(BaseModel):
@@ -85,8 +86,15 @@ def worklist(status: str | None = None, modality: str | None = None, date_from: 
 def open_report(body: OpenIn, c: Ctx = Depends(needs("report.write"))):
     with c.session() as s:
         _require(c, s)
-        r = rep.open_report(s, body.study_id, template_id=body.template_id, **c.actor)
+        r = rep.open_report(s, body.study_id, template_id=body.template_id, auto=body.auto, **c.actor)
         return rep.get(s, r.id)
+
+
+@router.get("/suggest")
+def suggest(study_id: uuid.UUID, c: Ctx = Depends(needs("report.write"))):
+    """Modelo que a seleção automática usaria para o exame (e por qual regra)."""
+    with c.session() as s:
+        return tpl.select_for(s, study_id)
 
 
 @router.get("/reports/{rid}")

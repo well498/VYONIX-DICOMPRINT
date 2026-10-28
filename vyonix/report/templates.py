@@ -198,3 +198,54 @@ def sample_context() -> dict[str, str]:
             "paciente.idade": "56 anos", "exame.modalidade": "XX", "exame.descricao": "Exame de exemplo",
             "exame.data": date.today().strftime("%d/%m/%Y"), "exame.accession": "EXEMPLO",
             "exame.solicitante": "Dr(a). Solicitante", "instituicao.nome": "Instituição", "unidade.nome": "Unidade"}
+
+
+# ------------------------------------------------------------------ seleção automática (T4)
+LEVELS = ("unidade + procedimento", "unidade + modalidade", "organização + procedimento",
+          "organização + modalidade", "genérico da organização")
+BLANK = "Técnica:\n\n\nAchados:\n\n\nConclusão:\n"
+
+
+def select_for(s: Session, study_id: uuid.UUID) -> dict[str, Any]:
+    """Modelo publicado mais específico para o exame, só da organização do exame (RLS + filtro).
+
+    Ordem: unidade+procedimento → unidade+modalidade → organização+procedimento → organização+modalidade →
+    genérico da organização → rascunho em branco estruturado. Empate no mesmo nível: o marcado como preferencial;
+    sem um único preferencial, a escolha é recusada (``ambiguous``) para o administrador decidir.
+    """
+    from vyonix.clinical.models import Order, Study
+    st = s.get(Study, study_id)
+    if st is None:
+        raise NotFound("Estudo não encontrado.")
+    o = s.get(Order, st.order_id) if st.order_id else None
+    proc, mod, site = (o.procedure_id if o else None), (st.modality or "").upper() or None, st.site_id
+    cands = [t for t in s.execute(select(ReportTemplate).where(ReportTemplate.active.is_(True))).scalars()
+             if published(s, t) is not None]
+
+    def match(t: ReportTemplate, level: int) -> bool:
+        if level == 0:
+            return bool(site and proc) and t.site_id == site and t.procedure_id == proc
+        if level == 1:
+            return bool(site and mod) and t.site_id == site and t.procedure_id is None and t.modality == mod
+        if level == 2:
+            return bool(proc) and t.site_id is None and t.procedure_id == proc
+        if level == 3:
+            return bool(mod) and t.site_id is None and t.procedure_id is None and t.modality == mod
+        return t.site_id is None and t.procedure_id is None and t.modality is None
+
+    for level, name in enumerate(LEVELS):
+        found = [t for t in cands if match(t, level)]
+        if not found:
+            continue
+        if len(found) > 1:
+            pref = [t for t in found if t.preferred]
+            if len(pref) != 1:
+                return {"status": "ambiguous", "level": name,
+                        "candidates": [{"id": str(t.id), "name": t.name} for t in found],
+                        "message": f"Mais de um modelo no nível “{name}” sem um único preferencial: defina o "
+                                   "preferencial ou escolha o modelo."}
+            found = pref
+        t = found[0]
+        return {"status": "selected", "level": name, "template_id": str(t.id), "name": t.name,
+                "version": published(s, t).version}
+    return {"status": "none", "level": None, "message": "Nenhum modelo publicado para este exame: rascunho em branco."}
