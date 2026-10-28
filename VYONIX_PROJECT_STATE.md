@@ -273,11 +273,12 @@ check-in e MPPS no RIS.
 |---|---|---|
 | CI Windows: GPLv3 do Orthanc versionada e conferida (o download do gnu.org falhava; era a causa das falhas sem anotação do passo do Orthanc), sem conversão de fim de linha; saída explícita do passo de testes da Windows release | `02d46b1`, `4ffdc93` | e489d1a: deploy-windows e Windows release falharam (download GPL; pytest com **339 aprovados, 0 falhas** e saída `0xC0000409` no encerramento do processo) → corrigido |
 | DEPLOY: pasta e hora do backup do PACS no assistente | `eb3b8f7` | `tests_deploy` 22/22 |
-| Aceitação Windows 2.9: C-STORE de modalidade simulada no motor → indexado pelo Worker → `pacs-backup` pelo executável do produto (arquivo idêntico) → `pacs-verify` | `eb3b8f7` | aguardando deploy-windows 40673396855 |
+| Aceitação Windows 2.9: C-STORE de modalidade simulada no motor → indexado pelo Worker → `pacs-backup` pelo executável do produto (arquivo idêntico) → `pacs-verify` | `eb3b8f7` | deploy-windows 40673396855 reprovou só a comparação byte a byte (o motor regrava o File Meta); corrigido em `74da54f` → deploy-windows 40678091138 **29/0/1**: C-STORE → motor → indexado → backup (1 instância) → objeto idêntico (UIDs, paciente, pixels) → manifesto válido |
 | RIS: situação informada pela modalidade (MPPS) na Agenda | `82a5e0e` | `test_mpps_in_progress_completed_and_rules` |
 | PACS: verificação contínua da integridade do armazenamento (Worker, lotes com cursor, só registra; monitoramento “falha”) | `26945f5` | `test_pacs_integrity_task.py` 2/2; platform **174/0/0** (40673396971), viewer 5/5 (40673396856) |
 
-| **VYONIX REPORT — primeira entrega**: modelos, rascunho, liberação com confirmação de senha, versões imutáveis (SHA-256; banco sem UPDATE/DELETE para a aplicação), adendos, achado crítico (evento), verificação, papel Médico, tela Laudos | (este commit) | `test_report.py` 4/4; e2e 7/7; platform 146 local |
+| **VYONIX REPORT — primeira entrega**: modelos, rascunho, liberação com confirmação de senha, versões imutáveis (SHA-256; banco sem UPDATE/DELETE para a aplicação), adendos, achado crítico (evento), verificação, papel Médico, tela Laudos | `0596b65` | `test_report.py`; e2e 7/7 |
+| REPORT: PDF do laudo liberado; comunicação de achado crítico (`report_0002`); correção da tela (senha recusada deixava o rascunho com versão desatualizada) | `33dda63`, `3402531`, `398ea3f` | `test_report.py` 5/5; e2e `test_7_report_flow`; platform 147 local |
 
 **Decisão pendente do proprietário (REPORT):** assinatura digital do laudo (ICP-Brasil: certificado A1/A3, padrão
 PAdES/CAdES, carimbo de tempo). Até lá a liberação é por confirmação de senha, registrada e verificável, e a tela
