@@ -97,13 +97,13 @@ class PacsModuleTest(unittest.TestCase):
         self.assertEqual(cur["pacs_backup_dir"], str(self.paths.backups / "PACS"))
         self.assertEqual(cur["pacs_backup_hour"], 2)
         self.assertEqual(core_config(self.ctx)["pacs_backup_dir"], cur["pacs_backup_dir"])   # sobrevive ao reparo
-        self.ctx.cfg = DeployConfig.from_dict({"organization": "clinica-x", "pacs_backup_dir": r"E:\\VYONIX-Backup",
+        self.ctx.cfg = DeployConfig.from_dict({"organization": "clinica-x", "pacs_backup_dir": "E:/VYONIX-Backup",
                                                 "pacs_backup_hour": 23})
         st = pacs.CoreSettingsStep()
         self.assertFalse(st.check(self.ctx))
         st.apply(self.ctx)
         cur = json.loads(f.read_text(encoding="utf-8"))
-        self.assertEqual((cur["pacs_backup_dir"], cur["pacs_backup_hour"]), (r"E:\\VYONIX-Backup", 23))
+        self.assertEqual((cur["pacs_backup_dir"], cur["pacs_backup_hour"]), (str(Path("E:/VYONIX-Backup")), 23))
         with self.assertRaises(DeployError):
             DeployConfig(pacs_backup_hour=24).validate()
         steps = {s.id: s for s in pacs.engine_steps(self.ctx)}
