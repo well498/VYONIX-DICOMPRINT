@@ -7,6 +7,7 @@ blocos de código (```), **negrito**, *itálico* e `código`.
 from __future__ import annotations
 
 import html
+import os
 import re
 import sys
 from pathlib import Path
@@ -20,6 +21,8 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import (KeepTogether, ListFlowable, ListItem, Paragraph, Preformatted,
                                 SimpleDocTemplate, Spacer, Table, TableStyle)
+
+PRODUCT = os.environ.get("VYONIX_DOC_PRODUCT", "VYONIX DICOM Print")
 
 BLUE = colors.HexColor("#1460F2")
 NAVY = colors.HexColor("#0A1A33")
@@ -120,6 +123,9 @@ def _table(rows: list[list[str]], width: float):
     return t
 
 
+BASE_DIR: Path | None = None
+
+
 def parse(md: str, width: float) -> list:
     flow: list = []
     lines = md.replace("\r\n", "\n").split("\n")
@@ -169,6 +175,19 @@ def parse(md: str, width: float) -> list:
                                      start="1" if ordered else None, leftIndent=14,
                                      bulletFontName=FONT, bulletFontSize=8.5))
             continue
+        elif re.match(r"^!\[[^\]]*\]\([^)]+\)$", s):              # imagem: ![legenda](caminho relativo)
+            flush()
+            from reportlab.platypus import Image as RLImage
+            alt, rel = re.match(r"^!\[([^\]]*)\]\(([^)]+)\)$", s).groups()
+            img_path = (BASE_DIR / rel) if BASE_DIR else Path(rel)
+            if img_path.exists():
+                from PIL import Image as PILImage
+                with PILImage.open(img_path) as im:
+                    w, h = im.size
+                scale = min(width / w, (A4[1] * 0.62) / h)
+                flow.append(KeepTogether([RLImage(str(img_path), width=w * scale, height=h * scale),
+                                          Paragraph(inline(alt), ParagraphStyle("cap", parent=S["p"], textColor=MUTED,
+                                                                                fontSize=8))]))
         elif s.startswith("### "):
             flush()
             flow.append(Paragraph(inline(s[4:]), S["h3"]))
@@ -192,6 +211,8 @@ def parse(md: str, width: float) -> list:
 
 
 def convert(src: Path, dst: Path, *, title: str, version: str) -> Path:
+    global BASE_DIR
+    BASE_DIR = Path(src).resolve().parent
     dst.parent.mkdir(parents=True, exist_ok=True)
 
     def frame(canvas, doc) -> None:
@@ -200,7 +221,7 @@ def convert(src: Path, dst: Path, *, title: str, version: str) -> Path:
         canvas.rect(0, A4[1] - 6 * mm, A4[0], 6 * mm, stroke=0, fill=1)
         canvas.setFont(BOLD, 8.5)
         canvas.setFillColor(NAVY)
-        canvas.drawString(18 * mm, A4[1] - 13 * mm, "VYONIX DICOM Print")
+        canvas.drawString(18 * mm, A4[1] - 13 * mm, PRODUCT)
         canvas.setFont(FONT, 8)
         canvas.setFillColor(MUTED)
         canvas.drawRightString(A4[0] - 18 * mm, A4[1] - 13 * mm, f"{title} · versão {version}")
@@ -210,7 +231,7 @@ def convert(src: Path, dst: Path, *, title: str, version: str) -> Path:
 
     doc = SimpleDocTemplate(str(dst), pagesize=A4, leftMargin=18 * mm, rightMargin=18 * mm,
                             topMargin=20 * mm, bottomMargin=18 * mm, title=title,
-                            author="VYONIX", subject=f"VYONIX DICOM Print {version}")
+                            author="VYONIX", subject=f"{PRODUCT} {version}")
     story = parse(src.read_text(encoding="utf-8"), A4[0] - 36 * mm)
     doc.build(story, onFirstPage=frame, onLaterPages=frame)
     return dst
