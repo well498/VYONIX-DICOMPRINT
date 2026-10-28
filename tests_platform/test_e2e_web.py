@@ -456,6 +456,27 @@ class WebE2E(unittest.TestCase):
         panel.get_by_role("form", name="Vínculo de Marta Médica").get_by_role("button", name="Incluir vínculo").click()
         expect(panel.get_by_text("toda a organização: desde")).to_be_visible()
         self.shot(pg, "13-medicos")
+        # identidade visual (administrador): logomarca, rodapé, nova versão e pré-visualização A4
+        import io as _io
+        from PIL import Image
+        logo = self.tmp / "logo.png"
+        buf = _io.BytesIO()
+        Image.new("RGB", (240, 80), (10, 110, 120)).save(buf, "PNG")
+        logo.write_bytes(buf.getvalue())
+        pg.get_by_role("button", name="Identidade visual").click()
+        ed = pg.get_by_role("form", name="Editar identidade visual")
+        ed.get_by_label("Logomarca", exact=True).set_input_files(str(logo))
+        ed.get_by_label("Texto do rodapé").fill("Clínica Imagem Teste · Rua Sintética, 1")
+        ed.get_by_role("button", name="Salvar nova versão").click()
+        expect(pg.get_by_text("Identidade salva como nova versão.")).to_be_visible()
+        expect(ed.get_by_text("Versão 1 por admin")).to_be_visible()
+        expect(ed.get_by_text("com logomarca")).to_be_visible()
+        r = pg.request.get(self.base + "/api/v1/report/branding/preview")
+        self.assertEqual((r.status, r.headers["content-type"]), (200, "application/pdf"))
+        from pypdf import PdfReader
+        self.assertIn("Clínica Imagem Teste · Rua Sintética, 1",
+                      " ".join(p_.extract_text() for p_ in PdfReader(_io.BytesIO(r.body())).pages))
+        self.shot(pg, "14-identidade")
         pg = self.page()
         self.login(pg, "medica1", "Provisoria-123")
         pg.get_by_label("Senha atual").fill("Provisoria-123")

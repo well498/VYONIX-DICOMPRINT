@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import date, datetime
 
-from sqlalchemy import JSON, Boolean, Date, DateTime, ForeignKey, Index, Integer, String, Text, Uuid
+from sqlalchemy import JSON, Boolean, Date, DateTime, ForeignKey, Index, Integer, LargeBinary, String, Text, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from vyonix.db.base import Base, TenantMixin
@@ -37,6 +37,8 @@ class Report(TenantMixin, Base):
     finalized_by: Mapped[str | None] = mapped_column(String(120))
     finalized_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=0)          # versões liberadas
+    branding_org_version: Mapped[int | None] = mapped_column(Integer)                  # identidade usada na liberação
+    branding_site_version: Mapped[int | None] = mapped_column(Integer)
 
 
 class CriticalAlert(TenantMixin, Base):
@@ -92,4 +94,30 @@ class PhysicianLink(TenantMixin, Base):
     site_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("tenancy.sites.id"))
     valid_from: Mapped[date] = mapped_column(Date, nullable=False)
     valid_to: Mapped[date | None] = mapped_column(Date)
+    created_by: Mapped[str] = mapped_column(String(120), nullable=False)
+
+
+class Asset(TenantMixin, Base):
+    """Imagem da identidade visual (logomarca, papel timbrado): PNG ou JPEG validado, imutável, com SHA-256."""
+    __tablename__ = "assets"
+    __table_args__ = SCHEMA
+    kind: Mapped[str] = mapped_column(String(20), nullable=False)           # logo | letterhead
+    media_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    width: Mapped[int] = mapped_column(Integer, nullable=False)
+    height: Mapped[int] = mapped_column(Integer, nullable=False)
+    data: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    created_by: Mapped[str] = mapped_column(String(120), nullable=False)
+
+
+class BrandingVersion(TenantMixin, Base):
+    """Versão da identidade visual da organização (``site_id`` nulo) ou de uma unidade. Imutável."""
+    __tablename__ = "branding_versions"
+    __table_args__ = SCHEMA
+    site_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("tenancy.sites.id"))
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    settings: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    logo_asset_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("report.assets.id"))
+    letterhead_asset_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("report.assets.id"))
     created_by: Mapped[str] = mapped_column(String(120), nullable=False)

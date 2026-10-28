@@ -34,6 +34,23 @@ export async function api<T = unknown>(method: string, path: string, body?: unkn
   return data as T;
 }
 
+/** Envio de arquivo binário (corpo bruto), com o token anti-CSRF. */
+export async function upload<T = unknown>(path: string, file: Blob): Promise<T> {
+  let r: Response;
+  try {
+    r = await fetch(`/api/v1${path}`, { method: "POST", credentials: "same-origin", body: file,
+      headers: { "Content-Type": file.type || "application/octet-stream", "X-CSRF-Token": csrf } });
+  } catch {
+    throw new ApiError(0, "network", "Sem conexão com o servidor VYONIX. Verifique a rede e tente de novo.", {});
+  }
+  const data = await r.json().catch(() => null);
+  if (!r.ok) {
+    const d = (data ?? {}) as { error?: string; message?: string; details?: Record<string, unknown> };
+    throw new ApiError(r.status, d.error ?? "error", d.message ?? `Erro ${r.status}.`, d.details ?? {});
+  }
+  return data as T;
+}
+
 export const get = <T,>(p: string) => api<T>("GET", p);
 export const post = <T,>(p: string, b: unknown = {}) => api<T>("POST", p, b);
 export const put = <T,>(p: string, b: unknown) => api<T>("PUT", p, b);

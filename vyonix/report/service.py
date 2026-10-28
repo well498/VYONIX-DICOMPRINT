@@ -172,6 +172,10 @@ def finalize(s: Session, report_id: uuid.UUID, *, expected_version: int | None =
     if r.critical and not r.critical_note:
         raise ValidationFailed("Descreva o achado crítico antes de liberar.")
     signer = _signer(s, r, actor_id)
+    from vyonix.report import branding
+    st_ = s.get(Study, r.study_id)
+    eff = branding.effective(s, st_.site_id if st_ else None)            # identidade vigente fica registrada
+    r.branding_org_version, r.branding_site_version = eff["org_version"], eff["site_version"]
     v = _new_version(s, r, kind="final", body=r.body, critical=r.critical, actor=signer, actor_id=actor_id)
     r.status, r.finalized_by, r.finalized_at = "final", signer[:120], v.signed_at
     s.flush()
@@ -271,6 +275,7 @@ def get(s: Session, report_id: uuid.UUID) -> dict[str, Any]:
 def pdf(s: Session, report_id: uuid.UUID, *, actor: str, actor_id=None, ip=None) -> tuple[bytes, str]:
     """PDF do laudo liberado (gerado das versões imutáveis); a emissão fica na auditoria."""
     from vyonix.clinical.models import PatientIdentifier
+    from vyonix.report import branding
     from vyonix.report import pdf as render
     from vyonix.settings import service as settings
     r = s.get(Report, report_id)
@@ -293,7 +298,9 @@ def pdf(s: Session, report_id: uuid.UUID, *, actor: str, actor_id=None, ip=None)
         study={"modality": st.modality if st else None, "description": st.description if st else None,
                "study_date": st.study_date.strftime("%d/%m/%Y") if st and st.study_date else None,
                "accession": st.accession if st else None, "requester": o.requester if o else None},
-        institution=settings.get(s, "core", "institution"))
+        institution=settings.get(s, "core", "institution"),
+        branding=branding.effective(s, st.site_id if st else None, org_version=r.branding_org_version or -1,
+                                    site_version=r.branding_site_version or -1))
     audit.record(s, actor=actor, actor_id=actor_id, ip=ip, action="report.pdf", target_type="report", target_id=r.id,
                  details={"version": r.version})
     return data, f"laudo-{(st.accession if st and st.accession else str(r.id)[:8])}.pdf"

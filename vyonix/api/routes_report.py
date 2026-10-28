@@ -6,13 +6,14 @@ from __future__ import annotations
 import uuid
 from datetime import date
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
 
 from vyonix.api.app import Ctx, needs
 from vyonix.auth import service as auth
 from vyonix.errors import Forbidden, NotLicensed
 from vyonix.modules import registry
+from vyonix.report import branding as brand
 from vyonix.report import physicians as phys
 from vyonix.report import service as rep
 
@@ -228,3 +229,50 @@ def end_link(lid: uuid.UUID, body: EndLinkIn, c: Ctx = Depends(needs("report.phy
     with c.session() as s:
         phys.end_link(s, lid, valid_to=body.valid_to, **c.actor)
         return {"ok": True}
+
+
+# ------------------------------------------------------------------ identidade visual (TELELAUDO T2)
+class BrandingIn(BaseModel):
+    site_id: uuid.UUID | None = None
+    settings: dict = Field(default_factory=dict)
+    logo_asset_id: uuid.UUID | None = None
+    letterhead_asset_id: uuid.UUID | None = None
+    keep_images: bool = True
+
+
+@router.get("/branding")
+def get_branding(c: Ctx = Depends(needs("report.branding.manage"))):
+    with c.session() as s:
+        return brand.describe(s)
+
+
+@router.post("/branding/assets", status_code=201)
+async def upload_asset(request: Request, kind: str, c: Ctx = Depends(needs("report.branding.manage"))):
+    from vyonix.errors import ValidationFailed
+    data = bytearray()
+    async for chunk in request.stream():                  # leitura limitada (não carrega envio gigante na memória)
+        data += chunk
+        if len(data) > brand.MAX_BYTES:
+            raise ValidationFailed("Imagem acima de 2 MB.")
+    data = bytes(data)
+    with c.session() as s:
+        a = brand.store_asset(s, kind, data, **c.actor)
+        return {"id": str(a.id), "sha256": a.sha256, "width": a.width, "height": a.height, "media_type": a.media_type}
+
+
+@router.post("/branding", status_code=201)
+def save_branding(body: BrandingIn, c: Ctx = Depends(needs("report.branding.manage"))):
+    with c.session() as s:
+        v = brand.save(s, **body.model_dump(), **c.actor)
+        return {"id": str(v.id), "version": v.version}
+
+
+@router.get("/branding/preview")
+def preview_branding(site_id: uuid.UUID | None = None, c: Ctx = Depends(needs("report.branding.manage"))):
+    from fastapi.responses import Response
+    from vyonix.report import pdf
+    from vyonix.settings import service as settings
+    with c.session() as s:
+        data = pdf.preview(brand.effective(s, site_id), settings.get(s, "core", "institution"), pages=2)
+    return Response(data, media_type="application/pdf",
+                    headers={"Content-Disposition": 'inline; filename="previa-identidade.pdf"', "Cache-Control": "no-store"})

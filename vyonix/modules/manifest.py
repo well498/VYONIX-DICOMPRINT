@@ -142,7 +142,8 @@ REPORT = ModuleManifest(
                 "(primeira entrega; não é assinatura digital ICP-Brasil). Não liberado para uso clínico.",
     permissions={"report.read": "Consultar laudos", "report.write": "Redigir laudos (rascunho)",
                  "report.sign": "Liberar laudos e registrar adendos", "report.templates.manage": "Gerenciar modelos",
-                 "report.physicians.manage": "Cadastrar médicos e vínculos com unidades"},
+                 "report.physicians.manage": "Cadastrar médicos e vínculos com unidades",
+                 "report.branding.manage": "Configurar a identidade visual dos laudos"},
     publishes=("report.finalized.v1", "report.amended.v1", "report.critical.v1"),
 )
 
