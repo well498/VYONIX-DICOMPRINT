@@ -4,6 +4,7 @@ export type Me = {
   user_id: string; tenant_id: string; username: string; display_name: string;
   stage: "ok" | "password_change" | "mfa_enroll" | "mfa_verify";
   permissions: string[]; roles: { role: string; name: string; site_id: string | null }[]; csrf: string;
+  organization?: { code: string; name: string; kind: "institution" | "operator" };
 };
 
 export class ApiError extends Error {

@@ -219,6 +219,25 @@ def cmd_pacs_restore(a) -> int:
     return 1 if out["rejected"] else 0
 
 
+def cmd_operator_init(a) -> int:
+    """Cria a organização operadora VYONIX (administração global) no servidor em nuvem."""
+    from vyonix.context import build
+    from vyonix.tenancy import platform_admin
+    from vyonix.tenancy import service as tenancy
+    cfg = _cfg(a)
+    if cfg.edge:
+        raise SystemExit("A administração global VYONIX existe só no servidor em nuvem (modo cloud).")
+    plat = build(cfg)
+    if tenancy.resolve(plat.db, a.code) is not None:
+        print(f"Organização '{a.code}' já existe: mantida.")
+        return 0
+    pwd = _password("VYONIX_OPERATOR_PASSWORD", f"Senha do administrador geral '{a.admin_user}': ")
+    platform_admin.create_operator(plat.db, code=a.code, name=a.name, admin_username=a.admin_user,
+                                   admin_password=pwd, actor="instalação")
+    print(f"Operadora '{a.code}' e administrador geral '{a.admin_user}' criados.")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     p = argparse.ArgumentParser(prog="vyonix", description=f"VYONIX Core {__version__}")
@@ -250,10 +269,14 @@ def main(argv: list[str] | None = None) -> int:
     pr = sub.add_parser("pacs-restore", help="restaura um backup do PACS pela entrada normal (idempotente)")
     pr.add_argument("--src", required=True)
     pr.add_argument("--org")
+    op = sub.add_parser("operator-init", help="cria a operadora VYONIX (administração global, só modo cloud)")
+    op.add_argument("--code", default="vyonix")
+    op.add_argument("--name", default="VYONIX")
+    op.add_argument("--admin-user", required=True)
     a = p.parse_args(argv)
     return {"init": cmd_init, "migrate": cmd_migrate, "serve": cmd_serve, "worker": cmd_worker,
             "status": cmd_status, "pacs-backup": cmd_pacs_backup, "pacs-verify": cmd_pacs_verify,
-            "pacs-restore": cmd_pacs_restore}[a.cmd](a)
+            "pacs-restore": cmd_pacs_restore, "operator-init": cmd_operator_init}[a.cmd](a)
 
 
 if __name__ == "__main__":

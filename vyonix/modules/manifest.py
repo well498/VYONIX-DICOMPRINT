@@ -89,6 +89,8 @@ CORE = ModuleManifest(
         "core.audit.read": "Consultar auditoria", "core.license.read": "Consultar licença",
         "core.license.manage": "Aplicar licenças e solicitar demonstração",
         "core.modules.manage": "Habilitar e desabilitar módulos", "core.sites.manage": "Gerenciar unidades",
+        "platform.institutions.read": "Administração VYONIX: consultar instituições (só na operadora VYONIX)",
+        "platform.institutions.manage": "Administração VYONIX: cadastrar, ativar e desativar instituições",
     },
     settings=(SettingSpec("security", SecurityPolicy, "Política de acesso"),
               SettingSpec("institution", InstitutionInfo, "Dados da instituição")),

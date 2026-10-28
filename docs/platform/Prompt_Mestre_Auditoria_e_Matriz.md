@@ -85,6 +85,7 @@ Decisões desta auditoria:
 | 28/10 | 1 | Esta auditoria e matriz | — |
 | 28/10 | 2 | Diretório global de logins (`core_0002`), login só com usuário e senha na nuvem, delegação limitada, modelos de perfil opcionais e estruturas | `test_access_multiinst.py` 4/4 |
 | 28/10 | 2 | Painel do técnico (`/ris/technician-panel`, página própria): exames do dia, recebidos no PACS, recusas na recepção DICOM, pendências de qualidade; técnico registra chegada/início/conclusão (`ris.exam.perform`), não agenda, não cancela, não libera laudos | `test_ris_technician.py`; e2e `test_5` |
+| 28/10 | 3–4 | Administração global VYONIX: organização operadora (`kind = operator`, `vyonix operator-init`), papel `admin_vyonix` sem permissões clínicas, assistente de cadastro (dados, CNPJ conferido, módulos contratados, estrutura, unidades, gestor com senha provisória e troca obrigatória), listagem só administrativa, desativar/reativar (sessões encerradas, login bloqueado, nada apagado), menu só na operadora (`core_0003`) | `test_platform_admin.py` 2/2; e2e `test_e2e_cloud.py` (servidor em nuvem, Chromium) |
 
 Pendências da Fase 2: reenvio de estudo a uma estação DICOM cadastrada e "encaminhar para a fila de laudos"
-pelo técnico; (feito em seguida: painel "Perfis da instituição" e conferência do login na tela de Usuários).
+pelo técnico — retomadas no pedido "Central de Exames / Painel do Técnico" (28/10, 18h12); (feito em seguida: painel "Perfis da instituição" e conferência do login na tela de Usuários).

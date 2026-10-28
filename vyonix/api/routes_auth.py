@@ -28,9 +28,19 @@ class CodeIn(BaseModel):
     code: str = Field(min_length=6, max_length=20)
 
 
-def _me(c_or_p) -> dict:
+def _me(c_or_p, plat=None) -> dict:
     p = c_or_p.p if isinstance(c_or_p, Ctx) else c_or_p
-    return {**p.public(), "csrf": p.csrf}
+    plat = plat or (c_or_p.plat if isinstance(c_or_p, Ctx) else None)
+    out = {**p.public(), "csrf": p.csrf}
+    if plat is not None:
+        from sqlalchemy import select
+
+        from vyonix.tenancy.models import Organization
+        with plat.db.session(p.tenant_id) as s:
+            o = s.execute(select(Organization)).scalar_one_or_none()
+            if o is not None:
+                out["organization"] = {"code": o.code, "name": o.name, "kind": o.kind}
+    return out
 
 
 @router.post("/auth/login")
@@ -67,7 +77,7 @@ def login(body: LoginIn, request: Request, response: Response):
         p = auth.authenticate(s, token)
     response.set_cookie(COOKIE, token, httponly=True, secure=request.app.state.cookie_secure, samesite="strict",
                         path="/")
-    return _me(p)
+    return _me(p, plat)
 
 
 @router.post("/auth/logout")

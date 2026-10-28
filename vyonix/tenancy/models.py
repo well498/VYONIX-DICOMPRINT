@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, String, Uuid, func
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Index, String, Uuid, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from vyonix.db.base import Base, TenantMixin
@@ -17,6 +17,15 @@ class Organization(TenantMixin, Base):
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     document: Mapped[str | None] = mapped_column(String(20))
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    kind: Mapped[str] = mapped_column(String(16), nullable=False, default="institution",
+                                      server_default="institution")       # institution | operator (VYONIX)
+    institution_type: Mapped[str | None] = mapped_column(String(20))       # clinica | hospital | cdi | telelaudo
+    legal_name: Mapped[str | None] = mapped_column(String(200))
+    contact_name: Mapped[str | None] = mapped_column(String(120))
+    contact_email: Mapped[str | None] = mapped_column(String(200))
+    contact_phone: Mapped[str | None] = mapped_column(String(40))
+    contracted_modules: Mapped[list | None] = mapped_column(JSON)          # intenção do contrato (não é licença)
+    status_reason: Mapped[str | None] = mapped_column(String(300))
 
 
 class Site(TenantMixin, Base):

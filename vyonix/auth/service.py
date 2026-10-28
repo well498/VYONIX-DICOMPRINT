@@ -209,6 +209,12 @@ def check_grant(s: Session, p: "Principal", role_codes: list[str], *, user_id: u
                         details={"permissions": missing[:20]})
 
 
+def _org_active(s: Session) -> bool:
+    from vyonix.tenancy.models import Organization
+    org = s.execute(select(Organization)).scalar_one_or_none()
+    return org is None or org.active
+
+
 def find_user(s: Session, username: str) -> User | None:
     return _find_user(s, username)
 
@@ -270,7 +276,8 @@ def set_roles(s: Session, user_id: uuid.UUID, roles: list[tuple[str, uuid.UUID |
 def _guard_last_admin(s: Session) -> None:
     n = s.execute(select(func.count()).select_from(UserRole).join(Role, Role.id == UserRole.role_id)
                   .join(User, User.id == UserRole.user_id)
-                  .where(Role.code == "administrador", UserRole.site_id.is_(None), User.active.is_(True))).scalar()
+                  .where(Role.code.in_(("administrador", "admin_vyonix")), UserRole.site_id.is_(None),
+                         User.active.is_(True))).scalar()
     if not n:
         raise Conflict("A clínica precisa de ao menos um administrador ativo (válido para todas as unidades).")
 
@@ -372,6 +379,11 @@ def login(s: Session, username: str, password: str, *, ip: str | None = None, us
     pol = _policy(s)
     u = _find_user(s, username)
     now = utcnow()
+    if u is not None and not _org_active(s):                       # instituição desativada pela VYONIX
+        passwords.check_password(password, passwords.DUMMY_HASH)
+        audit.record(s, actor=u.username, actor_id=u.id, action="auth.login_failed", ip=ip,
+                     details={"reason": "organization_inactive"})
+        raise Unauthorized(GENERIC)
     if u is None:
         passwords.check_password(password, passwords.DUMMY_HASH)       # mesmo custo de tempo
         audit.record(s, actor=username[:120] or "?", action="auth.login_failed", details={"reason": "unknown"}, ip=ip)
@@ -407,7 +419,7 @@ def authenticate(s: Session, token: str, *, touch: bool = True) -> Principal:
     if ses is None or ses.ended_at is not None or ses.expires_at <= now:
         raise Unauthorized("Sessão expirada. Entre novamente.")
     u = s.get(User, ses.user_id)
-    if u is None or not u.active:
+    if u is None or not u.active or not _org_active(s):
         raise Unauthorized("Sessão encerrada.")
     pol = _policy(s)
     new_exp = now + timedelta(minutes=pol["session_minutes"])

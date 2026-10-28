@@ -8,6 +8,7 @@ import { ExamCenterPage } from "./pages/examcenter";
 import { ImagesPage } from "./pages/images";
 import { LicensePage } from "./pages/license";
 import { PatientsPage } from "./pages/patients";
+import { PlatformPage } from "./pages/platform";
 import { ReconcilePage } from "./pages/reconcile";
 import { ReportsPage } from "./pages/reports";
 import { SchedulePage } from "./pages/schedule";
@@ -17,10 +18,12 @@ import { TechnicianPage } from "./pages/technician";
 import { StationsPage } from "./pages/stations";
 import { UsersPage } from "./pages/users";
 
-type Route = { id: string; label: string; perm?: string; view: (me: Me) => ReactNode };
+type Route = { id: string; label: string; perm?: string; operator?: boolean; view: (me: Me) => ReactNode };
 
 const ROUTES: Route[] = [
   { id: "inicio", label: "Início", view: (me) => <Dashboard me={me} /> },
+  { id: "vyonix", label: "Administração VYONIX", perm: "platform.institutions.read", operator: true,
+    view: (me) => <PlatformPage me={me} /> },
   { id: "pacientes", label: "Pacientes", perm: "clinical.patients.read", view: (me) => <PatientsPage me={me} /> },
   { id: "agenda", label: "Agenda", perm: "ris.schedule.read", view: (me) => <SchedulePage me={me} /> },
   { id: "tecnico", label: "Painel do técnico", perm: "ris.exam.perform", view: (me) => <TechnicianPage me={me} /> },
@@ -65,7 +68,8 @@ export function App() {
   if (me === null) return <Login onDone={(m) => { setCsrf(m.csrf); setMe(m); }} />;
   if (me.stage !== "ok") return <AccessGate me={me} onDone={refresh} onLogout={() => setMe(null)} />;
 
-  const allowed = ROUTES.filter((r) => !r.perm || me.permissions.includes(r.perm));
+  const allowed = ROUTES.filter((r) => (!r.perm || me.permissions.includes(r.perm))
+    && (!r.operator || me.organization?.kind === "operator"));
   const active = allowed.find((r) => r.id === route) ?? allowed[0];
 
   async function logout() {
