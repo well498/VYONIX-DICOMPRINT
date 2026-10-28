@@ -78,6 +78,37 @@ class PacsRetention(_Strict):
                                                      "jurídico da clínica")
 
 
+class ChecklistItem(_Strict):
+    code: str = Field(pattern=r"^[a-z][a-z0-9_]{1,29}$")
+    label: str = Field(min_length=2, max_length=120)
+    required: bool = False
+    modalities: list[str] = Field(default_factory=list, max_length=20, description="Vazio = todas")
+
+
+DEFAULT_CHECKLIST = [
+    {"code": "patient_identity", "label": "Identificação do paciente conferida", "required": True},
+    {"code": "procedure", "label": "Procedimento correto", "required": True},
+    {"code": "series", "label": "Séries recebidas", "required": False},
+    {"code": "image_count", "label": "Quantidade de imagens verificada", "required": False},
+    {"code": "quality", "label": "Qualidade técnica conferida", "required": True},
+    {"code": "documents", "label": "Documentação anexada", "required": False},
+    {"code": "complementary", "label": "Informações complementares registradas", "required": False},
+]
+
+
+class ExamPreparation(_Strict):
+    items: list[ChecklistItem] = Field(default_factory=lambda: [ChecklistItem(**x) for x in DEFAULT_CHECKLIST],
+                                       max_length=40, description="Checklist da preparação (obrigatórios e opcionais)")
+    require_forward: bool = Field(False, description="A fila de laudos mostra só estudos encaminhados pelo técnico")
+
+
+class Distribution(_Strict):
+    mode: str = Field("manual", pattern=r"^(manual|fixed|balanced)$",
+                      description="manual, médico fixo ou equilibrada entre médicos com vínculo")
+    physician_id: str | None = Field(None, max_length=36, description="Médico fixo (modo fixed)")
+    reservation_minutes: int = Field(60, ge=10, le=720, description="Reserva do médico expira após (minutos)")
+
+
 VERSION = "0.1.0"
 
 CORE = ModuleManifest(
@@ -141,7 +172,12 @@ RIS = ModuleManifest(
     permissions={"ris.schedule.read": "Consultar agendamentos e worklist",
                  "ris.schedule.manage": "Agendar, alterar e cancelar exames",
                  "ris.exam.perform": "Registrar chegada, início e conclusão do exame (técnico)",
+                 "ris.exam.prepare": "Preparar estudos: checklist, anexos, comentários, suspeitas e encaminhamento",
+                 "ris.exam.priority": "Alterar a prioridade do exame",
+                 "ris.exam.cancel": "Cancelar exame (com justificativa)",
+                 "ris.exam.share": "Compartilhar estudo temporariamente com usuário da instituição",
                  "ris.rooms.manage": "Cadastrar salas de exame"},
+    settings=(SettingSpec("preparation", ExamPreparation, "Preparação técnica dos estudos"),),
     publishes=("ris.schedule.created.v1",), consumes=("pacs.study.received.v1",),
 )
 
@@ -156,6 +192,7 @@ REPORT = ModuleManifest(
                  "report.physicians.manage": "Cadastrar médicos e vínculos com unidades",
                  "report.branding.manage": "Configurar a identidade visual dos laudos",
                  "report.assign": "Distribuir exames na fila de laudos (vê todas as unidades)"},
+    settings=(SettingSpec("distribution", Distribution, "Distribuição dos exames aos médicos"),),
     publishes=("report.finalized.v1", "report.amended.v1", "report.critical.v1"),
 )
 
@@ -179,6 +216,7 @@ ROLE_TEMPLATES: dict[str, tuple[str, list[str], str]] = {
                                                "report.read", "report.assign", "print.jobs.read", "core.users.read"],
                         "Coordena agenda, exames, conciliação e a distribuição de laudos; não libera laudos"),
     "gestor_telelaudos": ("Gestor de Telelaudos", ["report.read", "report.assign", "report.templates.manage",
+                                                   "ris.exam.priority", "ris.exam.share",
                                                    "report.physicians.manage", "report.branding.manage",
                                                    "clinical.studies.read", "pacs.studies.read"],
                           "Distribui exames, cadastra médicos e modelos; não libera laudos"),
@@ -212,7 +250,7 @@ DEFAULT_ROLES: dict[str, tuple[str, list[str]]] = {
     "tecnico": ("Técnico", ["core.license.read", "clinical.patients.read", "clinical.orders.read",
                             "clinical.studies.read", "clinical.studies.reconcile", "print.jobs.read",
                             "print.jobs.manage", "pacs.studies.read", "pacs.studies.store", "ris.schedule.read",
-                            "ris.exam.perform"]),
+                            "ris.exam.perform", "ris.exam.prepare"]),
     "recepcionista": ("Recepcionista", ["clinical.patients.read", "clinical.patients.write", "clinical.orders.read",
                                         "clinical.orders.write", "clinical.studies.read", "ris.schedule.read",
                                         "ris.schedule.manage"]),

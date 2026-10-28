@@ -29,7 +29,7 @@ def make_dicom(*, study: str = uid(1), series: str = uid(1, 1), sop: str = uid(1
                accession: str = "", rows: int = 4, cols: int = 4, frames: int = 1, fill: int = 0,
                sop_class: str = CT, issuer: str = "", encapsulated: list[bytes] | None = None,
                instance_number: int = 1, series_number: int = 1, description: str = "Estudo sintético",
-               pixel_spacing: tuple[float, float] | None = None) -> bytes:
+               pixel_spacing: tuple[float, float] | None = None, station: str | None = None) -> bytes:
     from pydicom.dataset import Dataset, FileMetaDataset
     from pydicom.uid import ExplicitVRLittleEndian, JPEGBaseline8Bit
     meta = FileMetaDataset()
@@ -49,6 +49,8 @@ def make_dicom(*, study: str = uid(1), series: str = uid(1, 1), sop: str = uid(1
     ds.StudyDescription, ds.StudyID = description, "1"
     ds.ReferringPhysicianName = "MEDICO^SINTETICO"
     ds.Modality, ds.SeriesNumber, ds.InstanceNumber = modality, series_number, instance_number
+    if station:
+        ds.StationName = station
     ds.SeriesDescription = "Série sintética"
     ds.Rows, ds.Columns = rows, cols
     if pixel_spacing:

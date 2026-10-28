@@ -124,6 +124,8 @@ def ingest(s: Session, backend: PacsBackend, data: bytes, *, actor: str, via: st
                           "sop_class": p.sop_class_uid, "modality": p.modality, "new_study": result.new_study})
     if result.new_study:
         st = s.get(PacsStudy, result.study_id)
+        if not st.source_ae and actor.startswith("dicom:"):  # sem StationName: o AE Title de quem enviou
+            st.source_ae = actor.split(":", 1)[1][:16] or None
         publish(s, "pacs.study.received.v1",
                 {"study_id": str(st.id), "clinical_study_id": str(st.clinical_study_id) if st.clinical_study_id else None,
                  "modality": p.modality, "via": via},
@@ -140,7 +142,8 @@ def _index(s: Session, p: dicom.ParsedInstance, ds, backend_name: str, backend_i
     st = s.execute(select(PacsStudy).where(PacsStudy.study_uid == p.study_uid)).scalar_one_or_none()
     new_study = st is None
     if new_study:
-        st = PacsStudy(study_uid=p.study_uid, patient_id=p.patient_id, patient_name=p.patient_name)
+        st = PacsStudy(study_uid=p.study_uid, patient_id=p.patient_id, patient_name=p.patient_name,
+                       source_ae=(str(ds.get("StationName") or "").strip()[:16] or None))   # equipamento de origem
         s.add(st)
     elif st.patient_id != p.patient_id:
         raise InstanceRejected("A instância pertence a outro paciente do que o estudo já indexado "

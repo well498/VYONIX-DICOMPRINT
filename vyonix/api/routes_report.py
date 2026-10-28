@@ -43,6 +43,9 @@ def _in_scope(c: Ctx, s, *, study_id: uuid.UUID | None = None, report_id: uuid.U
         if r is None:
             raise NotFound("Laudo não encontrado.")
         study_id = r.study_id
+    from vyonix.ris import prep
+    if study_id in prep.shared_studies(s, c.p.user_id):     # compartilhado temporariamente com este usuário
+        return
     queue.require(s, _scope(c, s), study_id)
 
 
@@ -98,10 +101,34 @@ class PublishIn(BaseModel):
 def worklist(status: str | None = None, modality: str | None = None, date_from: date | None = None,
              date_to: date | None = None, patient_id: uuid.UUID | None = None, mine: bool = False,
              c: Ctx = Depends(needs("report.read"))):
+    from vyonix.report import distribution
+    from vyonix.ris import prep
+    from vyonix.settings import service as settings
     with c.session() as s:
+        distribution.release_expired(s)                       # reservas abandonadas voltam à fila
+        req = settings.get(s, "ris", "preparation")["require_forward"]
         return {"items": rep.worklist(s, status=status, modality=modality, date_from=date_from, date_to=date_to,
                                       patient_id=patient_id, scope=_scope(c, s),
-                                      mine=c.p.user_id if mine else None)}
+                                      mine=c.p.user_id if mine else None, shared=prep.shared_studies(s, c.p.user_id),
+                                      require_forward=req)}
+
+
+@router.post("/queue/{study_id}/claim")
+def claim(study_id: uuid.UUID, c: Ctx = Depends(needs("report.write"))):
+    """O médico reserva um exame livre (expira se o laudo não for iniciado)."""
+    from vyonix.report import distribution
+    with c.session() as s:
+        _in_scope(c, s, study_id=study_id)
+        a = distribution.claim(s, study_id, c.p.user_id, actor=c.p.username, ip=c.ip)
+        return {"assignment_id": str(a.id), "reserved_until": a.reserved_until.isoformat() if a.reserved_until else None}
+
+
+@router.delete("/queue/{study_id}/claim")
+def release_claim(study_id: uuid.UUID, c: Ctx = Depends(needs("report.write"))):
+    from vyonix.report import distribution
+    with c.session() as s:
+        distribution.release(s, study_id, c.p.user_id, actor=c.p.username, ip=c.ip)
+    return {"ok": True}
 
 
 @router.post("/reports", status_code=201)

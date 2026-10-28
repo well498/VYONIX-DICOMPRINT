@@ -181,3 +181,6 @@ class Assignment(TenantMixin, Base):
     status: Mapped[str] = mapped_column(String(12), nullable=False, default="open")       # open|done|cancelled
     assigned_by: Mapped[str] = mapped_column(String(120), nullable=False)
     done_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    kind: Mapped[str] = mapped_column(String(10), nullable=False, default="assigned",
+                                      server_default="assigned")             # assigned | auto | claimed
+    reserved_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))   # reserva do próprio médico

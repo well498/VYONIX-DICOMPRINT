@@ -385,7 +385,7 @@ def verify(s: Session, report_id: uuid.UUID) -> dict[str, Any]:
 
 def worklist(s: Session, *, status: str | None = None, modality: str | None = None, date_from: date | None = None,
              date_to: date | None = None, patient_id: uuid.UUID | None = None, scope=None, mine: uuid.UUID | None = None,
-             limit: int = 200) -> list[dict[str, Any]]:
+             limit: int = 200, shared: set | None = None, require_forward: bool = False) -> list[dict[str, Any]]:
     """Estudos do cadastro clínico com a situação do laudo (pending, draft, final), a atribuição aberta e o prazo.
     ``scope``: restrição por unidade do médico (TELELAUDO T7); ``mine``: só os atribuídos a este usuário."""
     from vyonix.report import queue
@@ -406,7 +406,11 @@ def worklist(s: Session, *, status: str | None = None, modality: str | None = No
     if scope is not None:
         whole, sites = scope
         if not whole:
-            q = q.where(Study.site_id.in_(sites or {uuid.UUID(int=0)}))
+            cond = Study.site_id.in_(sites or {uuid.UUID(int=0)})
+            q = q.where(cond | Study.id.in_(shared)) if shared else q.where(cond)   # compartilhados com o usuário
+    if require_forward:                    # a instituição exige a preparação do técnico antes do laudo
+        from vyonix.ris.models import ExamPrep
+        q = q.join(ExamPrep, ExamPrep.study_id == Study.id).where(ExamPrep.status == "forwarded")
     rows = s.execute(q.order_by(Study.study_date.desc().nullslast(), Study.created_at.desc()).limit(min(limit, 500)))
     assigned = queue.open_by_study(s)
     out = []
@@ -419,5 +423,6 @@ def worklist(s: Session, *, status: str | None = None, modality: str | None = No
                     "modality": st.modality, "study_date": st.study_date.isoformat() if st.study_date else None,
                     "description": st.description, "patient_name": p.name if p else None,
                     "report_id": str(r.id) if r else None, "report_status": r.status if r else "pending",
-                    "critical": bool(r.critical) if r else False})
+                    "critical": bool(r.critical) if r else False,
+                    "shared": bool(shared and st.id in shared)})
     return out
