@@ -127,6 +127,25 @@ def verify(rid: uuid.UUID, c: Ctx = Depends(needs("report.read"))):
         return rep.verify(s, rid)
 
 
+class CommunicateIn(BaseModel):
+    notified_to: str = Field(min_length=1, max_length=200)
+    channel: str = Field(max_length=40)
+    note: str | None = Field(None, max_length=500)
+
+
+@router.get("/critical")
+def critical(status: str | None = "open", c: Ctx = Depends(needs("report.read"))):
+    with c.session() as s:
+        return {"items": rep.critical_alerts(s, status=status or None)}
+
+
+@router.post("/critical/{aid}/communicate")
+def communicate(aid: uuid.UUID, body: CommunicateIn, c: Ctx = Depends(needs("report.write"))):
+    with c.session() as s:
+        rep.communicate(s, aid, notified_to=body.notified_to, channel=body.channel, note=body.note, **c.actor)
+        return {"items": rep.critical_alerts(s, status="open")}
+
+
 @router.get("/templates")
 def list_templates(modality: str | None = None, include_inactive: bool = False,
                    c: Ctx = Depends(needs("report.read"))):

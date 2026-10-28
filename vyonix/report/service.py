@@ -20,7 +20,7 @@ from vyonix.clinical.models import Order, Patient, Study
 from vyonix.db.base import utcnow
 from vyonix.errors import Conflict, NotFound, ValidationFailed
 from vyonix.events.bus import publish
-from vyonix.report.models import Report, ReportTemplate, ReportVersion
+from vyonix.report.models import CriticalAlert, Report, ReportTemplate, ReportVersion
 
 MAX_BODY = 20000
 
@@ -172,6 +172,7 @@ def finalize(s: Session, report_id: uuid.UUID, *, expected_version: int | None =
     publish(s, "report.finalized.v1", {"report_id": str(r.id), "study_id": str(r.study_id), "version": v.version},
             source="report", subject_kind="report", subject_id=r.id)
     if r.critical:
+        s.add(CriticalAlert(report_id=r.id, version=v.version, note=r.critical_note, status="open"))
         publish(s, "report.critical.v1", {"report_id": str(r.id), "study_id": str(r.study_id),
                                           "order_id": str(r.order_id) if r.order_id else None},
                 source="report", subject_kind="report", subject_id=r.id)
@@ -198,10 +199,52 @@ def addendum(s: Session, report_id: uuid.UUID, text: str, *, critical: bool = Fa
     publish(s, "report.amended.v1", {"report_id": str(r.id), "study_id": str(r.study_id), "version": v.version},
             source="report", subject_kind="report", subject_id=r.id)
     if critical:
+        s.add(CriticalAlert(report_id=r.id, version=v.version, note=text[:300], status="open"))
         publish(s, "report.critical.v1", {"report_id": str(r.id), "study_id": str(r.study_id),
                                           "order_id": str(r.order_id) if r.order_id else None},
                 source="report", subject_kind="report", subject_id=r.id)
     return v
+
+
+CHANNELS = ("telefone", "presencial", "mensagem", "e-mail", "outro")
+
+
+def critical_alerts(s: Session, *, status: str | None = "open", limit: int = 200) -> list[dict[str, Any]]:
+    q = (select(CriticalAlert, Report, Study, Patient).join(Report, Report.id == CriticalAlert.report_id)
+         .join(Study, Study.id == Report.study_id).outerjoin(Patient, Patient.id == Study.patient_id))
+    if status:
+        q = q.where(CriticalAlert.status == status)
+    out = []
+    for a, r, st, p in s.execute(q.order_by(CriticalAlert.created_at).limit(min(limit, 500))):
+        o = s.get(Order, r.order_id) if r.order_id else None
+        out.append({"id": str(a.id), "report_id": str(r.id), "version": a.version, "note": a.note, "status": a.status,
+                    "created_at": a.created_at.isoformat(), "patient_name": p.name if p else None,
+                    "accession": st.accession, "modality": st.modality, "requester": o.requester if o else None,
+                    "signed_by": r.finalized_by, "notified_to": a.notified_to, "channel": a.channel,
+                    "ack_note": a.ack_note, "ack_by": a.ack_by,
+                    "ack_at": a.ack_at.isoformat() if a.ack_at else None})
+    return out
+
+
+def communicate(s: Session, alert_id: uuid.UUID, *, notified_to: str, channel: str, note: str | None = None,
+                actor: str, actor_id=None, ip=None) -> CriticalAlert:
+    """Registra a comunicação do achado crítico (a quem, por qual meio, por quem e quando)."""
+    a = s.get(CriticalAlert, alert_id)
+    if a is None:
+        raise NotFound("Achado crítico não encontrado.")
+    if a.status != "open":
+        raise Conflict("Comunicação já registrada.")
+    who = (notified_to or "").strip()
+    if not who:
+        raise ValidationFailed("Informe a quem o achado foi comunicado.")
+    if channel not in CHANNELS:
+        raise ValidationFailed(f"Meio inválido (use: {', '.join(CHANNELS)}).")
+    a.status, a.notified_to, a.channel = "communicated", who[:200], channel
+    a.ack_note, a.ack_by, a.ack_at = ((note or "").strip()[:500] or None), actor[:120], utcnow()
+    s.flush()
+    audit.record(s, actor=actor, actor_id=actor_id, ip=ip, action="report.critical.communicated",
+                 target_type="report", target_id=a.report_id, details={"alert_id": str(a.id), "channel": channel})
+    return a
 
 
 def get(s: Session, report_id: uuid.UUID) -> dict[str, Any]:

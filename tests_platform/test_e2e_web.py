@@ -442,6 +442,8 @@ class WebE2E(unittest.TestCase):
         text.fill("Técnica: sequências padrão.\nAchados: sem alterações significativas.\nConclusão: exame normal.")
         editor.get_by_role("button", name="Salvar rascunho").click()
         expect(editor.get_by_text("Rascunho salvo.")).to_be_visible()
+        editor.get_by_label("Achado crítico").check()
+        editor.get_by_label("Descrição do achado crítico").fill("Lesão nova — avisar solicitante")
         sign = editor.get_by_role("form", name="Liberar laudo")
         sign.get_by_label("Sua senha para liberar").fill("senha-errada")
         sign.get_by_role("button", name="Liberar laudo").click()
@@ -459,6 +461,14 @@ class WebE2E(unittest.TestCase):
         add.get_by_role("button", name="Registrar adendo").click()
         expect(editor.get_by_role("article", name="Versão 2")).to_be_visible()
         self.shot(pg, "12-laudo-liberado")
+        editor.get_by_role("button", name="Fechar").click()
+        crit = pg.get_by_role("region", name="Achados críticos a comunicar")
+        expect(crit.get_by_text("Lesão nova — avisar solicitante")).to_be_visible()
+        crit.get_by_role("button", name="Registrar comunicação").click()
+        cf = crit.get_by_role("form", name="Registrar comunicação do achado crítico")
+        cf.get_by_label("Comunicado a").fill("Dr. Plantonista")
+        cf.get_by_role("button", name="Confirmar").click()
+        expect(pg.get_by_text("Comunicação do achado crítico registrada.")).to_be_visible()
         with db.session(self.tenant) as s:
             from vyonix.report.models import Report
             r = s.query(Report).filter(Report.study_id == st.id).one()

@@ -39,6 +39,21 @@ class Report(TenantMixin, Base):
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=0)          # versões liberadas
 
 
+class CriticalAlert(TenantMixin, Base):
+    """Achado crítico a comunicar: aberto na liberação, encerrado com o registro da comunicação."""
+    __tablename__ = "critical_alerts"
+    __table_args__ = (Index("ix_report_critical_open", "tenant_id", "status"), SCHEMA)
+    report_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("report.reports.id"), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    note: Mapped[str | None] = mapped_column(String(300))
+    status: Mapped[str] = mapped_column(String(12), nullable=False, default="open")       # open | communicated
+    notified_to: Mapped[str | None] = mapped_column(String(200))
+    channel: Mapped[str | None] = mapped_column(String(40))
+    ack_note: Mapped[str | None] = mapped_column(String(500))
+    ack_by: Mapped[str | None] = mapped_column(String(120))
+    ack_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
 class ReportVersion(TenantMixin, Base):
     """Versão liberada (laudo ou adendo): imutável, com SHA-256 do conteúdo canônico."""
     __tablename__ = "report_versions"

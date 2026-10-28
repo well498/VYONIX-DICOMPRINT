@@ -10,6 +10,9 @@ type Version = { version: number; kind: "final" | "addendum"; body: string; crit
 type Report = { id: string; study_id: string; study_instance_uid: string | null; status: "draft" | "final"; body: string;
   critical: boolean; critical_note: string | null; author: string; version: number; finalized_by: string | null;
   finalized_at: string | null; row_version: number; versions: Version[] };
+type Alert = { id: string; report_id: string; version: number; note: string | null; created_at: string;
+  patient_name: string | null; accession: string | null; modality: string | null; requester: string | null;
+  signed_by: string | null };
 type Template = { id: string; name: string; modality: string | null; body: string; active: boolean };
 
 const STATUS: Record<string, string> = { pending: "Sem laudo", draft: "Rascunho", final: "Liberado" };
@@ -22,6 +25,7 @@ export function ReportsPage({ me }: { me: Me }) {
   const [query, setQuery] = useState(filters);
   const [open, setOpen] = useState<{ row: Row; report: Report | null } | null>(null);
   const [showTemplates, setShowTemplates] = useState(false);
+  const [tick, setTick] = useState(0);
   const act = useAction();
 
   const list = useLoad(async () => {
@@ -45,8 +49,9 @@ export function ReportsPage({ me }: { me: Me }) {
         {showTemplates ? "Fechar modelos" : "Modelos de laudo"}</button> : undefined}>
       {act.view}
       {showTemplates && <Templates />}
+      <CriticalAlerts canAck={can("report.write")} tick={tick} />
       {open && <Editor me={me} row={open.row} initial={open.report}
-        onClose={() => { setOpen(null); void list.reload(); }} />}
+        onClose={() => { setOpen(null); setTick(tick + 1); void list.reload(); }} />}
       <form className="filters" role="search" aria-label="Filtrar laudos" onSubmit={(e) => { e.preventDefault(); setQuery(filters); }}>
         <select aria-label="Situação do laudo" value={filters.status} onChange={(e) => setFilters({ ...filters, status: e.target.value })}>
           <option value="pending">Sem laudo</option><option value="draft">Rascunho</option>
@@ -117,6 +122,7 @@ function Editor({ me, row, initial, onClose }: { me: Me; row: Row; initial: Repo
     const ok = await act.run(async () => {
       const saved = await put<Report>(`/report/reports/${report.id}`, { body: draft.body, critical: draft.critical,
         critical_note: draft.critical ? draft.note : null, row_version: report.row_version });
+      setReport(saved);                                  // mantém a versão atual mesmo se a senha for recusada
       const r = await post<Report>(`/report/reports/${report.id}/finalize`, { password, row_version: saved.row_version });
       setReport(r);
     }, "Laudo liberado.");
@@ -218,6 +224,49 @@ function Templates() {
         <Field label="Texto do modelo"><textarea rows={6} value={form.body} onChange={(e) => setForm({ ...form, body: e.target.value })} /></Field>
         <button className="primary" disabled={act.busy}>Salvar modelo</button>
       </form>
+    </section>
+  );
+}
+
+const CHANNELS = ["telefone", "presencial", "mensagem", "e-mail", "outro"];
+
+function CriticalAlerts({ canAck, tick }: { canAck: boolean; tick: number }) {
+  const list = useLoad(async () => (await get<{ items: Alert[] }>("/report/critical")).items, [tick]);
+  const [form, setForm] = useState<{ id: string; to: string; channel: string; note: string } | null>(null);
+  const act = useAction();
+  if (!list.data?.length && !act.view) return null;
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    if (!form) return;
+    const ok = await act.run(async () => {
+      await post(`/report/critical/${form.id}/communicate`, { notified_to: form.to, channel: form.channel, note: form.note || null });
+      await list.reload();
+    }, "Comunicação do achado crítico registrada.");
+    if (ok) setForm(null);
+  }
+  return (
+    <section className="panel" aria-label="Achados críticos a comunicar">
+      <h2>Achados críticos a comunicar</h2>
+      {act.view}
+      <ul className="history">
+        {(list.data ?? []).map((a) => (
+          <li key={a.id}>
+            <strong>{a.patient_name ?? "Paciente"}</strong> — {a.modality ?? ""} {a.accession ?? ""} — {a.note ?? "achado crítico"}
+            {" "}(liberado por {a.signed_by ?? "—"}, {fmtDate(a.created_at)}; solicitante: {a.requester ?? "não informado"})
+            {canAck && form?.id !== a.id && <> <button className="link" onClick={() => setForm({ id: a.id, to: a.requester ?? "", channel: "telefone", note: "" })}>Registrar comunicação</button></>}
+            {form?.id === a.id && (
+              <form className="filters" aria-label="Registrar comunicação do achado crítico" onSubmit={submit}>
+                <input required maxLength={200} aria-label="Comunicado a" placeholder="Comunicado a (nome e função)"
+                  value={form.to} onChange={(e) => setForm({ ...form, to: e.target.value })} />
+                <select aria-label="Meio" value={form.channel} onChange={(e) => setForm({ ...form, channel: e.target.value })}>
+                  {CHANNELS.map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+                <input maxLength={500} aria-label="Observação" placeholder="Observação" value={form.note}
+                  onChange={(e) => setForm({ ...form, note: e.target.value })} />
+                <button className="primary" disabled={act.busy}>Confirmar</button>
+              </form>)}
+          </li>))}
+      </ul>
     </section>
   );
 }

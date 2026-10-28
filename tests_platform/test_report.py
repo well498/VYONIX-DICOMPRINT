@@ -100,6 +100,31 @@ class Service(unittest.TestCase):
             v = self.rep.verify(s, rid)
             self.assertEqual((v["valid"], v["altered"]), (False, [1]))
 
+    def test_critical_alert_lifecycle(self):
+        from vyonix.errors import Conflict, ValidationFailed
+        study_id, _ = make_study(self.t)
+        with db.session(self.t) as s:
+            r = self.rep.open_report(s, study_id, actor="med")
+            self.rep.update_draft(s, r.id, body="Pneumotórax extenso.", critical=True,
+                                  critical_note="Pneumotórax — avisar plantão", actor="med")
+            self.rep.finalize(s, r.id, actor="Dra. Médica")
+            self.rep.addendum(s, r.id, "Novo achado crítico no adendo.", critical=True, actor="Dra. Médica")
+            open_ = self.rep.critical_alerts(s)
+            self.assertEqual([(a["version"], a["note"]) for a in open_],
+                             [(1, "Pneumotórax — avisar plantão"), (2, "Novo achado crítico no adendo.")])
+            self.assertEqual(open_[0]["patient_name"], "Laudo Sintetico Teste")
+            with self.assertRaises(ValidationFailed):
+                self.rep.communicate(s, uuid.UUID(open_[0]["id"]), notified_to="", channel="telefone", actor="med")
+            with self.assertRaises(ValidationFailed):
+                self.rep.communicate(s, uuid.UUID(open_[0]["id"]), notified_to="Dr. X", channel="pombo", actor="med")
+            a = self.rep.communicate(s, uuid.UUID(open_[0]["id"]), notified_to="Dr. Solicitante (plantão)",
+                                     channel="telefone", note="Ciente às 10h", actor="Dra. Médica")
+            self.assertEqual((a.status, a.ack_by), ("communicated", "Dra. Médica"))
+            with self.assertRaises(Conflict):
+                self.rep.communicate(s, a.id, notified_to="Dr. Y", channel="telefone", actor="med")
+            self.assertEqual(len(self.rep.critical_alerts(s)), 1)
+            self.assertEqual(len(self.rep.critical_alerts(s, status=None)), 2)
+
     def test_versions_immutable_for_application_role(self):
         from sqlalchemy import text
         from sqlalchemy.exc import ProgrammingError
