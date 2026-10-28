@@ -5,7 +5,7 @@ import { Field, Notice, Page, useAction, useLoad } from "../ui";
 type Item = {
   schedule_id: string; sps_id: string; status: string; accession: string; priority: string; modality: string;
   station_aet: string | null; room: string | null; description: string | null; scheduled_at: string; duration_min: number;
-  study_instance_uid: string;
+  study_instance_uid: string; mpps_status: string | null;
   patient_id: string; patient_name: string;
 };
 type Pending = { order_id: string; accession: string; priority: string; patient_name: string;
@@ -13,6 +13,9 @@ type Pending = { order_id: string; accession: string; priority: string; patient_
 
 const STATUS: Record<string, string> = { scheduled: "Agendado", arrived: "Paciente chegou", in_progress: "Em realização", received: "Imagens recebidas",
   completed: "Concluído", cancelled: "Cancelado" };
+
+const MPPS: Record<string, string> = { "IN PROGRESS": "modalidade: iniciado", COMPLETED: "modalidade: concluído",
+  DISCONTINUED: "modalidade: interrompido" };
 
 function today(): string {
   const d = new Date();
@@ -141,6 +144,7 @@ export function SchedulePage({ me }: { me: Me }) {
                 <td>{it.description || "—"}</td>
                 <td className="nowrap">{it.accession}</td>
                 <td>{STATUS[it.status] ?? it.status}
+                  {it.mpps_status && <span className="tag" title="Informado pela modalidade (MPPS)">{MPPS[it.mpps_status] ?? it.mpps_status}</span>}
                   {canView && ["received", "completed"].includes(it.status) && (
                     <> <a href={`/viewer/viewer?StudyInstanceUIDs=${encodeURIComponent(it.study_instance_uid)}`}
                       target="_blank" rel="noopener">Abrir no Viewer</a></>)}</td>

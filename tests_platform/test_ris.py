@@ -387,6 +387,9 @@ class Worklist(unittest.TestCase):
         with db.session(self.t) as s:
             sch = s.get(Schedule, self.sch_id)
             self.assertEqual((sch.status, sch.mpps_uid, sch.mpps_status), ("in_progress", uid, "IN PROGRESS"))
+            from vyonix.ris import service as ris
+            wl = ris.worklist(s, date_from=date(2026, 11, 3), date_to=date(2026, 11, 3))
+            self.assertEqual([e["mpps_status"] for e in wl if e["schedule_id"] == str(self.sch_id)], ["IN PROGRESS"])
         st, _ = a.send_n_create(self.mpps_create_ds(self.sch.sps_id), MPPS, uid)
         self.assertEqual(st.Status, 0x0111)                               # MPPS duplicado
         hits = [d for s_, d in self.find(Modality="CT") if s_ == 0xFF00]  # continua na worklist, como STARTED

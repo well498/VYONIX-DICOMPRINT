@@ -174,6 +174,7 @@ def worklist(s: Session, *, date_from: date | None = None, date_to: date | None 
         out.append({"schedule_id": str(st.id), "order_id": str(o.id), "sps_id": st.sps_id, "status": st.status,
                     "study_instance_uid": st.study_instance_uid, "accession": o.accession, "priority": o.priority,
                     "modality": st.modality, "station_aet": st.station_aet, "room": st.room, "duration_min": st.duration_min,
+                    "mpps_status": st.mpps_status,
                     "description": st.description, "requester": o.requester,
                     "scheduled_date": local.strftime("%Y%m%d"), "scheduled_time": local.strftime("%H%M%S"),
                     "scheduled_at": st.scheduled_at.isoformat(), "patient_id": pid,
