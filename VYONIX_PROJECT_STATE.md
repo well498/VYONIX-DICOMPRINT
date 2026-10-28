@@ -253,6 +253,12 @@ release (40610705173, release `v1.0.0-r5` não substituída) aprovados; platform
 mas 1 pulado (falta de numpy, corrigido em `a71acde`). `96470f0` — platform **167 testes, 0 pulados** (40614419360),
 viewer **5/5** (40614419201), deploy-windows **28/0/1** (40614419271), Windows release (40614419238) aprovados.
 
+`e8d7a23` (só interface web, API do RIS e documentação; nenhum código do DICOM Print): platform **169/0/0**
+(40617699999), viewer **5/5** (40617700014). Na 1ª tentativa, deploy-windows falhou no download do Orthanc oficial e a
+Windows release terminou o passo de testes com código 1 apesar de **337 aprovados, 0 falhas**; reexecução das jobs com
+falha (mesmo commit): Windows release aprovada e deploy-windows **28/0/1**. Registradas como **instabilidades a
+observar** (rede do download; código de saída do pytest no Windows após todos os testes aprovados).
+
 **Pendências:** ensaios no laboratório da correção BKL-10 (modalidades de teste e impressora física) antes de uma
 nova versão de laboratório; troca do Implementation Class UID (aprovação própria, após raiz VYONIX); imagem do Print
 sem Patient ID não entra no PACS (por projeto; encaminhamento futuro exige identificação); salas/recursos cadastrados,
