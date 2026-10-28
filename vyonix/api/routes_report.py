@@ -448,3 +448,62 @@ def assign(body: AssignIn, c: Ctx = Depends(needs("report.assign"))):
 def assignable(c: Ctx = Depends(needs("report.assign"))):
     with c.session() as s:
         return {"items": [{"id": p["id"], "name": p["identification"]} for p in phys.listing(s) if p["active"]]}
+
+
+# ------------------------------------------------------------------ saídas padronizadas opcionais (T8)
+def _pdf_bytes(c: Ctx, s, rid: uuid.UUID) -> bytes:
+    data, _ = rep.pdf(s, rid, signature_key=_sig_key(c), **c.actor)
+    return data
+
+
+@router.get("/reports/{rid}/fhir")
+def export_fhir(rid: uuid.UUID, with_pdf: bool = True, c: Ctx = Depends(needs("report.read"))):
+    from vyonix.report import interop
+    with c.session() as s:
+        _in_scope(c, s, report_id=rid)
+        return interop.fhir(s, rid, pdf=_pdf_bytes(c, s, rid) if with_pdf else None, **c.actor)
+
+
+@router.get("/reports/{rid}/hl7")
+def export_hl7(rid: uuid.UUID, c: Ctx = Depends(needs("report.read"))):
+    from fastapi.responses import Response
+    from vyonix.report import interop
+    from vyonix.settings import service as settings
+    with c.session() as s:
+        _in_scope(c, s, report_id=rid)
+        inst = settings.get(s, "core", "institution").get("display_name") or ""
+        msg = interop.hl7_oru(s, rid, sending_facility=inst, **c.actor)
+    return Response(msg.encode("utf-8"), media_type="x-application/hl7-v2+er7; charset=utf-8",
+                    headers={"Content-Disposition": 'attachment; filename="laudo.hl7"'})
+
+
+@router.post("/reports/{rid}/send-to-pacs")
+def send_to_pacs(rid: uuid.UUID, c: Ctx = Depends(needs("report.write"))):
+    """Guarda o laudo liberado no PACS do VYONIX como DICOM Encapsulated PDF, no mesmo estudo (opcional)."""
+    from sqlalchemy import select
+    from vyonix.audit import service as audit
+    from vyonix.clinical.models import Study
+    from vyonix.errors import Conflict
+    from vyonix.pacs import backend_for
+    from vyonix.pacs import service as pacs
+    from vyonix.pacs.models import PacsStudy
+    from vyonix.report import interop
+    from vyonix.report.models import Report
+    with c.session() as s:
+        _in_scope(c, s, report_id=rid)
+        if not registry.is_enabled(s, "pacs"):
+            raise Conflict("O VYONIX PACS não está habilitado nesta organização.")
+        r = s.get(Report, rid)
+        st = s.get(Study, r.study_id) if r else None
+        ps = s.execute(select(PacsStudy).where(PacsStudy.study_uid == st.study_instance_uid)).scalar_one_or_none() \
+            if st else None
+        if ps is None:
+            raise Conflict("O estudo deste laudo não está no PACS.")
+        backend = backend_for(c.plat)
+        if backend is None:
+            raise Conflict("Motor DICOM não configurado.")
+        data = interop.dicom_pdf(s, rid, _pdf_bytes(c, s, rid), patient_id=ps.patient_id)  # mesmo Patient ID do PACS
+        res = pacs.ingest(s, backend, data, via="stow", **c.actor)
+        audit.record(s, action="report.export.dicom", target_type="report", target_id=rid,
+                     details={"duplicate": bool(res.duplicate)}, **c.actor)
+        return {"sop_instance_uid": res.sop_uid, "series_instance_uid": res.series_uid, "duplicate": bool(res.duplicate)}

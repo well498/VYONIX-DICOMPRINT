@@ -225,7 +225,14 @@ function Editor({ me, row, initial, onClose }: { me: Me; row: Row; initial: Repo
       {report?.status === "final" && (
         <>
           <Notice kind="ok">Liberado por {report.finalized_by} em {fmtDate(report.finalized_at)}. O texto liberado não muda; correções são adendos.</Notice>
-          <div className="row-actions"><a className="button" href={`/api/v1/report/reports/${report.id}/pdf`}>Baixar PDF do laudo</a></div>
+          <div className="row-actions" role="group" aria-label="Saídas do laudo">
+            <a className="button" href={`/api/v1/report/reports/${report.id}/pdf`}>Baixar PDF do laudo</a>
+            <a className="link" href={`/api/v1/report/reports/${report.id}/fhir`} target="_blank" rel="noopener">FHIR (JSON)</a>
+            <a className="link" href={`/api/v1/report/reports/${report.id}/hl7`}>HL7 v2 (ORU)</a>
+            {can("report.write") && <button className="link" disabled={act.busy} onClick={() => void act.run(async () => {
+              await post(`/report/reports/${report.id}/send-to-pacs`, {});
+            }, "Laudo guardado no PACS (DICOM Encapsulated PDF) no mesmo estudo.")}>Guardar no PACS</button>}
+          </div>
           {report.versions.map((v) => (
             <article key={v.version} aria-label={`Versão ${v.version}`} className="card">
               <span className="card-label">{v.kind === "final" ? "Laudo" : "Adendo"} — versão {v.version} — {v.signed_by}, {fmtDate(v.signed_at)}
