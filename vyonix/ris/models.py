@@ -11,7 +11,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from vyonix.db.base import Base, TenantMixin
 
 SCHEMA = {"schema": "ris"}
-STATUSES = ("scheduled", "in_progress", "received", "completed", "cancelled")
+STATUSES = ("scheduled", "arrived", "in_progress", "received", "completed", "cancelled")   # arrived = check-in
 
 
 class Schedule(TenantMixin, Base):

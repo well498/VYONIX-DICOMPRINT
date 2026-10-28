@@ -303,6 +303,8 @@ class WebE2E(unittest.TestCase):
         form.get_by_role("button", name="Confirmar agendamento").click()
         expect(pg.get_by_text("Horário ocupado na estação CR_SALA1")).to_be_visible()
         form.get_by_role("button", name="Cancelar").click()
+        row.get_by_role("button", name="Check-in").click()
+        expect(row.get_by_role("cell", name="Paciente chegou")).to_be_visible()
         row.get_by_role("button", name="Iniciar").click()
         expect(row.get_by_role("cell", name="Em realização")).to_be_visible()
         row.get_by_role("button", name="Cancelar").click()
@@ -321,7 +323,7 @@ class WebE2E(unittest.TestCase):
         expect(pg.get_by_role("button", name="Agendar exame")).to_have_count(0)
         from vyonix.audit import service as audit
         with db.session(self.tenant) as s:
-            self.assertEqual(len(audit.query(s, action="ris.schedule.status")), 2)
+            self.assertEqual(len(audit.query(s, action="ris.schedule.status")), 3)
 
         # estudo agendado chega ao PACS (dublê de motor) → "Imagens recebidas" com link para o Viewer
         from tests_platform.pacs_support import make_dicom

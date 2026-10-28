@@ -37,7 +37,7 @@ def _aet(v: str | None) -> str | None:
     return t
 
 
-ACTIVE = ("scheduled", "in_progress")
+ACTIVE = ("scheduled", "arrived", "in_progress")
 
 
 def conflicts(s: Session, *, start: datetime, minutes: int, station_aet: str | None, room: str | None,
@@ -127,6 +127,10 @@ def set_status(s: Session, schedule_id: uuid.UUID, status: str, *, actor: str, r
     if status == "cancelled" and not (reason or "").strip():
         raise ValidationFailed("Informe o motivo do cancelamento.")
     old, st.status = st.status, status
+    if status == "arrived":
+        o = s.get(Order, st.order_id)
+        if o is not None and o.status in ("requested", "scheduled"):
+            o.status = "arrived"           # pedido acompanha o check-in (mesma situação do cadastro clínico)
     s.flush()
     audit.record(s, actor=actor, actor_id=actor_id, ip=ip, action="ris.schedule.status", target_type="schedule",
                  target_id=st.id, details={"from": old, "to": status, "reason": (reason or "")[:300] or None})
@@ -143,7 +147,7 @@ def worklist(s: Session, *, date_from: date | None = None, date_to: date | None 
     q = (select(Schedule, Order, Patient).join(Order, Order.id == Schedule.order_id)
          .join(Patient, Patient.id == Order.patient_id))
     if not include_done:
-        q = q.where(Schedule.status.in_(("scheduled", "in_progress")))
+        q = q.where(Schedule.status.in_(ACTIVE))
     if modality:
         q = q.where(Schedule.modality == modality.strip().upper())
     if station_aet:
@@ -211,6 +215,8 @@ def mwl_dataset(e: dict[str, Any]):
     sps.ScheduledProcedureStepDescription = e.get("description") or ""
     sps.ScheduledProcedureStepID = e["sps_id"]
     sps.ScheduledStationName = e.get("room") or ""
+    # (0040,0020) termos definidos na PS3.3 C.4.10
+    sps.ScheduledProcedureStepStatus = {"arrived": "ARRIVED", "in_progress": "STARTED"}.get(e.get("status"), "SCHEDULED")
     ds.ScheduledProcedureStepSequence = [sps]
     return ds
 

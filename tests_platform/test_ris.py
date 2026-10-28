@@ -98,6 +98,24 @@ class Scheduling(unittest.TestCase):
         with db.session(other) as s:
             self.ris.schedule(s, o2, scheduled_at=at(9, 30), station_aet="TC_SALA1", duration_min=15, actor="r")
 
+    def test_check_in_keeps_worklist_and_updates_order(self):
+        from vyonix.clinical.models import Order
+        oid, _, _ = make_order(self.t)
+        with db.session(self.t) as s:
+            st = self.ris.schedule(s, oid, scheduled_at=datetime(2026, 11, 6, 8, 0, tzinfo=BRT), station_aet="CR1",
+                                   actor="recep")
+            self.ris.set_status(s, st.id, "arrived", actor="recep")
+            self.assertEqual(s.get(Order, oid).status, "arrived")
+            wl = self.ris.worklist(s, date_from=datetime(2026, 11, 6).date(), date_to=datetime(2026, 11, 6).date())
+            e = next(x for x in wl if x["schedule_id"] == str(st.id))
+            self.assertEqual(self.ris.mwl_dataset(e).ScheduledProcedureStepSequence[0].ScheduledProcedureStepStatus,
+                             "ARRIVED")
+            self.ris.set_status(s, st.id, "in_progress", actor="tec")
+            e = next(x for x in self.ris.worklist(s, date_from=datetime(2026, 11, 6).date(),
+                                                  date_to=datetime(2026, 11, 6).date()) if x["schedule_id"] == str(st.id))
+            self.assertEqual(self.ris.mwl_dataset(e).ScheduledProcedureStepSequence[0].ScheduledProcedureStepStatus,
+                             "STARTED")
+
     def test_validations(self):
         from vyonix.errors import Conflict, NotFound, ValidationFailed
         oid, _, _ = make_order(self.t)

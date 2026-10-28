@@ -11,7 +11,7 @@ type Item = {
 type Pending = { order_id: string; accession: string; priority: string; patient_name: string;
   procedure: string | null; modality: string | null; created_at: string };
 
-const STATUS: Record<string, string> = { scheduled: "Agendado", in_progress: "Em realização", received: "Imagens recebidas",
+const STATUS: Record<string, string> = { scheduled: "Agendado", arrived: "Paciente chegou", in_progress: "Em realização", received: "Imagens recebidas",
   completed: "Concluído", cancelled: "Cancelado" };
 
 function today(): string {
@@ -139,7 +139,8 @@ export function SchedulePage({ me }: { me: Me }) {
                       target="_blank" rel="noopener">Abrir no Viewer</a></>)}</td>
                 {canManage && (
                   <td className="actions"><div className="row-actions">
-                    {it.status === "scheduled" && <button onClick={() => void setStatus(it, "in_progress")}>Iniciar</button>}
+                    {it.status === "scheduled" && <button onClick={() => void setStatus(it, "arrived")}>Check-in</button>}
+                    {["scheduled", "arrived"].includes(it.status) && <button onClick={() => void setStatus(it, "in_progress")}>Iniciar</button>}
                     {["scheduled", "in_progress", "received"].includes(it.status) &&
                       <button onClick={() => void setStatus(it, "completed")}>Concluir</button>}
                     {!["completed", "cancelled"].includes(it.status) &&
