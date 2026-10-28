@@ -113,6 +113,27 @@ class PacsModuleTest(unittest.TestCase):
         ids = list(steps)
         self.assertLess(ids.index("dir.pacs.backup"), ids.index("acl.pacs.backup"))
 
+    def test_diagnose_reports_pacs_backup(self):
+        from datetime import datetime, timedelta
+        from vyonix_deploy.diagnose import _pacs_backup
+        f = self.paths.data_dir / "config.json"
+        self.assertEqual(_pacs_backup(self.ctx), [])                          # sem configuração: nada a apontar
+        dest = self.tmp / "bkp"
+        f.write_text(json.dumps({"pacs_backup_dir": str(dest)}), encoding="utf-8")
+        ids = [p.id for p in _pacs_backup(self.ctx)]
+        self.assertIn("pacs.backup.none", ids)
+        dest.mkdir()
+        st = {"ok": True, "finished_at": datetime.now().isoformat(timespec="seconds")}
+        (dest / "last_run.json").write_text(json.dumps(st), encoding="utf-8")
+        self.assertFalse([p for p in _pacs_backup(self.ctx) if p.id != "pacs.backup.disk"])
+        st = {"ok": False, "error": "motor sem resposta",
+              "finished_at": (datetime.now() - timedelta(hours=50)).isoformat(timespec="seconds")}
+        (dest / "last_run.json").write_text(json.dumps(st), encoding="utf-8")
+        probs = {p.id: p for p in _pacs_backup(self.ctx)}
+        self.assertIn("motor sem resposta", probs["pacs.backup.failed"].detail)
+        self.assertIn("50 h", probs["pacs.backup.stale"].detail)
+        self.assertTrue(all(not p.destructive for p in probs.values()))
+
     def test_activation_plan_order(self):
         from vyonix_deploy.modules import activation_steps
         ids = [s.id for s in activation_steps(self.ctx, "pacs")]

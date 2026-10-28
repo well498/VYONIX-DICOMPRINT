@@ -85,6 +85,8 @@ def diagnose(ctx: Context) -> dict[str, Any]:
         problems.append(Problem("database", "erro", "Banco de dados", db_info["problem"],
                                 "Conferir o serviço VyonixPostgreSQL e reaplicar a configuração do banco.",
                                 ["running.VyonixPostgreSQL", "core.database"]))
+    # backup diário do PACS (quando o módulo foi ativado): resultado e idade do último backup, espaço no destino
+    problems += _pacs_backup(ctx)
     # relatórios e manifestos
     for msg in report.verify_chain(ctx.db):
         problems.append(Problem("reports.integrity", "alerta", "Relatório alterado fora do VYONIX", msg,
@@ -93,6 +95,46 @@ def diagnose(ctx: Context) -> dict[str, Any]:
     return {"problems": [p.as_dict() for p in _dedupe(problems)], "status": status, "observed": observed,
             "database": db_info, "manifest_run": (manifest or {}).get("run_id"),
             "at": datetime.now(timezone.utc).isoformat(timespec="seconds")}
+
+
+def _pacs_backup(ctx: Context) -> list[Problem]:
+    import json
+    from pathlib import Path
+    from vyonix.pacs.backup_task import read_status
+    try:
+        cfg = json.loads((ctx.paths.data_dir / "config.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    dest = cfg.get("pacs_backup_dir")
+    if not dest:
+        return []
+    out: list[Problem] = []
+    st = read_status(dest)
+    fix = "Conferir o serviço VyonixWorker, o motor DICOM e a pasta de backup; o próximo backup roda no horário."
+    if st is None:
+        out.append(Problem("pacs.backup.none", "alerta", "Backup do PACS ainda não registrado",
+                           "Nenhum backup automático concluído na pasta configurada.", fix, ["running.VyonixWorker"]))
+    else:
+        if not st.get("ok"):
+            out.append(Problem("pacs.backup.failed", "alerta", "Último backup do PACS falhou",
+                               str(st.get("error", "motivo não registrado"))[:300], fix, ["running.VyonixWorker"]))
+        try:
+            age_h = (datetime.now() - datetime.fromisoformat(st["finished_at"])).total_seconds() / 3600
+            if age_h > 36:
+                out.append(Problem("pacs.backup.stale", "alerta", "Backup do PACS atrasado",
+                                   f"Último backup há {int(age_h)} h (esperado: diário).", fix,
+                                   ["running.VyonixWorker"]))
+        except (KeyError, ValueError, TypeError):
+            pass
+    try:
+        free = shutil.disk_usage(Path(dest)).free
+        if free < 20 * 1024 ** 3:
+            out.append(Problem("pacs.backup.disk", "erro" if free < 2 * 1024 ** 3 else "alerta",
+                               "Pouco espaço no destino do backup do PACS", f"{free / 1024 ** 3:.1f} GB livres.",
+                               "Liberar espaço ou indicar outro destino (opção pacs_backup_dir do DEPLOY).", []))
+    except OSError:
+        pass
+    return out
 
 
 def _dedupe(ps: list[Problem]) -> list[Problem]:
