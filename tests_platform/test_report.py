@@ -293,6 +293,10 @@ class Api(ApiBase):
                                   json={"reviewed": True}).status_code, 200)
         tpl = med.get("/api/v1/report/templates", params={"published": True}).json()["items"][0]
         r = med.post("/api/v1/report/reports", json={"study_id": str(study_id), "template_id": tpl["id"]})
+        self.assertEqual((r.status_code, r.json()["error"]), (403, "out_of_scope"))              # sem vínculo
+        self.assertEqual(admin.post(f"/api/v1/report/physicians/{pid}/links",
+                                    json={"valid_from": "2026-01-01"}).status_code, 201)
+        r = med.post("/api/v1/report/reports", json={"study_id": str(study_id), "template_id": tpl["id"]})
         self.assertEqual(r.status_code, 201, r.text)
         rep = r.json()
         self.assertEqual(rep["body"], "Achados:\nSem alterações.")
@@ -302,11 +306,6 @@ class Api(ApiBase):
         self.assertEqual(r.status_code, 200, r.text)
         rv = r.json()["row_version"]
         self.assertEqual(med.get(f"/api/v1/report/reports/{rep['id']}/pdf").status_code, 409)     # rascunho
-        r = med.post(f"/api/v1/report/reports/{rep['id']}/finalize", json={"password": "Senha-Nova-9876!",
-                                                                           "row_version": rv})
-        self.assertEqual((r.status_code, r.json()["error"]), (403, "physician_not_linked"))       # sem vínculo
-        self.assertEqual(admin.post(f"/api/v1/report/physicians/{pid}/links",
-                                    json={"valid_from": "2026-01-01"}).status_code, 201)
         r = med.post(f"/api/v1/report/reports/{rep['id']}/finalize", json={"password": "errada", "row_version": rv})
         self.assertEqual((r.status_code, r.json()["error"]), (403, "password_mismatch"))
         self.assertEqual(med.get(f"/api/v1/report/reports/{rep['id']}").json()["status"], "draft")

@@ -458,6 +458,15 @@ class WebE2E(unittest.TestCase):
         panel.get_by_role("form", name="Vínculo de Marta Médica").get_by_role("button", name="Incluir vínculo").click()
         expect(panel.get_by_text("toda a organização: desde")).to_be_visible()
         self.shot(pg, "13-medicos")
+        # fila: coordenação atribui o exame à médica
+        arow = pg.get_by_role("row", name="Helena Laudo Sintetica")
+        arow.get_by_role("button", name="Atribuir").click()
+        af = arow.get_by_role("form", name="Atribuir exame")
+        af.get_by_label("Médico").select_option(label="Marta Médica — CRM 12345/CE — RQE 6789")
+        af.get_by_label("Prioridade").select_option("urgent")
+        af.get_by_role("button", name="Atribuir").click()
+        expect(pg.get_by_text("Exame atribuído.")).to_be_visible()
+        expect(pg.get_by_role("row", name="Helena Laudo Sintetica").get_by_text("urgente")).to_be_visible()
         # identidade visual (administrador): logomarca, rodapé, nova versão e pré-visualização A4
         import io as _io
         from PIL import Image
@@ -529,8 +538,11 @@ class WebE2E(unittest.TestCase):
         sp.get_by_label("Autorizo aplicar a imagem nos laudos que eu liberar").click()
         expect(sp.get_by_text("Uso autorizado nos próximos laudos que você liberar.")).to_be_visible()
         expect(sp.get_by_label("Autorizo aplicar a imagem nos laudos que eu liberar")).to_be_checked()
+        pg.get_by_label("Atribuídos a mim").check()
+        pg.get_by_role("button", name="Filtrar").click()
         row = pg.get_by_role("row", name="Helena Laudo Sintetica")
         expect(row.get_by_role("cell", name="Sem laudo")).to_be_visible()
+        expect(pg.get_by_role("row", name="Carlos Agenda Sintetico")).to_have_count(0)        # não atribuído a ela
         row.get_by_role("button", name="Laudar").click()
         editor = pg.get_by_role("region", name="Laudo")
         expect(editor.get_by_text("Modelo selecionado: RM normal (regra: organização + modalidade).")).to_be_visible()

@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import date, datetime
 
-from sqlalchemy import JSON, Boolean, Date, DateTime, ForeignKey, Index, Integer, LargeBinary, String, Text, Uuid
+from sqlalchemy import JSON, Boolean, Date, DateTime, ForeignKey, Index, Integer, LargeBinary, String, Text, Uuid, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from vyonix.db.base import Base, TenantMixin
@@ -158,3 +158,17 @@ class SignatureImage(TenantMixin, Base):
     width: Mapped[int] = mapped_column(Integer, nullable=False)
     height: Mapped[int] = mapped_column(Integer, nullable=False)
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+
+class Assignment(TenantMixin, Base):
+    """Exame atribuído a um médico na fila de laudos, com prioridade e prazo (um aberto por exame)."""
+    __tablename__ = "assignments"
+    __table_args__ = (Index("uq_report_assignment_open", "tenant_id", "study_id", unique=True,
+                            postgresql_where=text("status = 'open'")), SCHEMA)
+    study_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("clinical.studies.id"), nullable=False)
+    physician_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("report.physicians.id"), nullable=False)
+    priority: Mapped[str] = mapped_column(String(10), nullable=False, default="routine")   # routine|urgent|stat
+    due_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    status: Mapped[str] = mapped_column(String(12), nullable=False, default="open")       # open|done|cancelled
+    assigned_by: Mapped[str] = mapped_column(String(120), nullable=False)
+    done_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

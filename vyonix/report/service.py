@@ -177,6 +177,8 @@ def finalize(s: Session, report_id: uuid.UUID, *, expected_version: int | None =
     v = _new_version(s, r, kind="final", body=r.body, critical=r.critical, actor=signer, actor_id=actor_id,
                      signature_image_id=sig)
     r.status, r.finalized_by, r.finalized_at = "final", signer[:120], v.signed_at
+    from vyonix.report import queue
+    queue.close_for_study(s, r.study_id)              # atribuição da fila concluída
     s.flush()
     if r.order_id:                                   # laudo liberado conclui o pedido (pelo serviço do cadastro)
         from vyonix.clinical import service as clinical
@@ -236,7 +238,8 @@ def critical_alerts(s: Session, *, status: str | None = "open", limit: int = 200
     out = []
     for a, r, st, p in s.execute(q.order_by(CriticalAlert.created_at).limit(min(limit, 500))):
         o = s.get(Order, r.order_id) if r.order_id else None
-        out.append({"id": str(a.id), "report_id": str(r.id), "version": a.version, "note": a.note, "status": a.status,
+        out.append({"id": str(a.id), "report_id": str(r.id), "site_id": str(st.site_id) if st.site_id else None,
+                    "version": a.version, "note": a.note, "status": a.status,
                     "created_at": a.created_at.isoformat(), "patient_name": p.name if p else None,
                     "accession": st.accession, "modality": st.modality, "requester": o.requester if o else None,
                     "signed_by": r.finalized_by, "notified_to": a.notified_to, "channel": a.channel,
@@ -333,9 +336,11 @@ def verify(s: Session, report_id: uuid.UUID) -> dict[str, Any]:
 
 
 def worklist(s: Session, *, status: str | None = None, modality: str | None = None, date_from: date | None = None,
-             date_to: date | None = None, patient_id: uuid.UUID | None = None,
+             date_to: date | None = None, patient_id: uuid.UUID | None = None, scope=None, mine: uuid.UUID | None = None,
              limit: int = 200) -> list[dict[str, Any]]:
-    """Estudos do cadastro clínico com a situação do laudo: pending (sem laudo), draft, final."""
+    """Estudos do cadastro clínico com a situação do laudo (pending, draft, final), a atribuição aberta e o prazo.
+    ``scope``: restrição por unidade do médico (TELELAUDO T7); ``mine``: só os atribuídos a este usuário."""
+    from vyonix.report import queue
     q = (select(Study, Patient, Report).outerjoin(Patient, Patient.id == Study.patient_id)
          .outerjoin(Report, Report.study_id == Study.id))
     if status == "pending":
@@ -350,10 +355,19 @@ def worklist(s: Session, *, status: str | None = None, modality: str | None = No
         q = q.where(Study.study_date >= date_from)
     if date_to:
         q = q.where(Study.study_date <= date_to)
+    if scope is not None:
+        whole, sites = scope
+        if not whole:
+            q = q.where(Study.site_id.in_(sites or {uuid.UUID(int=0)}))
     rows = s.execute(q.order_by(Study.study_date.desc().nullslast(), Study.created_at.desc()).limit(min(limit, 500)))
+    assigned = queue.open_by_study(s)
     out = []
     for st, p, r in rows:
-        out.append({"study_id": str(st.id), "study_instance_uid": st.study_instance_uid, "accession": st.accession,
+        a = assigned.get(st.id)
+        if mine is not None and (a is None or a["physician_user_id"] != str(mine)):
+            continue
+        out.append({"assignment": a, "site_id": str(st.site_id) if st.site_id else None, "study_id": str(st.id),
+                    "study_instance_uid": st.study_instance_uid, "accession": st.accession,
                     "modality": st.modality, "study_date": st.study_date.isoformat() if st.study_date else None,
                     "description": st.description, "patient_name": p.name if p else None,
                     "report_id": str(r.id) if r else None, "report_status": r.status if r else "pending",

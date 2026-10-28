@@ -6,7 +6,8 @@ import { MySignaturePanel, PhysiciansPanel } from "./physicians";
 
 type Row = { study_id: string; study_instance_uid: string; accession: string | null; modality: string | null;
   study_date: string | null; description: string | null; patient_name: string | null; report_id: string | null;
-  report_status: "pending" | "draft" | "final"; critical: boolean };
+  report_status: "pending" | "draft" | "final"; critical: boolean;
+  assignment: null | { physician: string; priority: string; due_at: string; overdue: boolean } };
 type Version = { version: number; kind: "final" | "addendum"; body: string; critical: boolean; signed_by: string;
   signed_at: string; sha256: string };
 type Report = { id: string; study_id: string; study_instance_uid: string | null; status: "draft" | "final"; body: string;
@@ -17,13 +18,17 @@ type Alert = { id: string; report_id: string; version: number; note: string | nu
   signed_by: string | null };
 type Template = { id: string; name: string; modality: string | null; body: string; active: boolean };
 
+const PRIORITY: Record<string, string> = { routine: "rotina", urgent: "urgente", stat: "imediato" };
 const STATUS: Record<string, string> = { pending: "Sem laudo", draft: "Rascunho", final: "Liberado" };
 
 function day(d: string | null) { return d ? fmtDate(d + "T12:00:00", false) : "—"; }
 
 export function ReportsPage({ me }: { me: Me }) {
   const can = (p: string) => me.permissions.includes(p);
-  const [filters, setFilters] = useState({ status: "pending", modality: "" });
+  const [filters, setFilters] = useState({ status: "pending", modality: "", mine: false });
+  const [assignFor, setAssignFor] = useState<{ study: string; physician: string; priority: string } | null>(null);
+  const docs = useLoad(async () => (can("report.assign") && assignFor ? (await get<{ items: { id: string; name: string }[] }>("/report/assignable-physicians")).items : []),
+    [assignFor?.study]);   // recarrega ao abrir a atribuição (médicos recém-cadastrados aparecem)
   const [query, setQuery] = useState(filters);
   const [open, setOpen] = useState<{ row: Row; report: Report | null } | null>(null);
   const [showTemplates, setShowTemplates] = useState(false);
@@ -37,8 +42,18 @@ export function ReportsPage({ me }: { me: Me }) {
     const q = new URLSearchParams();
     if (query.status !== "all") q.set("status", query.status);
     if (query.modality) q.set("modality", query.modality.toUpperCase());
+    if (query.mine) q.set("mine", "true");
     return (await get<{ items: Row[] }>(`/report/worklist?${q}`)).items;
   }, [query]);
+
+  async function assign() {
+    if (!assignFor) return;
+    const ok = await act.run(async () => {
+      await post("/report/assignments", { study_id: assignFor.study, physician_id: assignFor.physician, priority: assignFor.priority });
+      await list.reload();
+    }, "Exame atribuído.");
+    if (ok) setAssignFor(null);
+  }
 
   async function openRow(row: Row) {
     await act.run(async () => {
@@ -74,19 +89,32 @@ export function ReportsPage({ me }: { me: Me }) {
         </select>
         <input placeholder="Modalidade" aria-label="Modalidade" maxLength={16} value={filters.modality}
           onChange={(e) => setFilters({ ...filters, modality: e.target.value })} />
+        {can("report.sign") && <label className="check"><input type="checkbox" checked={filters.mine}
+          onChange={(e) => setFilters({ ...filters, mine: e.target.checked })} /> Atribuídos a mim</label>}
         <button>Filtrar</button>
       </form>
       <Notice kind="error">{list.error}</Notice>
       <div className="table-wrap">
         <table>
           <thead><tr><th>Data</th><th>Paciente</th><th>Modalidade</th><th>Descrição</th><th>Accession</th>
-            <th>Laudo</th><th>Ações</th></tr></thead>
+            <th>Laudo</th><th>Fila</th><th>Ações</th></tr></thead>
           <tbody>
             {(list.data ?? []).map((r) => (
               <tr key={r.study_id}>
                 <td className="nowrap">{day(r.study_date)}</td><td>{r.patient_name ?? "—"}</td><td>{r.modality ?? "—"}</td>
                 <td>{r.description ?? "—"}</td><td className="nowrap">{r.accession ?? "—"}</td>
                 <td>{STATUS[r.report_status]}{r.critical && <span className="tag tag-warn">Achado crítico</span>}</td>
+                <td>{r.assignment ? <>{r.assignment.physician} · {PRIORITY[r.assignment.priority] ?? r.assignment.priority} · até {fmtDate(r.assignment.due_at)}
+                  {r.assignment.overdue && <span className="tag tag-warn">Atrasado</span>}</> : "—"}
+                  {can("report.assign") && r.report_status !== "final" && (assignFor?.study === r.study_id ? (
+                    <form className="filters" aria-label="Atribuir exame" onSubmit={(e) => { e.preventDefault(); void assign(); }}>
+                      <select aria-label="Médico" required value={assignFor.physician} onChange={(e) => setAssignFor({ ...assignFor, physician: e.target.value })}>
+                        <option value="">Médico…</option>{(docs.data ?? []).map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select>
+                      <select aria-label="Prioridade" value={assignFor.priority} onChange={(e) => setAssignFor({ ...assignFor, priority: e.target.value })}>
+                        <option value="routine">Rotina (48 h)</option><option value="urgent">Urgente (4 h)</option><option value="stat">Imediato (1 h)</option></select>
+                      <button className="primary" disabled={act.busy}>Atribuir</button>
+                    </form>) : <> <button className="link" onClick={() => setAssignFor({ study: r.study_id, physician: "", priority: "routine" })}>
+                      {r.assignment ? "Reatribuir" : "Atribuir"}</button></>)}</td>
                 <td className="actions"><div className="row-actions">
                   {(r.report_id || can("report.write")) &&
                     <button onClick={() => void openRow(r)}>{r.report_status === "final" ? "Ver laudo" : "Laudar"}</button>}

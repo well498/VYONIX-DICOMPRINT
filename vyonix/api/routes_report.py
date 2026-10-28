@@ -28,6 +28,24 @@ def _require(c: Ctx, s) -> None:
     c.plat.licensing.require_module(s, "report")
 
 
+def _scope(c: Ctx, s):
+    from vyonix.report import queue
+    return queue.scope(s, c.p.user_id, can_assign=c.p.has("report.assign"))
+
+
+def _in_scope(c: Ctx, s, *, study_id: uuid.UUID | None = None, report_id: uuid.UUID | None = None) -> None:
+    """Médico só acessa exame/laudo de unidade com vínculo vigente (TELELAUDO T7)."""
+    from vyonix.errors import NotFound
+    from vyonix.report import queue
+    from vyonix.report.models import Report
+    if report_id is not None:
+        r = s.get(Report, report_id)
+        if r is None:
+            raise NotFound("Laudo não encontrado.")
+        study_id = r.study_id
+    queue.require(s, _scope(c, s), study_id)
+
+
 class OpenIn(BaseModel):
     study_id: uuid.UUID
     template_id: uuid.UUID | None = None
@@ -76,17 +94,19 @@ class PublishIn(BaseModel):
 
 @router.get("/worklist")
 def worklist(status: str | None = None, modality: str | None = None, date_from: date | None = None,
-             date_to: date | None = None, patient_id: uuid.UUID | None = None,
+             date_to: date | None = None, patient_id: uuid.UUID | None = None, mine: bool = False,
              c: Ctx = Depends(needs("report.read"))):
     with c.session() as s:
         return {"items": rep.worklist(s, status=status, modality=modality, date_from=date_from, date_to=date_to,
-                                      patient_id=patient_id)}
+                                      patient_id=patient_id, scope=_scope(c, s),
+                                      mine=c.p.user_id if mine else None)}
 
 
 @router.post("/reports", status_code=201)
 def open_report(body: OpenIn, c: Ctx = Depends(needs("report.write"))):
     with c.session() as s:
         _require(c, s)
+        _in_scope(c, s, study_id=body.study_id)
         r = rep.open_report(s, body.study_id, template_id=body.template_id, auto=body.auto, **c.actor)
         return rep.get(s, r.id)
 
@@ -95,12 +115,14 @@ def open_report(body: OpenIn, c: Ctx = Depends(needs("report.write"))):
 def suggest(study_id: uuid.UUID, c: Ctx = Depends(needs("report.write"))):
     """Modelo que a seleção automática usaria para o exame (e por qual regra)."""
     with c.session() as s:
+        _in_scope(c, s, study_id=study_id)
         return tpl.select_for(s, study_id)
 
 
 @router.get("/reports/{rid}")
 def get_report(rid: uuid.UUID, c: Ctx = Depends(needs("report.read"))):
     with c.session() as s:
+        _in_scope(c, s, report_id=rid)
         return rep.get(s, rid)
 
 
@@ -108,6 +130,7 @@ def get_report(rid: uuid.UUID, c: Ctx = Depends(needs("report.read"))):
 def save_draft(rid: uuid.UUID, body: DraftIn, c: Ctx = Depends(needs("report.write"))):
     with c.session() as s:
         _require(c, s)
+        _in_scope(c, s, report_id=rid)
         rep.update_draft(s, rid, body=body.body, critical=body.critical, critical_note=body.critical_note,
                          expected_version=body.row_version, **c.actor)
         return rep.get(s, rid)
@@ -117,6 +140,7 @@ def save_draft(rid: uuid.UUID, body: DraftIn, c: Ctx = Depends(needs("report.wri
 def finalize(rid: uuid.UUID, body: SignIn, c: Ctx = Depends(needs("report.sign"))):
     with c.session() as s:
         _require(c, s)
+        _in_scope(c, s, report_id=rid)
     with c.session() as s:                         # tentativa falha fica registrada mesmo sem liberar
         ok = auth.confirm_password(s, c.p, body.password, purpose="report.finalize", ip=c.ip)
     if not ok:
@@ -131,6 +155,7 @@ def finalize(rid: uuid.UUID, body: SignIn, c: Ctx = Depends(needs("report.sign")
 def add_addendum(rid: uuid.UUID, body: AddendumIn, c: Ctx = Depends(needs("report.sign"))):
     with c.session() as s:
         _require(c, s)
+        _in_scope(c, s, report_id=rid)
     with c.session() as s:
         ok = auth.confirm_password(s, c.p, body.password, purpose="report.addendum", ip=c.ip)
     if not ok:
@@ -145,6 +170,7 @@ def add_addendum(rid: uuid.UUID, body: AddendumIn, c: Ctx = Depends(needs("repor
 def report_pdf(rid: uuid.UUID, c: Ctx = Depends(needs("report.read"))):
     from fastapi.responses import Response
     with c.session() as s:
+        _in_scope(c, s, report_id=rid)
         data, name = rep.pdf(s, rid, signature_key=_sig_key(c), **c.actor)
     return Response(data, media_type="application/pdf",
                     headers={"Content-Disposition": f'attachment; filename="{name}"', "Cache-Control": "no-store"})
@@ -153,6 +179,7 @@ def report_pdf(rid: uuid.UUID, c: Ctx = Depends(needs("report.read"))):
 @router.get("/reports/{rid}/verify")
 def verify(rid: uuid.UUID, c: Ctx = Depends(needs("report.read"))):
     with c.session() as s:
+        _in_scope(c, s, report_id=rid)
         return rep.verify(s, rid)
 
 
@@ -164,8 +191,11 @@ class CommunicateIn(BaseModel):
 
 @router.get("/critical")
 def critical(status: str | None = "open", c: Ctx = Depends(needs("report.read"))):
+    from vyonix.report import queue
     with c.session() as s:
-        return {"items": rep.critical_alerts(s, status=status or None)}
+        sc = _scope(c, s)
+        return {"items": [x for x in rep.critical_alerts(s, status=status or None)
+                          if queue.allowed(sc, uuid.UUID(x["site_id"]) if x["site_id"] else None)]}
 
 
 @router.post("/critical/{aid}/communicate")
@@ -397,3 +427,24 @@ def signature_consent(body: ConsentIn, c: Ctx = Depends(needs("report.sign"))):
     with c.session() as s:
         sig.set_consent(s, c.p.user_id, body.allow, actor=c.p.username, ip=c.ip)
         return sig.status(s, c.p.user_id)
+
+
+# ------------------------------------------------------------------ fila de telelaudo (T7)
+class AssignIn(BaseModel):
+    study_id: uuid.UUID
+    physician_id: uuid.UUID
+    priority: str = "routine"
+
+
+@router.post("/assignments", status_code=201)
+def assign(body: AssignIn, c: Ctx = Depends(needs("report.assign"))):
+    from vyonix.report import queue
+    with c.session() as s:
+        a = queue.assign(s, body.study_id, body.physician_id, priority=body.priority, **c.actor)
+        return {"id": str(a.id), "due_at": a.due_at.isoformat()}
+
+
+@router.get("/assignable-physicians")
+def assignable(c: Ctx = Depends(needs("report.assign"))):
+    with c.session() as s:
+        return {"items": [{"id": p["id"], "name": p["identification"]} for p in phys.listing(s) if p["active"]]}

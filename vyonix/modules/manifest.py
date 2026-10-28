@@ -143,7 +143,8 @@ REPORT = ModuleManifest(
     permissions={"report.read": "Consultar laudos", "report.write": "Redigir laudos (rascunho)",
                  "report.sign": "Liberar laudos e registrar adendos", "report.templates.manage": "Gerenciar modelos",
                  "report.physicians.manage": "Cadastrar médicos e vínculos com unidades",
-                 "report.branding.manage": "Configurar a identidade visual dos laudos"},
+                 "report.branding.manage": "Configurar a identidade visual dos laudos",
+                 "report.assign": "Distribuir exames na fila de laudos (vê todas as unidades)"},
     publishes=("report.finalized.v1", "report.amended.v1", "report.critical.v1"),
 )
 
@@ -171,7 +172,7 @@ def all_permissions() -> dict[str, tuple[str, str]]:
 DEFAULT_ROLES: dict[str, tuple[str, list[str]]] = {
     "administrador": ("Administrador", ["*"]),
     "supervisor": ("Supervisor", ["core.users.read", "core.settings.read", "core.audit.read", "core.license.read",
-                                  "clinical.*", "print.*", "pacs.*", "ris.*", "report.read"]),
+                                  "clinical.*", "print.*", "pacs.*", "ris.*", "report.read", "report.assign"]),
     "medico": ("Médico", ["core.license.read", "clinical.patients.read", "clinical.orders.read",
                           "clinical.studies.read", "pacs.studies.read", "ris.schedule.read", "report.read",
                           "report.write", "report.sign", "report.templates.manage"]),     # sem cadastro de médicos
