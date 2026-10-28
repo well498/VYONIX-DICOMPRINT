@@ -184,7 +184,7 @@ def listing(s: Session, *, modality: str | None = None, include_inactive: bool =
                     "published_version": pub.version if pub else None,
                     "draft": None if last is None or last.status != "draft" else
                     {"version": last.version, "technique": last.technique, "findings": last.findings,
-                     "conclusion": last.conclusion},
+                     "conclusion": last.conclusion, "import_report": last.import_report},
                     "versions": [{"version": v.version, "status": v.status, "created_by": v.created_by,
                                   "published_by": v.published_by,
                                   "published_at": v.published_at.isoformat() if v.published_at else None}

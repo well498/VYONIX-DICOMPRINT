@@ -40,6 +40,7 @@ class TemplateVersion(TenantMixin, Base):
     created_by: Mapped[str] = mapped_column(String(120), nullable=False)
     published_by: Mapped[str | None] = mapped_column(String(120))
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    import_report: Mapped[dict | None] = mapped_column(JSON)            # importação DOCX (T6)
 
 
 class Report(TenantMixin, Base):

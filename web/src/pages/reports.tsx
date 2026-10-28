@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { fmtDate, get, post, put, type Me } from "../api";
+import { fmtDate, get, post, put, upload, type Me } from "../api";
 import { Field, Notice, Page, useAction, useLoad } from "../ui";
 import { BrandingPanel } from "./branding";
 import { MySignaturePanel, PhysiciansPanel } from "./physicians";
@@ -224,7 +224,8 @@ function Editor({ me, row, initial, onClose }: { me: Me; row: Row; initial: Repo
 }
 
 type TplItem = Template & { published_version: number | null; preferred: boolean; procedure_id: string | null; site_id: string | null;
-  draft: null | { version: number; technique: string; findings: string; conclusion: string };
+  draft: null | { version: number; technique: string; findings: string; conclusion: string;
+    import_report: null | { issues: string[]; fields: string[]; header: string; footer: string } };
   versions: { version: number; status: string; created_by: string; published_by: string | null; published_at: string | null }[] };
 const TPL_STATUS: Record<string, string> = { draft: "rascunho", published: "publicada", archived: "arquivada" };
 
@@ -259,6 +260,16 @@ function Templates() {
       "Modelo publicado. Novos laudos passam a usar esta versão.");
   }
   const current = list.data?.items.find((t) => t.id === form.id);
+  async function importDocx(f: File | undefined) {
+    if (!f) return;
+    await act.run(async () => {
+      const r = await upload<{ id: string }>(`/report/templates/import-docx?${new URLSearchParams(form.modality ? { modality: form.modality } : {})}`, f);
+      await list.reload();
+      const items = (await get<{ items: TplItem[] }>("/report/templates?include_inactive=true")).items;
+      const t = items.find((x) => x.id === r.id);
+      if (t) edit(t);
+    }, "DOCX importado como rascunho. Confira as incompatibilidades e a pré-visualização antes de publicar.");
+  }
   return (
     <section className="panel" aria-label="Modelos de laudo">
       <h2>Modelos de laudo</h2>
@@ -267,6 +278,17 @@ function Templates() {
         <li key={t.id}><button className="link" onClick={() => edit(t)}>{t.name}</button>{t.modality ? ` (${t.modality})` : ""}
           {" — "}{t.published_version ? `publicada v${t.published_version}` : "sem versão publicada"}{t.draft ? ` · rascunho v${t.draft.version}` : ""}{t.active ? "" : " — inativo"}</li>))}
       </ul>
+      <div className="filters" role="group" aria-label="Importar DOCX">
+        <label className="field"><span className="field-label">Importar modelo do Word (DOCX)</span>
+          <input type="file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            aria-label="Arquivo DOCX" onChange={(e) => void importDocx(e.target.files?.[0])} /></label>
+      </div>
+      {current?.draft?.import_report && (
+        <Notice kind="warn"><strong>Importado do DOCX — confira antes de publicar:</strong>
+          <ul>{current.draft.import_report.issues.map((i, k) => <li key={k}>{i}</li>)}</ul>
+          {(current.draft.import_report.header || current.draft.import_report.footer) &&
+            <span>Sugestão para a identidade visual — cabeçalho: “{current.draft.import_report.header || "—"}”; rodapé: “{current.draft.import_report.footer || "—"}”.</span>}
+        </Notice>)}
       <form onSubmit={save} aria-label="Editar modelo">
         <div className="grid2">
           <Field label="Nome do modelo"><input required maxLength={120} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>

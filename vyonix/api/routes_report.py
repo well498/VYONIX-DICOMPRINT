@@ -198,6 +198,37 @@ def update_template(tid: uuid.UUID, body: TemplateIn, c: Ctx = Depends(needs("re
         return {"id": str(t.id), "version": v.version, "status": v.status}
 
 
+@router.post("/templates/import-docx", status_code=201)
+async def import_docx(request: Request, name: str | None = None, modality: str | None = None,
+                      c: Ctx = Depends(needs("report.templates.manage"))):
+    """Importação assistida: cria um **rascunho** com o relatório de incompatibilidades (publicar exige conferência)."""
+    from vyonix.errors import ValidationFailed
+    from vyonix.report import docx_import
+    data = bytearray()
+    async for chunk in request.stream():
+        data += chunk
+        if len(data) > docx_import.MAX_BYTES:
+            raise ValidationFailed("Arquivo acima de 5 MB.")
+    conv = docx_import.convert(bytes(data))
+    bad = tpl.unknown_fields(conv["technique"], conv["findings"], conv["conclusion"])
+    for f in bad:                                         # {{x}} desconhecido no texto vira texto literal
+        for k in ("technique", "findings", "conclusion"):
+            conv[k] = conv[k].replace("{{" + f + "}}", "[" + f + "]")
+    if bad:
+        conv["issues"].append(f"Campos não reconhecidos viraram texto: {', '.join(bad)}.")
+    with c.session() as s:
+        t, v = tpl.save(s, name=(name or conv["name"] or "Modelo importado").strip()[:120], modality=modality,
+                        technique=conv["technique"], findings=conv["findings"], conclusion=conv["conclusion"],
+                        **c.actor)
+        v.import_report = {"issues": conv["issues"], "fields": conv["fields"], "header": conv["header"],
+                           "footer": conv["footer"]}
+        s.flush()
+        from vyonix.audit import service as audit
+        audit.record(s, action="report.template.import_docx", target_type="report_template", target_id=t.id,
+                     details={"version": v.version, "issues": len(conv["issues"])}, **c.actor)
+        return {"id": str(t.id), "version": v.version, "status": v.status, **v.import_report}
+
+
 @router.post("/templates/{tid}/publish")
 def publish_template(tid: uuid.UUID, body: PublishIn, c: Ctx = Depends(needs("report.templates.manage"))):
     with c.session() as s:

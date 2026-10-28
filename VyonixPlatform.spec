@@ -10,7 +10,7 @@
 
 from pathlib import Path
 
-from PyInstaller.utils.hooks import collect_submodules
+from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 ROOT = Path(SPECPATH).resolve()
 WEB = ROOT / "web" / "dist"
@@ -22,9 +22,9 @@ datas = [
     (str(ROOT / "vyonix_deploy" / "wizard" / "index.html"), "vyonix_deploy/wizard"),
     (str(ROOT / "vyonix_deploy" / "wizard" / "app.js"), "vyonix_deploy/wizard"),
     (str(WEB), "web"),
-]
+] + collect_data_files("docx")          # python-docx: importação de modelos DOCX (VYONIX REPORT)
 hidden = (collect_submodules("uvicorn") + collect_submodules("vyonix") + collect_submodules("vyonix_deploy")
-          + collect_submodules("alembic") + collect_submodules("pydicom.encaps") + collect_submodules("pynetdicom") + ["psycopg_binary", "sqlalchemy.dialects.postgresql.psycopg",
+          + collect_submodules("alembic") + collect_submodules("pydicom.encaps") + collect_submodules("pynetdicom") + collect_submodules("docx") + ["psycopg_binary", "sqlalchemy.dialects.postgresql.psycopg",
                                              "win32timezone", "win32serviceutil", "servicemanager"])
 # pydicom e pynetdicom entram no pacote: o VYONIX PACS valida e lê DICOM e serve C-FIND/C-MOVE no Core
 # (sem numpy; frames saem como estão).

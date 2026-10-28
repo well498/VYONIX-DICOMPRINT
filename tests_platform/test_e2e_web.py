@@ -499,6 +499,15 @@ class WebE2E(unittest.TestCase):
         pub.get_by_role("button", name="Publicar versão 1").click()
         expect(pg.get_by_text("Modelo publicado.")).to_be_visible()
         expect(pg.get_by_text("v1 publicada por admin")).to_be_visible()
+        # importação DOCX: vira rascunho com o relatório de incompatibilidades
+        from tests_platform.test_report_docx import make_docx
+        docx_file = self.tmp / "modelo.docx"
+        docx_file.write_bytes(make_docx())
+        pg.get_by_role("group", name="Importar DOCX").get_by_label("Arquivo DOCX").set_input_files(str(docx_file))
+        expect(pg.get_by_text("DOCX importado como rascunho.")).to_be_visible()
+        expect(pg.get_by_text("Tabela convertida em linhas de texto")).to_be_visible()
+        expect(mf.get_by_label("Nome do modelo")).to_have_value("TC de abdome (importado)")
+        expect(pg.get_by_role("group", name="Publicar modelo").get_by_role("button", name="Publicar versão 1")).to_be_disabled()
         pg = self.page()
         self.login(pg, "medica1", "Provisoria-123")
         pg.get_by_label("Senha atual").fill("Provisoria-123")
