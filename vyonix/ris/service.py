@@ -217,7 +217,7 @@ def worklist(s: Session, *, date_from: date | None = None, date_to: date | None 
         out.append({"schedule_id": str(st.id), "order_id": str(o.id), "sps_id": st.sps_id, "status": st.status,
                     "study_instance_uid": st.study_instance_uid, "accession": o.accession, "priority": o.priority,
                     "modality": st.modality, "station_aet": st.station_aet, "room": st.room, "duration_min": st.duration_min,
-                    "mpps_status": st.mpps_status, "images": completeness(s, st),
+                    "mpps_status": st.mpps_status, "images": completeness(s, st), "mpps_summary": st.mpps_summary,
                     "description": st.description, "requester": o.requester,
                     "scheduled_date": local.strftime("%Y%m%d"), "scheduled_time": local.strftime("%H%M%S"),
                     "scheduled_at": st.scheduled_at.isoformat(), "patient_id": pid,
@@ -318,6 +318,46 @@ def performed_from(ds) -> dict[str, list[str]] | None:
     return out or None
 
 
+_DOSE = (("TotalTimeOfFluoroscopy", "fluoro_time_s"), ("TotalNumberOfExposures", "exposures"),
+         ("EntranceDoseInmGy", "entrance_dose_mgy"), ("EntranceDose", "entrance_dose_dgy"),
+         ("ImageAndFluoroscopyAreaDoseProduct", "dap_dgy_cm2"), ("ExposedArea", "exposed_area_cm2"),
+         ("DistanceSourceToEntrance", "source_entrance_mm"), ("CommentsOnRadiationDose", "comments"))
+_EXPOSURE = (("KVP", "kvp"), ("XRayTubeCurrentInuA", "tube_current_ua"), ("ExposureTime", "exposure_time_ms"),
+             ("RadiationMode", "mode"), ("NumberOfPulses", "pulses"))
+
+
+def summary_from(ds) -> dict | None:
+    """Séries realizadas e módulo Radiation Dose do MPPS, **como informados pela modalidade** (PS3.3 C.4.16 / C.4.17;
+    unidades do padrão). Apenas registro: nada é recalculado nem validado."""
+    if ds is None:
+        return None
+
+    def val(item, kw):
+        v = getattr(item, kw, None)
+        if v is None or v == "":
+            return None
+        try:
+            return float(v) if not isinstance(v, str) else v.strip()[:200]
+        except (TypeError, ValueError):
+            return str(v)[:200]
+    series = []
+    for item in getattr(ds, "PerformedSeriesSequence", None) or []:
+        series.append({"series_uid": str(getattr(item, "SeriesInstanceUID", "") or "")[:64],
+                       "description": val(item, "SeriesDescription"), "protocol": val(item, "ProtocolName"),
+                       "images": len(getattr(item, "ReferencedImageSequence", None) or [])})
+    dose = {k: val(ds, kw) for kw, k in _DOSE if val(ds, kw) is not None}
+    exposures = [{k: val(e, kw) for kw, k in _EXPOSURE if val(e, kw) is not None}
+                 for e in (getattr(ds, "ExposureDoseSequence", None) or [])][:200]
+    if exposures:
+        dose["exposure_items"] = exposures
+    out = {}
+    if series:
+        out["series"] = series
+    if dose:
+        out["dose"] = dose
+    return out or None
+
+
 def completeness(s: Session, sch: Schedule) -> dict[str, int] | None:
     """Imagens informadas no MPPS × recebidas pelo PACS (mesma organização). None sem lista do MPPS."""
     if not sch.mpps_performed:
@@ -331,7 +371,7 @@ def completeness(s: Session, sch: Schedule) -> dict[str, int] | None:
 
 
 def mpps_set(s: Session, sop_uid: str, *, status: str | None, calling_ae: str,
-             performed: dict[str, list[str]] | None = None) -> Schedule | None:
+             performed: dict[str, list[str]] | None = None, summary: dict | None = None) -> Schedule | None:
     """N-SET: andamento/conclusão do exame. COMPLETED conclui o agendamento; DISCONTINUED o devolve à fila
     (o exame não foi feito) e fica na auditoria. Depois de finalizado, o MPPS não muda (PS3.4 F.7.2.2)."""
     sch = s.execute(select(Schedule).where(Schedule.mpps_uid == sop_uid)).scalar_one_or_none()
@@ -340,10 +380,12 @@ def mpps_set(s: Session, sop_uid: str, *, status: str | None, calling_ae: str,
     if sch.mpps_status in MPPS_FINAL:
         raise MppsError(0x0110, "MPPS já finalizado não pode ser alterado.")                  # processing failure
     st = (status or "").upper()
+    if summary:
+        sch.mpps_summary = {**(sch.mpps_summary or {}), **summary}
     if not st:
         if performed:
             sch.mpps_performed = performed
-            s.flush()
+        s.flush()
         return sch
     if st not in ("IN PROGRESS",) + MPPS_FINAL:
         raise MppsError(0x0106, "PerformedProcedureStepStatus inválido.")

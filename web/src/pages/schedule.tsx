@@ -7,6 +7,8 @@ type Item = {
   station_aet: string | null; room: string | null; description: string | null; scheduled_at: string; duration_min: number;
   study_instance_uid: string; mpps_status: string | null;
   images: { expected: number; received: number } | null;
+  mpps_summary?: { series?: { series_uid: string; description: string | null; protocol: string | null; images: number }[];
+    dose?: Record<string, unknown> & { exposure_items?: Record<string, unknown>[] } } | null;
   patient_id: string; patient_name: string;
 };
 type Room = { id: string; name: string; modality: string | null; station_aet: string | null; default_duration_min: number;
@@ -16,6 +18,20 @@ type Pending = { order_id: string; accession: string; priority: string; patient_
 
 const STATUS: Record<string, string> = { scheduled: "Agendado", arrived: "Paciente chegou", in_progress: "Em realização", received: "Imagens recebidas",
   completed: "Concluído", cancelled: "Cancelado" };
+
+const DOSE: Record<string, string> = { fluoro_time_s: "Tempo de fluoroscopia (s)", exposures: "Exposições",
+  entrance_dose_mgy: "Dose de entrada (mGy)", entrance_dose_dgy: "Dose de entrada (dGy)", dap_dgy_cm2: "Produto dose × área (dGy·cm²)",
+  exposed_area_cm2: "Área exposta (cm²)", source_entrance_mm: "Fonte–entrada (mm)", comments: "Comentários" };
+
+function MppsSummary({ s }: { s: NonNullable<Item["mpps_summary"]> }) {
+  return (
+    <details className="mpps-summary"><summary>Informado pela modalidade</summary>
+      {s.series?.length ? <ul>{s.series.map((x) => <li key={x.series_uid}>{x.description || x.protocol || "Série"}{x.protocol && x.description ? ` (${x.protocol})` : ""}: {x.images} imagem(ns)</li>)}</ul> : null}
+      {s.dose && <ul>{Object.entries(s.dose).filter(([k]) => k !== "exposure_items").map(([k, v]) => <li key={k}>{DOSE[k] ?? k}: {String(v)}</li>)}
+        {s.dose.exposure_items?.length ? <li>{s.dose.exposure_items.length} registro(s) de exposição</li> : null}</ul>}
+      <span className="field-hint">Valores como enviados pelo equipamento (MPPS), sem conferência nem validação dosimétrica.</span>
+    </details>);
+}
 
 const MPPS: Record<string, string> = { "IN PROGRESS": "modalidade: iniciado", COMPLETED: "modalidade: concluído",
   DISCONTINUED: "modalidade: interrompido" };
@@ -161,6 +177,7 @@ export function SchedulePage({ me }: { me: Me }) {
                   {it.mpps_status && <span className="tag" title="Informado pela modalidade (MPPS)">{MPPS[it.mpps_status] ?? it.mpps_status}</span>}
                   {it.images && <span className={`tag${it.images.received < it.images.expected ? " tag-warn" : ""}`}
                     title="Imagens informadas pela modalidade (MPPS) × recebidas pelo PACS">imagens {it.images.received}/{it.images.expected}</span>}
+                  {it.mpps_summary && <MppsSummary s={it.mpps_summary} />}
                   {canView && ["received", "completed"].includes(it.status) && (
                     <> <a href={`/viewer/viewer?StudyInstanceUIDs=${encodeURIComponent(it.study_instance_uid)}`}
                       target="_blank" rel="noopener">Abrir no Viewer</a></>)}</td>

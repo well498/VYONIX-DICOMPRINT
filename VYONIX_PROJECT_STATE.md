@@ -310,6 +310,9 @@ Retornos agendados nesta sessão passam a garantir a continuidade.
 aprovados. Depois, locais: T2 `285dfb8`, T3 `cc9140a`, T4 `50570e8`, T5 `6ca6896`, T6 `5c1c524`, T7 `2e30bf4` —
 platform **168** testes locais, e2e 8/8.
 
+**CI de `f4b1fea`:** platform, viewer, deploy-windows (40726845928) e Windows release aprovados. Enviados depois:
+T8 `63205f1`, `f098374`, assinatura manuscrita `0d3e05d` e C-GET `72abd86` (CI em andamento).
+
 **Assinatura manuscrita digitalizada no cadastro médico (pedido de 28/10, tarde) — implementada, não validada para
 uso clínico:** imagem JPG/JPEG/PNG/WEBP com recorte, brilho, contraste e remoção do fundo branco; fica pendente até o
 médico confirmar com a senha; administrador só envia se o médico o designou; cifrada, privada, auditada (envio,

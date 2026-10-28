@@ -275,7 +275,8 @@ class QRServer:
                 if not self._ris_ok(s):
                     return 0x0110, None
                 ris.mpps_set(s, uid, status=_value(mod, "PerformedProcedureStepStatus") or None,
-                             calling_ae=info["calling"], performed=ris.performed_from(mod))
+                             calling_ae=info["calling"], performed=ris.performed_from(mod),
+                             summary=ris.summary_from(mod))
         except ris.MppsError as exc:
             log.warning("MPPS N-SET recusado (%s): %s", info["calling"], exc)
             return exc.status, None

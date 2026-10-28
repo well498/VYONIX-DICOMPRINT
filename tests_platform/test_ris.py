@@ -450,8 +450,24 @@ class Worklist(unittest.TestCase):
             r.ReferencedSOPClassUID, r.ReferencedSOPInstanceUID = "1.2.840.10008.5.1.4.1.1.2", u
             refs.append(r)
         item.ReferencedImageSequence = refs
+        item.SeriesDescription, item.ProtocolName = "Axial sintético", "PROTO-SINT"
+        item.PerformingPhysicianName, item.OperatorsName = "MEDICO^SINTETICO", "TECNICO^SINTETICO"
         done.PerformedSeriesSequence = [item]
+        done.TotalNumberOfExposures, done.ImageAndFluoroscopyAreaDoseProduct = 3, 1.25   # dose como informada
+        done.CommentsOnRadiationDose = "valor sintético"
+        ex = Dataset()
+        ex.KVP, ex.XRayTubeCurrentInuA, ex.RadiationMode = 120, 200000, "CONTINUOUS"
+        done.ExposureDoseSequence = [ex]
         self.assertEqual(a.send_n_set(done, MPPS, uid)[0].Status, 0x0000)
+        with db.session(self.t) as s:
+            wl = ris.worklist(s, date_from=date(2026, 11, 3), date_to=date(2026, 11, 3), include_done=True)
+            summ = next(e["mpps_summary"] for e in wl if e["schedule_id"] == str(self.sch_id))
+        self.assertEqual(summ["series"], [{"series_uid": series, "description": "Axial sintético",
+                                           "protocol": "PROTO-SINT", "images": 3}])
+        self.assertEqual((summ["dose"]["exposures"], summ["dose"]["dap_dgy_cm2"]), (3.0, 1.25))
+        self.assertEqual(summ["dose"]["exposure_items"], [{"kvp": 120.0, "tube_current_ua": 200000.0,
+                                                           "mode": "CONTINUOUS"}])
+        self.assertNotIn("SINTETICO", str(summ))                 # nomes de médico/operador não são guardados
         def images():
             with db.session(self.t) as s:
                 wl = ris.worklist(s, date_from=date(2026, 11, 3), date_to=date(2026, 11, 3), include_done=True)

@@ -36,6 +36,7 @@ class Schedule(TenantMixin, Base):
     mpps_uid: Mapped[str | None] = mapped_column(String(64))         # MPPS (N-CREATE) da modalidade
     mpps_status: Mapped[str | None] = mapped_column(String(16))      # IN PROGRESS | COMPLETED | DISCONTINUED
     mpps_performed: Mapped[dict | None] = mapped_column(JSON)         # {série: [SOP Instance UIDs]} informados no MPPS
+    mpps_summary: Mapped[dict | None] = mapped_column(JSON)           # séries e dose informadas no MPPS (não validadas)
 
 
 class Room(TenantMixin, Base):
