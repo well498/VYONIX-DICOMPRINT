@@ -73,9 +73,8 @@ class Runner:
                     logging.getLogger("vyonix").exception("Consulta/recuperação DICOM não iniciou (porta %s)", qr_port)
                     self.qr = None
         else:
-            from vyonix.events.worker import Worker
-            from vyonix.pacs.sync_task import INTERVAL_S, PacsSyncTask
-            self.worker = Worker(plat.db, plat.bus, periodic=[(INTERVAL_S, PacsSyncTask(plat))])
+            from vyonix.events.worker import build_worker
+            self.worker = build_worker(plat)
             self.thread = threading.Thread(target=self.worker.run_forever, name="vyonix-worker", daemon=True)
         self.thread.start()
 

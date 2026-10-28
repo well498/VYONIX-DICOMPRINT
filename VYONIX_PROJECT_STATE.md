@@ -226,3 +226,9 @@ Trabalho local não enviado (RIS/MWL) preservado e concluído.
 **Achado registrado, sem alteração (preservar o DICOM Print em validação):** o DICOM Print usa a raiz do pydicom nos UIDs
 que gera (`app/dicom/print_model.py`, `print_intake.py`, `print_scp.py`, `app/ui/application.py`). Recomendação: raiz
 própria do fornecedor ou `2.25`, numa revisão futura do Print, com aprovação (BKL-10).
+
+| Entrega (27/10, cont.) | Evidência |
+|---|---|
+| Backup e restauração do PACS (exportação verificada e incremental, verificação, restauração idempotente; motor perdido com índice intacto) | `tests_platform/test_pacs_backup.py` 6/6 local; teste com o Orthanc real no CI |
+| Comando `worker` passa a ter as mesmas tarefas periódicas do serviço do Windows (sincronização do PACS) | `vyonix/events/worker.py::build_worker` |
+| CI do commit do RIS (`326c458`): platform 142 testes, 0 pulados | platform run 40606680321 |

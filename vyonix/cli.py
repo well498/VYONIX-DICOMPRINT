@@ -155,10 +155,10 @@ def cmd_serve(a) -> int:
 
 def cmd_worker(a) -> int:
     from vyonix.context import build
-    from vyonix.events.worker import Worker
+    from vyonix.events.worker import build_worker
     cfg = _cfg(a)
     plat = build(cfg)
-    w = Worker(plat.db, plat.bus)
+    w = build_worker(plat)                    # mesmas tarefas periódicas do serviço (ex.: sincronização do PACS)
     logging.getLogger("vyonix").info("Processador de eventos iniciado.")
     try:
         w.run_forever()
@@ -178,6 +178,44 @@ def cmd_status(a) -> int:
         out["database"] = f"erro: {type(exc).__name__}"
     print(json.dumps(out, ensure_ascii=False, indent=2))
     return 0 if out["database"] == "ok" else 1
+
+
+def _pacs(a):
+    from vyonix.context import build
+    from vyonix.pacs import backend_for
+    from vyonix.tenancy import service as tenancy
+    cfg = _cfg(a)
+    plat = build(cfg)
+    tid = tenancy.resolve(plat.db, a.org or cfg.default_organization)
+    if tid is None:
+        raise SystemExit("Organização não encontrada.")
+    b = backend_for(plat)
+    if b is None:
+        raise SystemExit("Motor DICOM não configurado (pacs_orthanc_url).")
+    return plat, tid, b
+
+
+def cmd_pacs_backup(a) -> int:
+    from vyonix.pacs import backup
+    plat, tid, b = _pacs(a)
+    out = backup.export(plat.db, tid, b, Path(a.dest), actor="vyonix pacs-backup")
+    print(json.dumps(out, ensure_ascii=False, indent=2))
+    return 1 if out["integrity_failures"] else 0
+
+
+def cmd_pacs_verify(a) -> int:
+    from vyonix.pacs import backup
+    out = backup.verify(Path(a.src))
+    print(json.dumps(out, ensure_ascii=False, indent=2))
+    return 0 if out["valid"] else 1
+
+
+def cmd_pacs_restore(a) -> int:
+    from vyonix.pacs import backup
+    plat, tid, b = _pacs(a)
+    out = backup.restore(plat.db, tid, b, Path(a.src), actor="vyonix pacs-restore")
+    print(json.dumps(out, ensure_ascii=False, indent=2))
+    return 1 if out["rejected"] else 0
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -203,9 +241,18 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--insecure-http", action="store_true", help="somente testes locais (127.0.0.1)")
     sub.add_parser("worker", help="processador de eventos")
     sub.add_parser("status", help="diagnóstico")
+    pb = sub.add_parser("pacs-backup", help="backup verificado das imagens do PACS (incremental, não apaga nada)")
+    pb.add_argument("--dest", required=True)
+    pb.add_argument("--org")
+    pv = sub.add_parser("pacs-verify", help="confere um backup do PACS contra o manifesto")
+    pv.add_argument("--src", required=True)
+    pr = sub.add_parser("pacs-restore", help="restaura um backup do PACS pela entrada normal (idempotente)")
+    pr.add_argument("--src", required=True)
+    pr.add_argument("--org")
     a = p.parse_args(argv)
     return {"init": cmd_init, "migrate": cmd_migrate, "serve": cmd_serve, "worker": cmd_worker,
-            "status": cmd_status}[a.cmd](a)
+            "status": cmd_status, "pacs-backup": cmd_pacs_backup, "pacs-verify": cmd_pacs_verify,
+            "pacs-restore": cmd_pacs_restore}[a.cmd](a)
 
 
 if __name__ == "__main__":

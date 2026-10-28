@@ -115,3 +115,9 @@ class Worker:
                 self.stop.wait(self.poll_s)
         if listener is not None:
             listener.close()
+
+
+def build_worker(plat) -> Worker:
+    """Processador de eventos com as tarefas periódicas da plataforma (serviço do Windows e comando ``worker``)."""
+    from vyonix.pacs.sync_task import INTERVAL_S, PacsSyncTask
+    return Worker(plat.db, plat.bus, periodic=[(INTERVAL_S, PacsSyncTask(plat))])

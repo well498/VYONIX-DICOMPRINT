@@ -113,5 +113,32 @@ class Orthanc(unittest.TestCase):
         self.assertIsNone(o["called_aet"])
 
 
+    def test_backup_and_restore_after_file_lost_in_engine(self):
+        """Backup verificado com o Orthanc real; o arquivo some do motor (índice intacto) e a restauração o devolve."""
+        import tempfile
+        from pathlib import Path
+        from vyonix.pacs import backup, service as pacs
+        data = make_dicom(study=uid(self.n, 5), series=uid(self.n, 5, 1), sop=uid(self.n, 5, 1, 1), patient_id="BK-ORT")
+        with db.session(self.t) as s:
+            r = pacs.ingest(s, self.b, data, actor="teste")
+        with tempfile.TemporaryDirectory() as d:
+            dest = Path(d) / "bkp"
+            out = backup.export(db, self.t, self.b, dest)
+            self.assertEqual((out["copied"], out["integrity_failures"]), (1, []))
+            self.assertTrue(backup.verify(dest)["valid"])
+            from sqlalchemy import select
+            from vyonix.pacs.models import PacsInstance
+            with db.session(self.t) as s:
+                bid = s.execute(select(PacsInstance.backend_id).where(PacsInstance.id == r.instance_id)).scalar()
+            self.b.delete(bid)                                             # perda do arquivo no motor
+            with self.assertRaises(FileNotFoundError):
+                self.b.fetch(bid)
+            out = backup.restore(db, self.t, self.b, dest)
+            self.assertEqual((out["reinstated"], out["rejected"]), (1, []))
+        with db.session(self.t) as s:
+            self.assertEqual(pacs.retrieve_instance(s, self.b, uid(self.n, 5), uid(self.n, 5, 1),
+                                                    uid(self.n, 5, 1, 1)), data)
+
+
 if __name__ == "__main__":
     unittest.main()
