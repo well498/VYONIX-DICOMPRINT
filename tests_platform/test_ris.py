@@ -16,6 +16,7 @@ from tests_platform.support import ADMIN_PW, new_org, require_db
 
 BRT = timezone(timedelta(hours=-3))
 MWL = "1.2.840.10008.5.1.4.31"
+MPPS = "1.2.840.10008.3.1.2.3.3"
 
 
 def setUpModule():
@@ -346,6 +347,90 @@ class Worklist(unittest.TestCase):
         with db.session(self.t) as s:
             self.assertEqual(s.get(Schedule, self.sch_id).status, "received")
             self.assertEqual(len([d for st, d in self.find(Modality="CT") if st == 0xFF00]), 0)   # saiu da lista
+
+    def mpps(self):
+        from pynetdicom import AE
+        ae = AE(ae_title="MODALIDADE_TC")
+        ae.add_requested_context(MPPS)
+        a = ae.associate("127.0.0.1", self.port, ae_title="VYONIX_QR")
+        self.assertTrue(a.is_established)
+        self.addCleanup(a.release)
+        return a
+
+    @staticmethod
+    def mpps_create_ds(sps_id="", study_uid=""):
+        from pydicom.dataset import Dataset
+        ds = Dataset()
+        ds.PerformedProcedureStepStatus = "IN PROGRESS"
+        ds.PerformedProcedureStepID = "PPS1"
+        ds.PerformedStationAETitle = "MODALIDADE_TC"
+        ds.Modality = "CT"
+        ssa = Dataset()
+        ssa.ScheduledProcedureStepID, ssa.StudyInstanceUID = sps_id, study_uid
+        ssa.AccessionNumber = ""
+        ds.ScheduledStepAttributesSequence = [ssa]
+        return ds
+
+    def test_mpps_in_progress_completed_and_rules(self):
+        from pydicom.dataset import Dataset
+        from pydicom.uid import generate_uid
+        from vyonix.audit import service as audit
+        from vyonix.ris.models import Schedule
+        a = self.mpps()
+        st, _ = a.send_n_create(self.mpps_create_ds(self.sch.sps_id), MPPS, generate_uid(prefix=None))
+        self.assertEqual(st.Status, 0x0110)                               # RIS não habilitado: recusado
+        with db.session(self.t) as s:
+            self.registry.enable(s, "ris", actor="admin", license_check=self.lic.module_ok)
+        uid = generate_uid(prefix=None)
+        st, _ = a.send_n_create(self.mpps_create_ds(self.sch.sps_id), MPPS, uid)
+        self.assertEqual(st.Status, 0x0000)
+        with db.session(self.t) as s:
+            sch = s.get(Schedule, self.sch_id)
+            self.assertEqual((sch.status, sch.mpps_uid, sch.mpps_status), ("in_progress", uid, "IN PROGRESS"))
+        st, _ = a.send_n_create(self.mpps_create_ds(self.sch.sps_id), MPPS, uid)
+        self.assertEqual(st.Status, 0x0111)                               # MPPS duplicado
+        hits = [d for s_, d in self.find(Modality="CT") if s_ == 0xFF00]  # continua na worklist, como STARTED
+        self.assertEqual(hits[0].ScheduledProcedureStepSequence[0].ScheduledProcedureStepID, self.sch.sps_id)
+        done = Dataset()
+        done.PerformedProcedureStepStatus = "COMPLETED"
+        st, _ = a.send_n_set(done, MPPS, uid)
+        self.assertEqual(st.Status, 0x0000)
+        with db.session(self.t) as s:
+            self.assertEqual(s.get(Schedule, self.sch_id).status, "completed")
+            self.assertEqual(len(audit.query(s, action="ris.mpps.set")), 1)
+        again = Dataset()
+        again.PerformedProcedureStepStatus = "DISCONTINUED"
+        st, _ = a.send_n_set(again, MPPS, uid)
+        self.assertEqual(st.Status, 0x0110)                               # finalizado não muda
+        self.assertEqual([d for s_, d in self.find(Modality="CT") if s_ == 0xFF00], [])     # saiu da worklist
+        # exame sem agendamento: aceito e só registrado
+        st, _ = a.send_n_create(self.mpps_create_ds("S-NAO-EXISTE"), MPPS, generate_uid(prefix=None))
+        self.assertEqual(st.Status, 0x0000)
+        with db.session(self.t) as s:
+            self.assertEqual(len(audit.query(s, action="ris.mpps.unscheduled")), 1)
+
+    def test_mpps_discontinued_returns_to_worklist(self):
+        from pydicom.dataset import Dataset
+        from pydicom.uid import generate_uid
+        from vyonix.ris.models import Schedule
+        with db.session(self.t) as s:
+            self.registry.enable(s, "ris", actor="admin", license_check=self.lic.module_ok)
+        a = self.mpps()
+        uid = generate_uid(prefix=None)
+        self.assertEqual(a.send_n_create(self.mpps_create_ds(study_uid=self.uid), MPPS, uid)[0].Status, 0x0000)
+        stop = Dataset()
+        stop.PerformedProcedureStepStatus = "DISCONTINUED"
+        self.assertEqual(a.send_n_set(stop, MPPS, uid)[0].Status, 0x0000)
+        with db.session(self.t) as s:
+            self.assertEqual(s.get(Schedule, self.sch_id).status, "scheduled")
+        self.assertEqual(len([d for s_, d in self.find(Modality="CT") if s_ == 0xFF00]), 1)
+
+    def test_mpps_from_unregistered_station_refused(self):
+        from pynetdicom import AE
+        ae = AE(ae_title="INTRUSO")
+        ae.add_requested_context(MPPS)
+        a = ae.associate("127.0.0.1", self.port, ae_title="VYONIX_QR")
+        self.assertFalse(a.is_established)
 
 
 if __name__ == "__main__":

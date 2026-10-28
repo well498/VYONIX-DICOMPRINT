@@ -24,6 +24,7 @@ FIND = "1.2.840.10008.5.1.4.1.2.2.1"        # Study Root Query/Retrieve Informat
 MOVE = "1.2.840.10008.5.1.4.1.2.2.2"        # Study Root Query/Retrieve Information Model - MOVE
 VERIFICATION = "1.2.840.10008.1.1"
 MWL = "1.2.840.10008.5.1.4.31"             # Modality Worklist Information Model - FIND (VYONIX RIS)
+MPPS = "1.2.840.10008.3.1.2.3.3"           # Modality Performed Procedure Step (VYONIX RIS)
 
 STUDY_KEYS = {"PatientID": "PatientID", "PatientName": "PatientName", "StudyDate": "StudyDate",
               "AccessionNumber": "AccessionNumber", "StudyInstanceUID": "StudyInstanceUID",
@@ -61,12 +62,13 @@ class QRServer:
         ae.require_called_aet = False                 # modo cloud: o AE chamado escolhe a organização
         ae.acse_timeout, ae.dimse_timeout, ae.network_timeout = 30, 60, 60
         ae.maximum_associations = 16
-        for uid in (VERIFICATION, FIND, MOVE, MWL):
+        for uid in (VERIFICATION, FIND, MOVE, MWL, MPPS):
             ae.add_supported_context(uid)
         self.server = ae.start_server((self.bind, self.port), block=False, evt_handlers=[
             (evt.EVT_REQUESTED, self._on_requested), (evt.EVT_RELEASED, self._on_end),
             (evt.EVT_ABORTED, self._on_end), (evt.EVT_CONN_CLOSE, self._on_end),
-            (evt.EVT_C_ECHO, lambda e: 0x0000), (evt.EVT_C_FIND, self._on_find), (evt.EVT_C_MOVE, self._on_move)])
+            (evt.EVT_C_ECHO, lambda e: 0x0000), (evt.EVT_C_FIND, self._on_find), (evt.EVT_C_MOVE, self._on_move),
+            (evt.EVT_N_CREATE, self._on_n_create), (evt.EVT_N_SET, self._on_n_set)])
         log.info("Consulta/recuperação DICOM em %s:%d (AE %s)", self.bind, self.port, self.ae_title)
 
     def stop(self) -> None:
@@ -214,6 +216,62 @@ class QRServer:
                 if kw in full:
                     setattr(out, kw, full[kw].value)
             yield 0xFF00, out
+
+    # ------------------------------------------------------------------ MPPS (RIS)
+    def _ris_ok(self, s) -> bool:
+        from vyonix.errors import NotLicensed
+        from vyonix.modules import registry
+        if not registry.is_enabled(s, "ris"):
+            return False
+        try:
+            self.plat.licensing.require_module(s, "ris")
+        except NotLicensed:
+            return False
+        return True
+
+    def _on_n_create(self, event):
+        """MPPS N-CREATE: exame iniciado na modalidade (vincula ao agendamento pelo SPS ID ou Study Instance UID)."""
+        from pydicom.dataset import Dataset
+        from vyonix.ris import service as ris
+        info = self._info(event)
+        if info is None or str(event.request.AffectedSOPClassUID) != MPPS:
+            return 0x0110, None
+        uid = str(event.request.AffectedSOPInstanceUID or "")
+        if not uid:
+            return 0x0120, None                                        # missing attribute (o SCU deve informar o UID)
+        ds = event.attribute_list
+        ssa = ds.ScheduledStepAttributesSequence[0] if "ScheduledStepAttributesSequence" in ds and \
+            len(ds.ScheduledStepAttributesSequence) else Dataset()
+        try:
+            with self.plat.db.session(info["tenant"]) as s:
+                if not self._ris_ok(s):
+                    return 0x0110, None
+                ris.mpps_create(s, uid, sps_id=_value(ssa, "ScheduledProcedureStepID") or None,
+                                study_uid=_value(ssa, "StudyInstanceUID") or None,
+                                status=_value(ds, "PerformedProcedureStepStatus"), calling_ae=info["calling"])
+        except ris.MppsError as exc:
+            log.warning("MPPS N-CREATE recusado (%s): %s", info["calling"], exc)
+            return exc.status, None
+        return 0x0000, ds
+
+    def _on_n_set(self, event):
+        """MPPS N-SET: andamento/conclusão (COMPLETED conclui o agendamento; DISCONTINUED o devolve à fila)."""
+        from vyonix.ris import service as ris
+        info = self._info(event)
+        if info is None or str(event.request.RequestedSOPClassUID) != MPPS:
+            return 0x0110, None
+        uid = str(event.request.RequestedSOPInstanceUID or "")
+        mod = event.modification_list
+        try:
+            with self.plat.db.session(info["tenant"]) as s:
+                if not self._ris_ok(s):
+                    return 0x0110, None
+                ris.mpps_set(s, uid, status=_value(mod, "PerformedProcedureStepStatus") or None,
+                             calling_ae=info["calling"])
+        except ris.MppsError as exc:
+            log.warning("MPPS N-SET recusado (%s): %s", info["calling"], exc)
+            return exc.status, None
+        return 0x0000, mod
 
     # ------------------------------------------------------------------ C-MOVE
     def _on_move(self, event):

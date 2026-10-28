@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Uuid
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Uuid, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from vyonix.db.base import Base, TenantMixin
@@ -19,7 +19,9 @@ class Schedule(TenantMixin, Base):
     __tablename__ = "schedules"
     __table_args__ = (Index("uq_ris_schedules_sps", "tenant_id", "sps_id", unique=True),
                       Index("uq_ris_schedules_study_uid", "tenant_id", "study_instance_uid", unique=True),
-                      Index("ix_ris_schedules_when", "tenant_id", "scheduled_at"), SCHEMA)
+                      Index("ix_ris_schedules_when", "tenant_id", "scheduled_at"),
+                      Index("uq_ris_schedules_mpps", "tenant_id", "mpps_uid", unique=True,
+                            postgresql_where=text("mpps_uid IS NOT NULL")), SCHEMA)
     order_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("clinical.orders.id"), nullable=False, index=True)
     sps_id: Mapped[str] = mapped_column(String(16), nullable=False)
     study_instance_uid: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -31,3 +33,5 @@ class Schedule(TenantMixin, Base):
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="scheduled")
     created_by: Mapped[str] = mapped_column(String(120), nullable=False)
     duration_min: Mapped[int] = mapped_column(Integer, nullable=False, default=15, server_default="15")
+    mpps_uid: Mapped[str | None] = mapped_column(String(64))         # MPPS (N-CREATE) da modalidade
+    mpps_status: Mapped[str | None] = mapped_column(String(16))      # IN PROGRESS | COMPLETED | DISCONTINUED

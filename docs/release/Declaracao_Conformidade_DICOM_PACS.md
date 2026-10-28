@@ -101,7 +101,20 @@ indexação ficam no motor, mas **não** aparecem na pesquisa nem na recuperaç�
   **ScheduledProcedureStepStatus** (0040,0020): `SCHEDULED`, `ARRIVED` após o check-in, `STARTED` em andamento).
 * Só agendamentos "agendado", "paciente chegou" ou "em andamento". Quando o estudo com o UID agendado chega ao PACS, o agendamento passa a
   "recebido" e sai da worklist. Cada consulta é auditada (AE, quantidade; sem dados do paciente).
-* MPPS não implementado.
+* MPPS: ver 3.6.
+
+### 3.6 Modality Performed Procedure Step (módulo VYONIX RIS)
+
+* Classe SOP: Modality Performed Procedure Step `1.2.840.10008.3.1.2.3.3` (SCP), no mesmo AE, porta e autorização
+  de nós da seção 3.4. Exige o RIS habilitado e licenciado; sem isso, `0x0110`.
+* **N-CREATE:** o SCU informa o SOP Instance UID (sem ele, `0x0120`); PerformedProcedureStepStatus inicial
+  `IN PROGRESS` (outro valor: `0x0106`); UID repetido: `0x0111`. O vínculo com o agendamento é pelo
+  ScheduledProcedureStepID ou, na falta, pelo StudyInstanceUID da ScheduledStepAttributesSequence; o agendamento
+  passa a "em andamento". Exame sem agendamento é aceito e apenas registrado na auditoria.
+* **N-SET:** `COMPLETED` conclui o agendamento (sai da worklist); `DISCONTINUED` devolve o agendamento em andamento à
+  fila; MPPS já finalizado não muda (`0x0110`).
+* Cada N-CREATE/N-SET fica na auditoria (AE, situação; sem dados do paciente). Os atributos de dose e de séries
+  executadas são aceitos, mas não armazenados nesta versão.
 
 ## 4. DICOMweb (Core)
 

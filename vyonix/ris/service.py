@@ -221,6 +221,69 @@ def mwl_dataset(e: dict[str, Any]):
     return ds
 
 
+# ------------------------------------------------------------------ MPPS (PS3.4 F)
+MPPS_FINAL = ("COMPLETED", "DISCONTINUED")
+
+
+class MppsError(Exception):
+    def __init__(self, status: int, message: str) -> None:
+        super().__init__(message)
+        self.status = status
+
+
+def mpps_create(s: Session, sop_uid: str, *, sps_id: str | None, study_uid: str | None, status: str,
+                calling_ae: str) -> Schedule | None:
+    """N-CREATE: a modalidade iniciou o exame. Vincula ao agendamento (SPS ID ou Study Instance UID) e o marca
+    "em andamento". Exame sem agendamento é aceito (padrão) e só registrado."""
+    if status.upper() != "IN PROGRESS":
+        raise MppsError(0x0106, "PerformedProcedureStepStatus inicial deve ser IN PROGRESS.")   # invalid attribute value
+    if s.execute(select(Schedule).where(Schedule.mpps_uid == sop_uid)).scalar_one_or_none() is not None:
+        raise MppsError(0x0111, "MPPS já existente.")                                         # duplicate SOP instance
+    q = None
+    if sps_id:
+        q = select(Schedule).where(Schedule.sps_id == sps_id)
+    elif study_uid:
+        q = select(Schedule).where(Schedule.study_instance_uid == study_uid)
+    sch = s.execute(q).scalar_one_or_none() if q is not None else None
+    if sch is not None and sch.mpps_uid is None:
+        sch.mpps_uid, sch.mpps_status = sop_uid, "IN PROGRESS"
+        old = sch.status
+        if sch.status in ("scheduled", "arrived"):
+            sch.status = "in_progress"
+        s.flush()
+        audit.record(s, actor=f"dicom:{calling_ae}", action="ris.mpps.create", target_type="schedule", target_id=sch.id,
+                     details={"from": old, "to": sch.status, "calling_ae": calling_ae})
+        return sch
+    audit.record(s, actor=f"dicom:{calling_ae}", action="ris.mpps.unscheduled", target_type="dicom",
+                 details={"calling_ae": calling_ae, "linked": False})
+    return None
+
+
+def mpps_set(s: Session, sop_uid: str, *, status: str | None, calling_ae: str) -> Schedule | None:
+    """N-SET: andamento/conclusão do exame. COMPLETED conclui o agendamento; DISCONTINUED o devolve à fila
+    (o exame não foi feito) e fica na auditoria. Depois de finalizado, o MPPS não muda (PS3.4 F.7.2.2)."""
+    sch = s.execute(select(Schedule).where(Schedule.mpps_uid == sop_uid)).scalar_one_or_none()
+    if sch is None:
+        return None                       # MPPS sem agendamento (aceito no N-CREATE, nada a atualizar)
+    if sch.mpps_status in MPPS_FINAL:
+        raise MppsError(0x0110, "MPPS já finalizado não pode ser alterado.")                  # processing failure
+    st = (status or "").upper()
+    if not st:
+        return sch
+    if st not in ("IN PROGRESS",) + MPPS_FINAL:
+        raise MppsError(0x0106, "PerformedProcedureStepStatus inválido.")
+    old = sch.status
+    sch.mpps_status = st
+    if st == "COMPLETED" and sch.status not in ("cancelled",):
+        sch.status = "completed"
+    elif st == "DISCONTINUED" and sch.status == "in_progress":
+        sch.status = "scheduled"
+    s.flush()
+    audit.record(s, actor=f"dicom:{calling_ae}", action="ris.mpps.set", target_type="schedule", target_id=sch.id,
+                 details={"mpps_status": st, "from": old, "to": sch.status, "calling_ae": calling_ae})
+    return sch
+
+
 def register_consumers(bus: Bus) -> None:
     @bus.subscribe("pacs.study.received.v1", "ris.mark_received")
     def received(s: Session, ev: Event) -> None:
