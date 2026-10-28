@@ -233,3 +233,19 @@ própria do fornecedor ou `2.25`, numa revisão futura do Print, com aprovação
 | Comando `worker` passa a ter as mesmas tarefas periódicas do serviço do Windows (sincronização do PACS) | `vyonix/events/worker.py::build_worker` |
 | CI do commit do RIS (`326c458`): platform 142 testes, 0 pulados | platform run 40606680321 |
 | Saúde detalhada para o administrador (`GET /api/v1/health/detail`): banco, fila de eventos (worker parado), motor DICOM, índice, sincronização, porta de consulta DICOM e licença, com motivo legível e estado ok/atenção/falha | `tests_platform/test_monitoring.py` 5/5 local |
+
+| Entrega (27/10, noite) | Commit | Evidência |
+|---|---|---|
+| **BKL-10 aprovado e integrado** (UIDs criados pelo DICOM Print em `2.25.<UUID>`; UIDs recebidos e dados guardados intactos) — só para a próxima versão de laboratório; `RELEASE_TAG` continua `v1.0.0-r5` | `215d83f` (merge) | Print 337, plataforma 130, DEPLOY 21 (local); UI Windows da branch e da develop aprovados (runs 40609234009, 40610705126) — `docs/homologacao/BKL-10_UIDs_DICOM_Print.md` |
+| Recomendação de raiz UID própria (IANA PEN) e Implementation Class UID | `cfe77e4` | `docs/homologacao/Recomendacao_Raiz_UID_VYONIX.md` |
+| PACS: backup automático diário no VyonixWorker, configurado pelo DEPLOY, no monitoramento | `ed1fdf0`, `7c39c4c` | `test_pacs_backup_task.py` 6/6; teste DEPLOY corrigido (separador de caminho no Windows) |
+| CI plataforma: numpy nas dependências de teste (teste de compatibilidade Print → PACS era pulado) | `a71acde` | run 40610705143 tinha 162 testes, 0 falhas, 1 pulado |
+| RIS: tela Agenda (pedidos pendentes, agendamento, iniciar/concluir/cancelar com motivo) | `7a77c8f` | e2e no navegador (recepcionista e técnico) |
+| RIS: duração do exame e recusa de horários sobrepostos na mesma estação ou sala (migração `ris_0002`) | `7a53fb9` | `test_no_overlap_on_same_station_or_room`; e2e recusa na Agenda |
+| RIS/Viewer: exame com imagens recebidas abre no Viewer pela Agenda | `d24e022` | e2e agendamento → PACS → recebido → link |
+| DEPLOY: diagnóstico aponta backup do PACS ausente, com falha, atrasado ou sem espaço | `6d1ce2b` | `test_diagnose_reports_pacs_backup` |
+
+**Pendências:** ensaios no laboratório da correção BKL-10 (modalidades de teste e impressora física) antes de uma
+nova versão de laboratório; troca do Implementation Class UID (aprovação própria, após raiz VYONIX); imagem do Print
+sem Patient ID não entra no PACS (por projeto; encaminhamento futuro exige identificação); salas/recursos cadastrados,
+check-in e MPPS no RIS.
