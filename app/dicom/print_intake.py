@@ -27,9 +27,10 @@ SECONDARY_CAPTURE = "1.2.840.10008.5.1.4.1.1.7"
 
 def _sc_dataset(pixels, study_uid: str, series_uid: str, number: int, ae: str) -> bytes:
     from pydicom.dataset import FileDataset, FileMetaDataset
-    from pydicom.uid import ExplicitVRLittleEndian, generate_uid
+    from pydicom.uid import ExplicitVRLittleEndian
 
-    sop_uid = generate_uid(prefix="1.2.826.0.1.3680043.8.498.")
+    from app.dicom.uids import new_uid
+    sop_uid = new_uid()
     meta = FileMetaDataset()
     meta.MediaStorageSOPClassUID = SECONDARY_CAPTURE
     meta.MediaStorageSOPInstanceUID = sop_uid
@@ -67,8 +68,8 @@ class PrintIntake:
         self.device_modality = device_modality
 
     def submit(self, film: PrintedFilm, *, peer: AssociationPeer, device_id: int | None, study_uid: str) -> int:
-        from pydicom.uid import generate_uid
-        series_uid = generate_uid(prefix="1.2.826.0.1.3680043.8.498.")
+        from app.dicom.uids import new_uid
+        series_uid = new_uid()
         items = []
         for n, (pos, px) in enumerate(sorted(film.images, key=lambda x: x[0]), start=1):
             encoded = _sc_dataset(px, study_uid, series_uid, n, peer.calling_ae)

@@ -17,15 +17,17 @@ from app.imaging import codecs
 def _dataset(path: Path):
     import numpy as np
     from pydicom.dataset import FileDataset, FileMetaDataset
-    from pydicom.uid import ExplicitVRLittleEndian, generate_uid
+    from pydicom.uid import ExplicitVRLittleEndian
+
+    from app.dicom.uids import new_uid
 
     meta = FileMetaDataset()
     meta.MediaStorageSOPClassUID = "1.2.840.10008.5.1.4.1.1.7"
-    meta.MediaStorageSOPInstanceUID = generate_uid()
+    meta.MediaStorageSOPInstanceUID = new_uid()
     meta.TransferSyntaxUID = ExplicitVRLittleEndian
     ds = FileDataset(str(path), {}, file_meta=meta, preamble=b"\0" * 128)
     ds.SOPClassUID, ds.SOPInstanceUID = meta.MediaStorageSOPClassUID, meta.MediaStorageSOPInstanceUID
-    ds.StudyInstanceUID, ds.SeriesInstanceUID = generate_uid(), generate_uid()
+    ds.StudyInstanceUID, ds.SeriesInstanceUID = new_uid(), new_uid()
     ds.Modality = "OT"
     ds.Rows, ds.Columns = 32, 48
     ds.SamplesPerPixel, ds.PhotometricInterpretation = 1, "MONOCHROME2"
