@@ -103,3 +103,18 @@ def worklist(date_from: date | None = None, date_to: date | None = None, modalit
     with c.session() as s:
         return {"items": ris.worklist(s, date_from=date_from, date_to=date_to, modality=modality,
                                       station_aet=station_aet, include_done=include_done)}
+
+
+@router.get("/exam-center")
+def exam_center(date_from: date, date_to: date, modality: str | None = None, stage: str | None = None,
+                late_only: bool = False, c: Ctx = Depends(needs("ris.schedule.read"))):
+    """Central de exames: ciclo de cada pedido do período, atrasos e tempos (somente leitura)."""
+    from vyonix.errors import ValidationFailed
+    from vyonix.ris import tracking
+    if date_to < date_from or (date_to - date_from).days > 62:
+        raise ValidationFailed("Período inválido (até 62 dias).")
+    if stage and stage not in tracking.STAGES:
+        raise ValidationFailed("Etapa inválida.")
+    with c.session() as s:
+        return tracking.exam_center(s, date_from=date_from, date_to=date_to, modality=modality, stage=stage,
+                                    late_only=late_only)

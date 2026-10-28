@@ -174,3 +174,4 @@ button.link.danger { color: #b42318; }
 /* conteúdo não se alarga com tabelas largas (a tabela rola dentro de .table-wrap) — telas de celular */
 .shell > * { min-width: 0; }
 .sig-editor input[type="file"] { max-width: 100%; }
+.exam-filters input:not([type="checkbox"]), .exam-filters select { min-width: 9rem; }

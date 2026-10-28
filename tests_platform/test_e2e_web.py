@@ -323,6 +323,11 @@ class WebE2E(unittest.TestCase):
         nav.get_by_role("link", name="Agenda").click()
         expect(pg.get_by_role("heading", name="Agenda")).to_be_visible()
         expect(pg.get_by_role("button", name="Agendar exame")).to_have_count(0)
+        nav.get_by_role("link", name="Central de exames").click()              # ciclo do pedido ao laudo
+        expect(pg.get_by_role("heading", name="Central de exames")).to_be_visible()
+        expect(pg.get_by_role("row", name="Carlos Agenda Sintetico").first).to_be_visible()
+        expect(pg.get_by_role("group", name="Resumo do período")).to_contain_text("Pedidos")
+        self.shot(pg, "10b-central-exames")
         from vyonix.audit import service as audit
         with db.session(self.tenant) as s:
             self.assertEqual(len(audit.query(s, action="ris.schedule.status")), 3)

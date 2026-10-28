@@ -4,6 +4,7 @@ import { AccessGate, Login } from "./pages/access";
 import { AuditPage } from "./pages/audit";
 import { CommercialPage } from "./pages/commercial";
 import { Dashboard } from "./pages/dashboard";
+import { ExamCenterPage } from "./pages/examcenter";
 import { ImagesPage } from "./pages/images";
 import { LicensePage } from "./pages/license";
 import { PatientsPage } from "./pages/patients";
@@ -21,6 +22,7 @@ const ROUTES: Route[] = [
   { id: "inicio", label: "Início", view: (me) => <Dashboard me={me} /> },
   { id: "pacientes", label: "Pacientes", perm: "clinical.patients.read", view: (me) => <PatientsPage me={me} /> },
   { id: "agenda", label: "Agenda", perm: "ris.schedule.read", view: (me) => <SchedulePage me={me} /> },
+  { id: "central", label: "Central de exames", perm: "ris.schedule.read", view: (me) => <ExamCenterPage me={me} /> },
   { id: "laudos", label: "Laudos", perm: "report.read", view: (me) => <ReportsPage me={me} /> },
   { id: "conciliacao", label: "Conciliação", perm: "clinical.studies.reconcile", view: (me) => <ReconcilePage me={me} /> },
   { id: "imagens", label: "Imagens", perm: "pacs.studies.read", view: (me) => <ImagesPage me={me} /> },
