@@ -230,6 +230,22 @@ class Api(ApiBase):
         make_order(other, name="Outra Clinica Sintetica")
         self.assertNotIn("Outra Clinica Sintetica", str(c.get("/api/v1/ris/orders").json()))   # isolamento
 
+    def test_stations_for_scheduling(self):
+        c = self.base.login()
+        self.license_ris()
+        self.assertEqual(c.get("/api/v1/ris/stations").json()["items"], [])
+        for aet, q in (("CT_SALA1", True), ("SO_RECEBE", False)):
+            r = c.post("/api/v1/pacs/nodes", json={"ae_title": aet, "can_query": q, "can_receive": not q,
+                                                   "host": "10.0.0.5", "port": 104})
+            self.assertEqual(r.status_code, 201, r.text)
+        self.assertEqual([x["ae_title"] for x in c.get("/api/v1/ris/stations").json()["items"]], ["CT_SALA1"])
+        r = c.post("/api/v1/users", json={"username": "tec", "display_name": "tec", "password": "Senha-Teste-1234",
+                                          "roles": [{"role": "tecnico"}]})
+        u = self.base.login("tec", "Senha-Teste-1234")
+        u.post("/api/v1/auth/password", json={"current": "Senha-Teste-1234", "new": "Senha-Nova-9876!"})
+        u = self.base.login("tec", "Senha-Nova-9876!")
+        self.assertEqual(u.get("/api/v1/ris/stations").status_code, 403)
+
 
 class Worklist(unittest.TestCase):
     """Modality Worklist por DICOM (C-FIND) com associação real e o ciclo fechado pela chegada do estudo ao PACS."""

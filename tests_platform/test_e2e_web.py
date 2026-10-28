@@ -288,6 +288,7 @@ class WebE2E(unittest.TestCase):
         expect(form.get_by_label("Modalidade")).to_have_value("CR")             # vem do procedimento
         form.get_by_label("Data e hora").fill(f"{today.isoformat()}T23:30")
         form.get_by_label("AE Title da estação").fill("cr_sala1")
+        expect(form.get_by_text("A estação CR_SALA1 não está cadastrada no PACS")).to_be_visible()
         form.get_by_role("button", name="Confirmar agendamento").click()
         expect(pg.get_by_text("Exame agendado.")).to_be_visible()
         row = pg.get_by_role("row", name="Carlos Agenda Sintetico")
@@ -354,6 +355,44 @@ class WebE2E(unittest.TestCase):
         expect(row.get_by_text("Imagens recebidas")).to_be_visible()
         self.assertEqual(row.get_by_role("link", name="Abrir no Viewer").get_attribute("href"),
                          f"/viewer/viewer?StudyInstanceUIDs={study_uid}")
+
+    def test_6_dicom_stations(self):
+        """Estações DICOM (PACS): cadastro com IP e porta, aparece para a recepção no agendamento, remoção auditada."""
+        from playwright.sync_api import expect
+        pg = self.page()
+        self.login(pg, "admin", ADMIN_PW)
+        nav = pg.get_by_role("navigation", name="Navegação principal")
+        nav.get_by_role("link", name="Estações DICOM").click()
+        expect(pg.get_by_text("Nenhuma estação cadastrada.")).to_be_visible()
+        pg.get_by_role("button", name="Cadastrar estação").click()
+        form = pg.get_by_role("form", name="Cadastrar estação")
+        form.get_by_label("AE Title").fill("us_sala4")
+        form.get_by_label("Endereço IP").fill("192.168.10.44")
+        form.get_by_label("Porta").fill("104")
+        form.get_by_label("Descrição").fill("Ultrassom sala 4 (simulador)")
+        form.get_by_label("Pode receber estudos (C-MOVE)").check()
+        form.get_by_role("button", name="Salvar estação").click()
+        expect(pg.get_by_text("Estação cadastrada.")).to_be_visible()
+        row = pg.get_by_role("row", name="US_SALA4")
+        expect(row.get_by_role("cell", name="192.168.10.44")).to_be_visible()
+        self.shot(pg, "11-estacoes")
+        r = self.plat_client_get("recep1", "Recepcao-2026", "/api/v1/ris/stations")
+        self.assertEqual([x["ae_title"] for x in r["items"]], ["US_SALA4"])
+        row.get_by_role("button", name="Remover").click()
+        expect(pg.get_by_text("Estação US_SALA4 removida.")).to_be_visible()
+        expect(pg.get_by_text("Nenhuma estação cadastrada.")).to_be_visible()
+        from vyonix.audit import service as audit
+        with db.session(self.tenant) as s:
+            self.assertEqual(len(audit.query(s, action="pacs.node.remove")), 1)
+
+    def plat_client_get(self, user, pw, path):
+        import httpx
+        with httpx.Client(base_url=self.base, verify=False) as c:
+            r = c.post("/api/v1/auth/login", json={"username": user, "password": pw})
+            r.raise_for_status()
+            out = c.get(path)
+            out.raise_for_status()
+            return out.json()
 
 
 if __name__ == "__main__":

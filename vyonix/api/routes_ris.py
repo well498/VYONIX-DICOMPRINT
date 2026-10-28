@@ -54,6 +54,15 @@ def pending(c: Ctx = Depends(needs("ris.schedule.manage"))):
         return {"items": ris.pending_orders(s)}
 
 
+@router.get("/stations")
+def stations(c: Ctx = Depends(needs("ris.schedule.manage"))):
+    """Estações cadastradas no PACS que podem consultar a worklist (para escolher o AE Title no agendamento)."""
+    from vyonix.pacs import service as pacs
+    with c.session() as s:
+        return {"items": [{"ae_title": n["ae_title"], "description": n["description"]}
+                          for n in pacs.nodes(s) if n["can_query"]]}
+
+
 @router.patch("/schedules/{sid}/status")
 def status(sid: uuid.UUID, body: StatusIn, c: Ctx = Depends(needs("ris.schedule.manage"))):
     with c.session() as s:

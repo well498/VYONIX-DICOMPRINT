@@ -10,6 +10,7 @@ import { PatientsPage } from "./pages/patients";
 import { SchedulePage } from "./pages/schedule";
 import { SettingsPage } from "./pages/settings";
 import { SitesPage } from "./pages/sites";
+import { StationsPage } from "./pages/stations";
 import { UsersPage } from "./pages/users";
 
 type Route = { id: string; label: string; perm?: string; view: (me: Me) => ReactNode };
@@ -19,6 +20,7 @@ const ROUTES: Route[] = [
   { id: "pacientes", label: "Pacientes", perm: "clinical.patients.read", view: (me) => <PatientsPage me={me} /> },
   { id: "agenda", label: "Agenda", perm: "ris.schedule.read", view: (me) => <SchedulePage me={me} /> },
   { id: "imagens", label: "Imagens", perm: "pacs.studies.read", view: (me) => <ImagesPage me={me} /> },
+  { id: "estacoes", label: "Estações DICOM", perm: "pacs.admin", view: (me) => <StationsPage me={me} /> },
   { id: "usuarios", label: "Usuários e papéis", perm: "core.users.read", view: (me) => <UsersPage me={me} /> },
   { id: "unidades", label: "Unidades", perm: "core.settings.read", view: (me) => <SitesPage me={me} /> },
   { id: "configuracoes", label: "Configurações", perm: "core.settings.read", view: (me) => <SettingsPage me={me} /> },

@@ -47,6 +47,9 @@ export function SchedulePage({ me }: { me: Me }) {
     if (query.done) q.set("include_done", "true");
     return (await get<{ items: Item[] }>(`/ris/worklist?${q}`)).items;
   }, [query]);
+  const stations = useLoad(async () => (canManage && creating
+    ? (await get<{ items: { ae_title: string; description: string | null }[] }>("/ris/stations")).items : []), [canManage, creating]);
+  const unknownAet = !!form.aet && !!stations.data && !stations.data.some((x) => x.ae_title === form.aet);
   const pending = useLoad(async () => (canManage && creating ? (await get<{ items: Pending[] }>("/ris/orders")).items : []),
     [canManage, creating]);
 
@@ -97,11 +100,15 @@ export function SchedulePage({ me }: { me: Me }) {
             <Field label="Modalidade" hint="Ex.: CT, MR, CR, US"><input value={form.modality} maxLength={16}
               onChange={(e) => setForm({ ...form, modality: e.target.value.toUpperCase() })} /></Field>
             <Field label="AE Title da estação" hint="Opcional: restringe a worklist a esse equipamento">
-              <input value={form.aet} maxLength={16} onChange={(e) => setForm({ ...form, aet: e.target.value.toUpperCase() })} /></Field>
+              <input value={form.aet} maxLength={16} list="estacoes-dicom"
+                onChange={(e) => setForm({ ...form, aet: e.target.value.toUpperCase() })} />
+              <datalist id="estacoes-dicom">{(stations.data ?? []).map((x) =>
+                <option key={x.ae_title} value={x.ae_title}>{x.description ?? ""}</option>)}</datalist></Field>
             <Field label="Sala"><input value={form.room} maxLength={64} onChange={(e) => setForm({ ...form, room: e.target.value })} /></Field>
             <Field label="Descrição"><input value={form.description} maxLength={64}
               onChange={(e) => setForm({ ...form, description: e.target.value })} /></Field>
           </div>
+          {unknownAet && <Notice kind="warn">A estação {form.aet} não está cadastrada no PACS: ela não conseguirá consultar a worklist até ser cadastrada em “Estações DICOM”.</Notice>}
           <div className="row-actions">
             <button className="primary" disabled={act.busy}>Confirmar agendamento</button>
             <button type="button" className="link" onClick={() => setCreating(false)}>Cancelar</button>
