@@ -262,6 +262,57 @@ class WebE2E(unittest.TestCase):
         expect(pg.get_by_text("Nenhum estudo com esses filtros.")).to_be_visible()
         self.shot(pg, "09-imagens-sem-resultado")
 
+    def test_5_ris_schedule_flow(self):
+        """Agenda (RIS): a recepção agenda um pedido, inicia e cancela com motivo; o técnico só consulta."""
+        from datetime import date
+        from playwright.sync_api import expect
+        from vyonix.clinical import service as clinical
+        from vyonix.modules import registry
+        with db.session(self.tenant) as s:
+            registry.enable(s, "ris", actor="admin", license_check=self.plat.licensing.module_ok)
+            p = clinical.create_patient(s, name="Carlos Agenda Sintetico", birth_date=date(1975, 5, 6), sex="M",
+                                        identifiers=[("DICOM", "AG-901")], actor="t")
+            proc = clinical.save_procedure(s, code="RX-TORAX", name="RX de tórax", modality="CR", actor="t")
+            acc = clinical.create_order(s, patient_id=p.id, procedure_id=proc.id, actor="t").accession
+        pg = self.page()
+        self.login(pg, "recep1", "Recepcao-2026")
+        nav = pg.get_by_role("navigation", name="Navegação principal")
+        nav.get_by_role("link", name="Agenda").click()
+        expect(pg.get_by_role("heading", name="Agenda")).to_be_visible()
+        expect(pg.get_by_text("Nenhum exame agendado nesse período.")).to_be_visible()
+        pg.get_by_role("button", name="Agendar exame").click()
+        form = pg.get_by_role("form", name="Agendar exame")
+        form.get_by_label("Pedido").select_option(label=f"Carlos Agenda Sintetico — {acc} — RX de tórax")
+        expect(form.get_by_label("Modalidade")).to_have_value("CR")             # vem do procedimento
+        form.get_by_label("Data e hora").fill(f"{date.today().isoformat()}T23:30")
+        form.get_by_label("AE Title da estação").fill("cr_sala1")
+        form.get_by_role("button", name="Confirmar agendamento").click()
+        expect(pg.get_by_text("Exame agendado.")).to_be_visible()
+        row = pg.get_by_role("row", name="Carlos Agenda Sintetico")
+        expect(row.get_by_role("cell", name="AG-901")).to_be_visible()
+        expect(row.get_by_role("cell", name="CR_SALA1")).to_be_visible()
+        expect(row.get_by_role("cell", name="23:30")).to_be_visible()
+        self.shot(pg, "10-agenda")
+        row.get_by_role("button", name="Iniciar").click()
+        expect(row.get_by_role("cell", name="Em realização")).to_be_visible()
+        row.get_by_role("button", name="Cancelar").click()
+        cf = pg.get_by_role("form", name="Cancelar exame de Carlos Agenda Sintetico")
+        cf.get_by_label("Motivo do cancelamento").fill("paciente não compareceu")
+        cf.get_by_role("button", name="Confirmar cancelamento").click()
+        expect(pg.get_by_text("Nenhum exame agendado nesse período.")).to_be_visible()
+        pg.get_by_label("Incluir concluídos e cancelados").check()
+        pg.get_by_role("button", name="Filtrar").click()
+        expect(pg.get_by_role("row", name="Carlos Agenda Sintetico").get_by_role("cell", name="Cancelado")).to_be_visible()
+        pg = self.page()
+        self.login(pg, "tecnico1", "Tecnico-2026x")
+        nav = pg.get_by_role("navigation", name="Navegação principal")
+        nav.get_by_role("link", name="Agenda").click()
+        expect(pg.get_by_role("heading", name="Agenda")).to_be_visible()
+        expect(pg.get_by_role("button", name="Agendar exame")).to_have_count(0)
+        from vyonix.audit import service as audit
+        with db.session(self.tenant) as s:
+            self.assertEqual(len(audit.query(s, action="ris.schedule.status")), 2)
+
 
 if __name__ == "__main__":
     unittest.main()

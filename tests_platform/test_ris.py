@@ -162,6 +162,21 @@ class Api(ApiBase):
         self.assertEqual(users["tecnico"].post("/api/v1/ris/schedules", json=body2).status_code, 403)
         self.assertEqual(users["recepcionista"].post("/api/v1/ris/schedules", json=body2).status_code, 201)
 
+    def test_pending_orders_for_scheduling(self):
+        c = self.base.login()
+        self.license_ris()
+        oid, acc, _ = make_order(self.base.t, name="Ana Pendente Sintetica")
+        items = c.get("/api/v1/ris/orders").json()["items"]
+        it = next(i for i in items if i["order_id"] == str(oid))
+        self.assertEqual((it["accession"], it["patient_name"], it["modality"], it["procedure"]),
+                         (acc, "Ana Pendente Sintetica", "CT", "TC de crânio"))
+        r = c.post("/api/v1/ris/schedules", json={"order_id": str(oid), "scheduled_at": "2026-11-04T10:00:00-03:00"})
+        self.assertEqual(r.status_code, 201, r.text)
+        self.assertNotIn(str(oid), [i["order_id"] for i in c.get("/api/v1/ris/orders").json()["items"]])
+        other = new_org(db)
+        make_order(other, name="Outra Clinica Sintetica")
+        self.assertNotIn("Outra Clinica Sintetica", str(c.get("/api/v1/ris/orders").json()))   # isolamento
+
 
 class Worklist(unittest.TestCase):
     """Modality Worklist por DICOM (C-FIND) com associação real e o ciclo fechado pela chegada do estudo ao PACS."""

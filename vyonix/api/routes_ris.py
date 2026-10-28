@@ -46,6 +46,12 @@ def create(body: ScheduleIn, c: Ctx = Depends(needs("ris.schedule.manage"))):
                 "status": st.status}
 
 
+@router.get("/orders")
+def pending(c: Ctx = Depends(needs("ris.schedule.manage"))):
+    with c.session() as s:
+        return {"items": ris.pending_orders(s)}
+
+
 @router.patch("/schedules/{sid}/status")
 def status(sid: uuid.UUID, body: StatusIn, c: Ctx = Depends(needs("ris.schedule.manage"))):
     with c.session() as s:

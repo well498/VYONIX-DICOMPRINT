@@ -69,6 +69,16 @@ def schedule(s: Session, order_id: uuid.UUID, *, scheduled_at: datetime, modalit
     return st
 
 
+def pending_orders(s: Session, *, limit: int = 200) -> list[dict[str, Any]]:
+    """Pedidos ainda sem agendamento (situação "requested"), mais antigos primeiro, para a tela de agendamento."""
+    rows = s.execute(select(Order, Patient, Procedure).join(Patient, Patient.id == Order.patient_id)
+                     .outerjoin(Procedure, Procedure.id == Order.procedure_id)
+                     .where(Order.status == "requested").order_by(Order.created_at).limit(min(limit, 500)))
+    return [{"order_id": str(o.id), "accession": o.accession, "priority": o.priority, "patient_name": p.name,
+             "procedure": proc.name if proc else None, "modality": proc.modality if proc else None,
+             "created_at": o.created_at.isoformat()} for o, p, proc in rows]
+
+
 def set_status(s: Session, schedule_id: uuid.UUID, status: str, *, actor: str, reason: str | None = None,
                actor_id=None, ip=None) -> Schedule:
     if status not in STATUSES:
