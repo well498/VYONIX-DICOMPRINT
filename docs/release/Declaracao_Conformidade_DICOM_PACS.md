@@ -97,8 +97,9 @@ indexação ficam no motor, mas **não** aparecem na pesquisa nem na recuperaç�
 * Atributos devolvidos (os pedidos): PatientName (Família^Nome), PatientID (identificador do emissor `DICOM`, se
   houver) e IssuerOfPatientID, PatientBirthDate, PatientSex, AccessionNumber, **StudyInstanceUID atribuído no
   agendamento** (raiz 2.25, derivada de UUID), RequestedProcedureID/Description/Priority, ReferringPhysicianName e a
-  sequência do passo agendado (Modality, ScheduledStationAETitle, data, hora, descrição, SPS ID, ScheduledStationName).
-* Só agendamentos "agendado" ou "em andamento". Quando o estudo com o UID agendado chega ao PACS, o agendamento passa a
+  sequência do passo agendado (Modality, ScheduledStationAETitle, data, hora, descrição, SPS ID, ScheduledStationName e
+  **ScheduledProcedureStepStatus** (0040,0020): `SCHEDULED`, `ARRIVED` após o check-in, `STARTED` em andamento).
+* Só agendamentos "agendado", "paciente chegou" ou "em andamento". Quando o estudo com o UID agendado chega ao PACS, o agendamento passa a
   "recebido" e sai da worklist. Cada consulta é auditada (AE, quantidade; sem dados do paciente).
 * MPPS não implementado.
 
