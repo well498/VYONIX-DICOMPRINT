@@ -385,6 +385,22 @@ class WebE2E(unittest.TestCase):
         from vyonix.audit import service as audit
         with db.session(self.tenant) as s:
             self.assertEqual(len(audit.query(s, action="pacs.node.remove")), 1)
+        # salas do RIS: cadastro e preenchimento automático no agendamento
+        nav.get_by_role("link", name="Agenda").click()
+        pg.get_by_role("button", name="Salas").click()
+        rooms = pg.get_by_role("form", name="Nova sala")
+        rooms.get_by_label("Nome da sala").fill("Sala RX 2")
+        rooms.get_by_label("Modalidade da sala").fill("cr")
+        rooms.get_by_label("Estação (AE Title)").fill("cr_sala2")
+        rooms.get_by_label("Duração padrão (min)").fill("10")
+        rooms.get_by_role("button", name="Salvar sala").click()
+        expect(pg.get_by_text("Sala RX 2 — CR · CR_SALA2 · 10 min")).to_be_visible()
+        pg.get_by_role("button", name="Agendar exame").click()
+        form = pg.get_by_role("form", name="Agendar exame")
+        form.get_by_label("Sala cadastrada preenche").fill("sala rx 2")
+        expect(form.get_by_label("Modalidade")).to_have_value("CR")
+        expect(form.get_by_label("AE Title da estação")).to_have_value("CR_SALA2")
+        expect(form.get_by_label("Duração (min)")).to_have_value("10")
 
     def test_7_report_flow(self):
         """Laudos (REPORT): médico cria rascunho a partir de modelo, senha errada não libera, libera com a senha,

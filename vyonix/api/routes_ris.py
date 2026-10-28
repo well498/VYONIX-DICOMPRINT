@@ -23,7 +23,7 @@ class ScheduleIn(BaseModel):
     station_aet: str | None = Field(None, max_length=16)
     room: str | None = Field(None, max_length=64)
     description: str | None = Field(None, max_length=64)
-    duration_min: int = Field(15, ge=1, le=480)
+    duration_min: int | None = Field(None, ge=1, le=480)
 
 
 class StatusIn(BaseModel):
@@ -52,6 +52,32 @@ def create(body: ScheduleIn, c: Ctx = Depends(needs("ris.schedule.manage"))):
 def pending(c: Ctx = Depends(needs("ris.schedule.manage"))):
     with c.session() as s:
         return {"items": ris.pending_orders(s)}
+
+
+class RoomIn(BaseModel):
+    name: str = Field(min_length=1, max_length=64)
+    modality: str | None = Field(None, max_length=16)
+    station_aet: str | None = Field(None, max_length=16)
+    default_duration_min: int = Field(15, ge=1, le=480)
+    active: bool = True
+
+
+@router.get("/rooms")
+def list_rooms(include_inactive: bool = False, c: Ctx = Depends(needs("ris.schedule.read"))):
+    with c.session() as s:
+        return {"items": ris.rooms(s, include_inactive=include_inactive)}
+
+
+@router.post("/rooms", status_code=201)
+def create_room(body: RoomIn, c: Ctx = Depends(needs("ris.rooms.manage"))):
+    with c.session() as s:
+        return {"id": str(ris.save_room(s, **body.model_dump(), **c.actor).id)}
+
+
+@router.put("/rooms/{rid}")
+def update_room(rid: uuid.UUID, body: RoomIn, c: Ctx = Depends(needs("ris.rooms.manage"))):
+    with c.session() as s:
+        return {"id": str(ris.save_room(s, room_id=rid, **body.model_dump(), **c.actor).id)}
 
 
 @router.get("/stations")

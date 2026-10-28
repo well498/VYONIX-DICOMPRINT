@@ -22,7 +22,7 @@ from vyonix.audit import service as audit
 from vyonix.clinical.models import Order, Patient, Procedure
 from vyonix.errors import Conflict, NotFound, ValidationFailed
 from vyonix.events.bus import Bus, Event, publish
-from vyonix.ris.models import STATUSES, Schedule
+from vyonix.ris.models import STATUSES, Room, Schedule
 
 ISSUER_FOR_MWL = "DICOM"          # identificador preferido como Patient ID na worklist (se existir)
 
@@ -62,7 +62,7 @@ def conflicts(s: Session, *, start: datetime, minutes: int, station_aet: str | N
 
 def schedule(s: Session, order_id: uuid.UUID, *, scheduled_at: datetime, modality: str | None = None,
              station_aet: str | None = None, room: str | None = None, description: str | None = None,
-             duration_min: int = 15, actor: str, actor_id=None, ip=None) -> Schedule:
+             duration_min: int | None = None, actor: str, actor_id=None, ip=None) -> Schedule:
     from pydicom.uid import generate_uid
     o = s.get(Order, order_id)
     if o is None:
@@ -72,6 +72,15 @@ def schedule(s: Session, order_id: uuid.UUID, *, scheduled_at: datetime, modalit
     if scheduled_at.tzinfo is None:
         raise ValidationFailed("Informe a data e a hora com fuso horário.")
     proc = s.get(Procedure, o.procedure_id) if o.procedure_id else None
+    from sqlalchemy import func
+    reg = s.execute(select(Room).where(func.lower(Room.name) == (room or "").strip().lower(),
+                                       Room.active.is_(True))).scalar_one_or_none() if room else None
+    if reg is not None:                         # sala cadastrada: nome padronizado e valores padrão da sala
+        room = reg.name
+        station_aet = station_aet or reg.station_aet
+        modality = modality or reg.modality
+        duration_min = reg.default_duration_min if duration_min is None else duration_min
+    duration_min = 15 if duration_min is None else duration_min
     mod = (modality or (proc.modality if proc else "") or "").strip().upper()
     if not mod or len(mod) > 16:
         raise ValidationFailed("Informe a modalidade (ex.: CT, MR, CR) ou cadastre-a no procedimento.")
@@ -103,6 +112,40 @@ def schedule(s: Session, order_id: uuid.UUID, *, scheduled_at: datetime, modalit
     publish(s, "ris.schedule.created.v1", {"schedule_id": str(st.id), "order_id": str(o.id)}, source="ris",
             subject_kind="schedule", subject_id=st.id)
     return st
+
+
+def save_room(s: Session, *, name: str, modality: str | None = None, station_aet: str | None = None,
+              default_duration_min: int = 15, active: bool = True, room_id: uuid.UUID | None = None, actor: str,
+              actor_id=None, ip=None) -> Room:
+    from sqlalchemy import func
+    name = (name or "").strip()
+    if not name or len(name) > 64:
+        raise ValidationFailed("Nome da sala: 1 a 64 caracteres.")
+    if not 1 <= int(default_duration_min) <= 480:
+        raise ValidationFailed("Duração padrão: de 1 a 480 minutos.")
+    r = s.get(Room, room_id) if room_id else None
+    if room_id and r is None:
+        raise NotFound("Sala não encontrada.")
+    dup = s.execute(select(Room).where(func.lower(Room.name) == name.lower())).scalar_one_or_none()
+    if dup is not None and dup is not r:
+        raise Conflict("Já existe uma sala com esse nome.")
+    if r is None:
+        r = Room(name=name)
+        s.add(r)
+    r.name, r.modality = name, (modality or "").strip().upper()[:16] or None
+    r.station_aet, r.default_duration_min, r.active = _aet(station_aet), int(default_duration_min), bool(active)
+    s.flush()
+    audit.record(s, actor=actor, actor_id=actor_id, ip=ip, action="ris.room.save", target_type="room", target_id=r.id,
+                 details={"name": r.name, "modality": r.modality, "station_aet": r.station_aet, "active": r.active})
+    return r
+
+
+def rooms(s: Session, *, include_inactive: bool = False) -> list[dict[str, Any]]:
+    q = select(Room).order_by(Room.name)
+    if not include_inactive:
+        q = q.where(Room.active.is_(True))
+    return [{"id": str(r.id), "name": r.name, "modality": r.modality, "station_aet": r.station_aet,
+             "default_duration_min": r.default_duration_min, "active": r.active} for r in s.execute(q).scalars()]
 
 
 def pending_orders(s: Session, *, limit: int = 200) -> list[dict[str, Any]]:

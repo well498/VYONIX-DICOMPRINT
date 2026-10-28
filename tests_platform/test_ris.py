@@ -99,6 +99,23 @@ class Scheduling(unittest.TestCase):
         with db.session(other) as s:
             self.ris.schedule(s, o2, scheduled_at=at(9, 30), station_aet="TC_SALA1", duration_min=15, actor="r")
 
+    def test_rooms_defaults_and_conflict_by_registered_name(self):
+        from vyonix.errors import Conflict
+        with db.session(self.t) as s:
+            self.ris.save_room(s, name="Sala de TC 1", modality="ct", station_aet="tc_sala1", default_duration_min=20,
+                               actor="admin")
+            with self.assertRaises(Conflict):
+                self.ris.save_room(s, name="sala de tc 1", actor="admin")
+        o1, o2 = make_order(self.t)[0], make_order(self.t)[0]
+        with db.session(self.t) as s:
+            st = self.ris.schedule(s, o1, scheduled_at=datetime(2026, 11, 7, 10, 0, tzinfo=BRT), room="SALA DE TC 1",
+                                   actor="recep")
+            self.assertEqual((st.room, st.station_aet, st.duration_min), ("Sala de TC 1", "TC_SALA1", 20))
+            with self.assertRaises(Conflict):                 # nome digitado diferente, mesma sala: conflito
+                self.ris.schedule(s, o2, scheduled_at=datetime(2026, 11, 7, 10, 10, tzinfo=BRT), room="sala de tc 1",
+                                  modality="CT", actor="recep")
+            self.assertEqual([r["name"] for r in self.ris.rooms(s)], ["Sala de TC 1"])
+
     def test_check_in_keeps_worklist_and_updates_order(self):
         from vyonix.clinical.models import Order
         oid, _, _ = make_order(self.t)

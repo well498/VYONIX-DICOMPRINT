@@ -131,7 +131,8 @@ RIS = ModuleManifest(
     description="Agendamento de exames e Modality Worklist (primeira entrega do RIS; agenda completa, recepção e "
                 "fluxo de exames ainda planejados). Não liberado para uso clínico.",
     permissions={"ris.schedule.read": "Consultar agendamentos e worklist",
-                 "ris.schedule.manage": "Agendar, alterar e cancelar exames"},
+                 "ris.schedule.manage": "Agendar, alterar e cancelar exames",
+                 "ris.rooms.manage": "Cadastrar salas de exame"},
     publishes=("ris.schedule.created.v1",), consumes=("pacs.study.received.v1",),
 )
 

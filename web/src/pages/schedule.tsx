@@ -8,6 +8,8 @@ type Item = {
   study_instance_uid: string; mpps_status: string | null;
   patient_id: string; patient_name: string;
 };
+type Room = { id: string; name: string; modality: string | null; station_aet: string | null; default_duration_min: number;
+  active: boolean };
 type Pending = { order_id: string; accession: string; priority: string; patient_name: string;
   procedure: string | null; modality: string | null; created_at: string };
 
@@ -53,6 +55,8 @@ export function SchedulePage({ me }: { me: Me }) {
   const stations = useLoad(async () => (canManage && creating
     ? (await get<{ items: { ae_title: string; description: string | null }[] }>("/ris/stations")).items : []), [canManage, creating]);
   const unknownAet = !!form.aet && !!stations.data && !stations.data.some((x) => x.ae_title === form.aet);
+  const rooms = useLoad(async () => (await get<{ items: Room[] }>("/ris/rooms")).items, [creating]);
+  const [showRooms, setShowRooms] = useState(false);
   const pending = useLoad(async () => (canManage && creating ? (await get<{ items: Pending[] }>("/ris/orders")).items : []),
     [canManage, creating]);
 
@@ -75,8 +79,11 @@ export function SchedulePage({ me }: { me: Me }) {
 
   return (
     <Page title="Agenda" intro="Exames agendados e a worklist enviada às modalidades (Modality Worklist). O estudo que chega ao PACS com o UID agendado marca o exame como recebido."
-      actions={canManage && !creating ? <button className="primary" onClick={() => setCreating(true)}>Agendar exame</button> : undefined}>
+      actions={<>
+        {me.permissions.includes("ris.rooms.manage") && <button onClick={() => setShowRooms(!showRooms)}>{showRooms ? "Fechar salas" : "Salas"}</button>}
+        {canManage && !creating && <button className="primary" onClick={() => setCreating(true)}>Agendar exame</button>}</>}>
       {act.view}
+      {showRooms && <Rooms onChange={() => void rooms.reload()} />}
       {creating && (
         <form className="panel" aria-label="Agendar exame" onSubmit={submit}>
           <Field label="Pedido" hint="Pedidos ainda não agendados, mais antigos primeiro.">
@@ -107,7 +114,13 @@ export function SchedulePage({ me }: { me: Me }) {
                 onChange={(e) => setForm({ ...form, aet: e.target.value.toUpperCase() })} />
               <datalist id="estacoes-dicom">{(stations.data ?? []).map((x) =>
                 <option key={x.ae_title} value={x.ae_title}>{x.description ?? ""}</option>)}</datalist></Field>
-            <Field label="Sala"><input value={form.room} maxLength={64} onChange={(e) => setForm({ ...form, room: e.target.value })} /></Field>
+            <Field label="Sala" hint="Sala cadastrada preenche os demais campos">
+              <input value={form.room} maxLength={64} list="salas-ris" onChange={(e) => {
+                const room = (rooms.data ?? []).find((x) => x.name.toLowerCase() === e.target.value.trim().toLowerCase());
+                setForm({ ...form, room: e.target.value, ...(room ? { modality: room.modality ?? form.modality,
+                  aet: room.station_aet ?? form.aet, duration: String(room.default_duration_min) } : {}) });
+              }} />
+              <datalist id="salas-ris">{(rooms.data ?? []).map((x) => <option key={x.id} value={x.name} />)}</datalist></Field>
             <Field label="Descrição"><input value={form.description} maxLength={64}
               onChange={(e) => setForm({ ...form, description: e.target.value })} /></Field>
           </div>
@@ -176,5 +189,36 @@ export function SchedulePage({ me }: { me: Me }) {
         {!list.loading && !list.error && (list.data ?? []).length === 0 && <p className="empty">Nenhum exame agendado nesse período.</p>}
       </div>
     </Page>
+  );
+}
+
+function Rooms({ onChange }: { onChange: () => void }) {
+  const list = useLoad(async () => (await get<{ items: Room[] }>("/ris/rooms?include_inactive=true")).items, []);
+  const [form, setForm] = useState({ name: "", modality: "", station_aet: "", default_duration_min: "15" });
+  const act = useAction();
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    const ok = await act.run(async () => {
+      await post("/ris/rooms", { name: form.name, modality: form.modality || null, station_aet: form.station_aet || null,
+        default_duration_min: Number(form.default_duration_min) || 15 });
+      await list.reload(); onChange();
+    }, "Sala cadastrada.");
+    if (ok) setForm({ name: "", modality: "", station_aet: "", default_duration_min: "15" });
+  }
+  return (
+    <section className="panel" aria-label="Salas de exame">
+      <h2>Salas de exame</h2>
+      {act.view}
+      <ul className="history">{(list.data ?? []).map((x) => (
+        <li key={x.id}>{x.name} — {x.modality ?? "qualquer modalidade"}{x.station_aet ? ` · ${x.station_aet}` : ""} · {x.default_duration_min} min{x.active ? "" : " (inativa)"}</li>))}</ul>
+      <form className="grid2" aria-label="Nova sala" onSubmit={submit}>
+        <Field label="Nome da sala"><input required maxLength={64} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
+        <Field label="Modalidade da sala"><input maxLength={16} value={form.modality} onChange={(e) => setForm({ ...form, modality: e.target.value.toUpperCase() })} /></Field>
+        <Field label="Estação (AE Title)"><input maxLength={16} value={form.station_aet} onChange={(e) => setForm({ ...form, station_aet: e.target.value.toUpperCase() })} /></Field>
+        <Field label="Duração padrão (min)"><input type="number" min={1} max={480} value={form.default_duration_min}
+          onChange={(e) => setForm({ ...form, default_duration_min: e.target.value })} /></Field>
+        <div><button className="primary" disabled={act.busy}>Salvar sala</button></div>
+      </form>
+    </section>
   );
 }

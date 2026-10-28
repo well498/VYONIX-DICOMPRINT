@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Uuid, text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, Uuid, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from vyonix.db.base import Base, TenantMixin
@@ -35,3 +35,14 @@ class Schedule(TenantMixin, Base):
     duration_min: Mapped[int] = mapped_column(Integer, nullable=False, default=15, server_default="15")
     mpps_uid: Mapped[str | None] = mapped_column(String(64))         # MPPS (N-CREATE) da modalidade
     mpps_status: Mapped[str | None] = mapped_column(String(16))      # IN PROGRESS | COMPLETED | DISCONTINUED
+
+
+class Room(TenantMixin, Base):
+    """Sala de exames: nome único, modalidade, estação (AE) e duração padrão para o agendamento."""
+    __tablename__ = "rooms"
+    __table_args__ = (Index("uq_ris_rooms_name", "tenant_id", text("lower(name)"), unique=True), SCHEMA)
+    name: Mapped[str] = mapped_column(String(64), nullable=False)
+    modality: Mapped[str | None] = mapped_column(String(16))
+    station_aet: Mapped[str | None] = mapped_column(String(16))
+    default_duration_min: Mapped[int] = mapped_column(Integer, nullable=False, default=15, server_default="15")
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=text("true"))
