@@ -7,7 +7,8 @@ Somente leitura. Cada componente informa o estado e, quando há problema, o moti
   o serviço VyonixWorker parado (sincronização do PACS, conciliações e worklist dependem dele);
 * **PACS**: módulo, motor DICOM (versão ou erro), índice, e a última sincronização de C-STORE (modo edge);
 * **consulta DICOM**: porta configurada e se está aceitando conexões;
-* **licença**: módulos licenciados e situação.
+* **licença**: módulos licenciados e situação;
+* **backup do PACS** (quando configurado): resultado e idade do último backup automático.
 
 Não expõe dados de pacientes nem segredos.
 """
@@ -87,6 +88,34 @@ def _qr(plat) -> dict[str, Any]:
                 "problems": [f"Consulta DICOM (porta {port}) não está aceitando conexões: reinicie o VYONIX Core."]}
 
 
+BACKUP_STALE_H = 36
+
+
+def _backup(plat) -> dict[str, Any]:
+    from datetime import datetime
+    from vyonix.pacs.backup_task import read_status
+    dest = plat.cfg.extra.get("pacs_backup_dir")
+    if not dest:
+        return {"configured": False, "problems": []}
+    st = read_status(dest)
+    out: dict[str, Any] = {"configured": True, "problems": []}
+    if st is None:
+        out["problems"].append("Nenhum backup automático do PACS registrado ainda (confira o serviço VyonixWorker "
+                               "e a pasta de backup).")
+        return out
+    out.update({k: st.get(k) for k in ("finished_at", "ok", "instances", "copied", "verified")})
+    if not st.get("ok"):
+        out["problems"].append(f"Último backup do PACS falhou: {st.get('error', 'motivo não registrado')}.")
+    try:
+        age_h = (datetime.now() - datetime.fromisoformat(st["finished_at"])).total_seconds() / 3600
+        out["hours_since"] = round(age_h, 1)
+        if age_h > BACKUP_STALE_H:
+            out["problems"].append(f"Último backup do PACS há {int(age_h)} h (esperado: diário).")
+    except (KeyError, ValueError, TypeError):
+        pass
+    return out
+
+
 def _license(plat, s: Session) -> dict[str, Any]:
     st = plat.licensing.status(s)
     mods = {code: {"licensed": v.licensed, "state": v.state} for code, v in st.items() if v.licensed or code == "core"}
@@ -103,6 +132,7 @@ def health_detail(plat, s: Session) -> dict[str, Any]:
         comps["database"] = {"ok": False, "problems": [f"Banco sem resposta: {type(exc).__name__}"]}
         return {"status": "falha", "components": comps, "problems": comps["database"]["problems"]}
     for name, fn in (("events", lambda: _events(s)), ("pacs", lambda: _pacs(plat, s)), ("dicom_qr", lambda: _qr(plat)),
+                     ("pacs_backup", lambda: _backup(plat)),
                      ("license", lambda: _license(plat, s))):
         try:
             comps[name] = fn()

@@ -563,8 +563,13 @@ $ap = $r | Get-NetFirewallApplicationFilter
         qae.add_requested_context("1.2.840.10008.1.1")
         qa = qae.associate("127.0.0.1", 4243, ae_title="VYONIX_QR")
         assert not qa.is_established, "consulta DICOM aceitou estação não cadastrada"
+        # backup diário do PACS configurado: pasta criada com permissões mínimas e visível no monitoramento
+        bdir = PATHS.backups / "PACS"
+        assert bdir.is_dir(), f"pasta de backup do PACS ausente: {bdir}"
+        hd = api.call("GET", "/health/detail")
+        assert hd["components"]["pacs_backup"]["configured"] is True, hd["components"].get("pacs_backup")
         return (f"{msg}; Core: {st['engine'].get('version')} alcançável; porta DICOM 4242 aberta; consulta DICOM 4243 "
-                "escutando e recusando estação não cadastrada")
+                "escutando e recusando estação não cadastrada; backup diário do PACS configurado")
 
     # ---------------------------------------------------------------- 2.8 atualização
     @check("2.8", "Atualização: backup antes da migração; dados e configurações preservados")
