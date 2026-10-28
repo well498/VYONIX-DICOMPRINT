@@ -1,7 +1,7 @@
 # VYONIX Medical Platform — Auditoria do estado real e liberação da homologação interna
 
 Data: 28/10/2026 · Repositório `well498/VYONIX-DICOMPRINT`, ramo `develop` · Versão candidata: commit **`b8253ba`**
-(plataforma `vyonix` 0.1.0) · Variante: **homologação interna** (dados fictícios, sem licença comercial, não clínica).
+(plataforma `vyonix` 0.2.0) · Variante: **homologação interna** (dados fictícios, sem licença comercial, não clínica).
 
 ## A. Resumo executivo
 
@@ -57,8 +57,34 @@ clínico · exclusão por retenção (exige autorização) · transcrição de �
 | Viewer (Chromium + Orthanc) | CI *viewer* | `b8253ba`: aprovado |
 | Implantação Windows comercial (instala, repara, atualiza, ativa módulo com licença de teste, convive com o DICOM Print r5, desinstala) | CI *deploy-windows* | `c9eb30e`: **aprovado** |
 | DICOM Print (339 testes no Windows) | CI *Windows release* | `c9eb30e`: aprovado |
-| **Roteiro de homologação no instalador de homologação** (Windows real, Orthanc oficial) | CI *deploy-windows* `flavor=homologacao` | **ver "Resultado do instalador de homologação" no relatório de entrega** |
+| **Roteiro de homologação no instalador de homologação** (Windows real, Orthanc oficial) | CI *deploy-windows* `flavor=homologacao` | **`b8253ba`, execução 40775100865: aprovado, 13/13 passos** (ver E.1) |
 | Testes manuais pela interface | você | roteiro em `Roteiro_Homologacao_Interna_Plataforma.md` |
+
+### E.1 Resultado do instalador de homologação (Windows Server 2022 do CI, 28/10/2026)
+
+Instalador `VYONIX_Homologacao_Setup_x64.exe` — 115,1 MB — SHA-256
+`28F6692073D912199A01EB87D6DFF9AAF6CC8479AC41CF438A6C395B7B57111B` · PostgreSQL 17.11 · Orthanc 1.13.0 ·
+OHIF 3.13.13 · SBOM: 0 vulnerabilidades conhecidas. Artefato `homologacao-windows`, disponível até 27/11/2026:
+https://github.com/well498/VYONIX-DICOMPRINT/actions/runs/40775100865/artifacts/12854608707
+
+| Passo | Resultado |
+|---|---|
+| 1. Instalar pelo instalador (silencioso, assistente com `clinica-alfa`/`gestor.alfa`) | Aprovado |
+| 2. Sistema no ar como homologação interna (`flavor=homologacao`, banco ok) | Aprovado |
+| 3. Preparar módulos (PACS com Viewer, RIS, Laudos) | Aprovado |
+| 4. Gestor entra só com usuário e senha; módulos habilitados | Aprovado |
+| 5. Técnico e médica fictícios; cadastro médico com vínculo | Aprovado |
+| 6. Paciente fictícia (prontuário HML-001) | Aprovado |
+| 7. Simulador envia 8 imagens por C-STORE ao Orthanc (8 enviadas, 0 falhas) | Aprovado |
+| 8. Exame aparece sozinho na Central de Exames (8 imagens, todas as verificações ✓) | Aprovado |
+| 9. Viewer e DICOMweb abrem o estudo | Aprovado |
+| 10. Comentário, anexo PDF e checklist | Aprovado |
+| 11. Encaminhar para laudo | Aprovado |
+| 12. Médica vê o exame na fila de laudos | Aprovado |
+| 13. Médica redige, libera com senha e baixa o PDF | Aprovado |
+
+O GitHub exibe só 10 avisos por etapa; os passos 11–13 não aparecem como aviso, mas qualquer reprovação gera erro e
+faz a etapa falhar — a etapa terminou com sucesso e sem nenhum erro.
 
 Testes automatizados registrados no repositório: Print 326 funções de teste (`tests/`), plataforma 215
 (`tests_platform/`), DEPLOY 22, Viewer 3 (cenários longos). Regressão desta entrega: completa na plataforma, porque
