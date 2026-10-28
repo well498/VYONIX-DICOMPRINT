@@ -1,6 +1,79 @@
 import { useState } from "react";
 import { fmtDate, get, patch, type Me } from "../api";
 import { Notice, Page, useAction, useLoad } from "../ui";
+import { PRIORITY, PrepSheet } from "./prep";
+
+type PrepItem = { study_id: string; patient_name: string | null; accession: string | null; modality: string | null;
+  description: string | null; received_at: string; station: string | null; images: number; incomplete: boolean;
+  stage: string; priority: string; flags: string[]; attachments: number; unread_comments: number;
+  physician: string | null; due_at: string | null; site_id: string | null };
+type PrepQueue = { items: PrepItem[]; totals: Record<string, number>; stages: Record<string, string> };
+
+const CARDS: [string, string][] = [["", "Recebidos"], ["awaiting", "Aguardando preparação"], ["incomplete", "Incompletos"],
+  ["pending", "Com pendência"], ["urgent", "Urgentes"], ["forwarded", "Prontos para laudo"], ["assigned", "Encaminhados ao médico"],
+  ["returned", "Devolvidos para correção"]];
+
+/** Fila de preparação: tudo que chegou ao PACS, com etapa, pendências e acesso rápido às ações. */
+export function PrepQueuePanel() {
+  const [f, setF] = useState({ stage: "", date_from: "", date_to: "", modality: "", station: "", site_id: "", priority: "", patient: "", accession: "" });
+  const [q, setQ] = useState(f);
+  const [open, setOpen] = useState<string | null>(null);
+  const [more, setMore] = useState(false);
+  const sites = useLoad(async () => await get<{ id: string; name: string }[]>("/sites").catch(() => []), []);
+  const list = useLoad(async () => {
+    const p = new URLSearchParams(Object.entries(q).filter(([, v]) => v) as [string, string][]);
+    return await get<PrepQueue>(`/ris/prep?${p}`);
+  }, [q]);
+  const d = list.data;
+  const total = d ? Object.entries(d.totals).filter(([k]) => k in d.stages).reduce((a, [, v]) => a + v, 0) : 0;
+  const pick = (stage: string) => { const n = { ...f, stage }; setF(n); setQ(n); };
+  return (
+    <section aria-label="Fila de preparação">
+      <div className="card-row stage-cards" role="group" aria-label="Situação dos estudos">
+        {CARDS.map(([k, label]) => (
+          <button key={k || "all"} type="button" className={`card card-btn${q.stage === k ? " on" : ""}${["incomplete", "pending", "urgent", "returned"].includes(k) && d?.totals[k] ? " card-warn" : ""}`}
+            aria-pressed={q.stage === k} onClick={() => pick(k)}>
+            <span className="card-label">{label}</span><strong>{k ? d?.totals[k] ?? 0 : total}</strong></button>))}
+      </div>
+      <form className="filters exam-filters" role="search" aria-label="Filtrar estudos" onSubmit={(e) => { e.preventDefault(); setQ(f); }}>
+        <input placeholder="Paciente" aria-label="Paciente" value={f.patient} onChange={(e) => setF({ ...f, patient: e.target.value })} />
+        <input placeholder="Accession" aria-label="Accession" value={f.accession} onChange={(e) => setF({ ...f, accession: e.target.value })} />
+        <input placeholder="Modalidade" aria-label="Modalidade" maxLength={16} value={f.modality} onChange={(e) => setF({ ...f, modality: e.target.value })} />
+        <button type="button" className="link" onClick={() => setMore(!more)}>{more ? "Menos filtros" : "Mais filtros"}</button>
+        {more && <>
+          <input type="date" aria-label="Recebido de" value={f.date_from} onChange={(e) => setF({ ...f, date_from: e.target.value })} />
+          <input type="date" aria-label="Recebido até" value={f.date_to} onChange={(e) => setF({ ...f, date_to: e.target.value })} />
+          <input placeholder="Equipamento" aria-label="Equipamento" value={f.station} onChange={(e) => setF({ ...f, station: e.target.value })} />
+          <select aria-label="Unidade" value={f.site_id} onChange={(e) => setF({ ...f, site_id: e.target.value })}>
+            <option value="">Todas as unidades</option>{(sites.data ?? []).map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select>
+          <select aria-label="Prioridade" value={f.priority} onChange={(e) => setF({ ...f, priority: e.target.value })}>
+            <option value="">Todas as prioridades</option>{Object.entries(PRIORITY).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>
+        </>}
+        <button>Filtrar</button>
+      </form>
+      <Notice kind="error">{list.error}</Notice>
+      <ul className="study-list" aria-label="Estudos">
+        {(d?.items ?? []).map((x) => (
+          <li key={x.study_id}>
+            <button type="button" className="study" onClick={() => setOpen(x.study_id)} aria-label={`Preparar ${x.patient_name ?? "estudo"}`}>
+              <span className="study-main"><strong>{x.patient_name ?? "Paciente não identificado"}</strong>
+                <span className="sub">{[x.modality, x.description].filter(Boolean).join(" · ")} · {x.images} imagem(ns){x.station ? ` · ${x.station}` : ""}</span>
+                <span className="sub">Recebido {fmtDate(x.received_at)}{x.accession ? ` · ${x.accession}` : ""}{x.physician ? ` · ${x.physician}` : ""}</span></span>
+              <span className="study-tags">
+                {x.priority !== "routine" && <span className={`pill pill-${x.priority}`}>{PRIORITY[x.priority]}</span>}
+                <span className={`pill stage-${x.stage}`}>{d?.stages[x.stage]}</span>
+                {x.incomplete && <span className="pill pill-warn">incompleto</span>}
+                {x.flags.length > 0 && <span className="pill pill-warn">{x.flags.length} pendência(s)</span>}
+                {x.unread_comments > 0 && <span className="count count-new">{x.unread_comments} comentário(s) novo(s)</span>}
+              </span>
+            </button>
+          </li>))}
+        {d && !d.items.length && <li className="empty">Nenhum estudo com esses filtros.</li>}
+      </ul>
+      {open && <PrepSheet studyId={open} onClose={() => setOpen(null)} onChanged={() => void list.reload()} />}
+    </section>
+  );
+}
 
 type Exam = { schedule_id: string; status: string; patient_name: string; patient_id: string; modality: string;
   station_aet: string | null; room: string | null; description: string | null; scheduled_at: string; accession: string;
@@ -33,9 +106,11 @@ export function TechnicianPage({ me }: { me: Me }) {
   const d = p.data;
   const c = d?.exam_counts ?? {};
   return (
-    <Page title="Painel do técnico" intro="Exames do dia, recepção das imagens no PACS e pendências. A emissão e a liberação de laudos são exclusivas dos médicos."
+    <Page title="Painel do técnico" intro="Receba, confira, prepare e encaminhe os estudos para laudo. A emissão e a liberação de laudos são exclusivas dos médicos."
       actions={<input type="date" aria-label="Dia" value={day} onChange={(e) => setDay(e.target.value)} />}>
       {act.view}
+      {me.permissions.includes("ris.exam.prepare") && <PrepQueuePanel />}
+      <h2 className="section">Agenda do dia</h2>
       <Notice kind="error">{p.error}</Notice>
       {d && <div className="card-row" role="group" aria-label="Resumo do dia">
         <div className="card"><span className="card-label">A realizar</span><strong>{(c.scheduled ?? 0) + (c.arrived ?? 0)}</strong></div>
@@ -45,7 +120,7 @@ export function TechnicianPage({ me }: { me: Me }) {
         <div className={`card${d.reception_failures.length ? " card-warn" : ""}`}><span className="card-label">Recusas na recepção DICOM</span><strong>{d.reception_failures.length}</strong></div>
         <div className="card"><span className="card-label">Transferências incompletas (MPPS)</span><strong>{d.incomplete_transfers}</strong></div>
       </div>}
-      <h2 className="section">Exames do dia</h2>
+      <h3>Exames agendados</h3>
       <div className="table-wrap"><table>
         <thead><tr><th>Hora</th><th>Paciente</th><th>Exame</th><th>Sala / estação</th><th>Situação</th>{canPerform && <th>Ações</th>}</tr></thead>
         <tbody>{(d?.exams ?? []).map((e) => (

@@ -18,6 +18,7 @@ import { TechnicianPage } from "./pages/technician";
 import { StationsPage } from "./pages/stations";
 import { UsersPage } from "./pages/users";
 
+type NavState = "expanded" | "collapsed" | "hidden";
 type Route = { id: string; label: string; perm?: string; operator?: boolean; view: (me: Me) => ReactNode };
 
 const ROUTES: Route[] = [
@@ -46,6 +47,11 @@ function currentRoute() { return location.hash.replace(/^#\/?/, "") || "inicio";
 export function App() {
   const [me, setMe] = useState<Me | null | undefined>(undefined);
   const [route, setRoute] = useState(currentRoute());
+  const [navState, setNavState] = useState<NavState>(() => {
+    try { const v = localStorage.getItem("vyx-nav"); return v === "collapsed" || v === "hidden" ? v : "expanded"; }
+    catch { return "expanded"; }
+  });
+  const [drawer, setDrawer] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -76,20 +82,39 @@ export function App() {
     try { await post("/auth/logout"); } finally { setMe(null); location.hash = ""; }
   }
 
+  const short = (label: string) => label.split(/\s+/).filter((w) => w.length > 2 || w === w.toUpperCase()).slice(0, 2)
+    .map((w) => w[0]).join("").toUpperCase();
+  function setNav(v: NavState) { setNavState(v); try { localStorage.setItem("vyx-nav", v); } catch { /* sem armazenamento */ } }
+
   return (
-    <div className="shell">
-      <nav className="rail" aria-label="Navegação principal">
+    <div className={`shell nav-${navState}${drawer ? " drawer-open" : ""}`}>
+      <div className="topbar">
+        <button type="button" className="menu-btn" aria-expanded={drawer} aria-controls="menu-principal"
+          onClick={() => setDrawer(!drawer)}>{drawer ? "Fechar menu" : "Menu"}</button>
+        <span className="topbar-title">{active.label}</span>
+      </div>
+      {navState === "hidden" && <button type="button" className="nav-show" onClick={() => setNav("expanded")}>Mostrar menu</button>}
+      {drawer && <div className="drawer-backdrop" onClick={() => setDrawer(false)} />}
+      <nav className="rail" id="menu-principal" aria-label="Navegação principal">
         <div className="brand">
           <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M8 9l8 15 8-15" /></svg>
-          <span>VYONIX</span>
+          <span className="brand-name">VYONIX</span>
         </div>
         <ul>
           {allowed.map((r) => (
             <li key={r.id}>
-              <a href={`#/${r.id}`} aria-current={r.id === active.id ? "page" : undefined}>{r.label}</a>
+              <a href={`#/${r.id}`} aria-current={r.id === active.id ? "page" : undefined} title={r.label}
+                onClick={() => setDrawer(false)}><span className="nav-abbr" aria-hidden="true">{short(r.label)}</span>
+                <span className="nav-label">{r.label}</span></a>
             </li>
           ))}
         </ul>
+        <div className="nav-modes" role="group" aria-label="Barra lateral">
+          {navState === "expanded"
+            ? <button type="button" className="link" onClick={() => setNav("collapsed")}>Recolher</button>
+            : <button type="button" className="link" onClick={() => setNav("expanded")}>Expandir</button>}
+          <button type="button" className="link" onClick={() => setNav("hidden")}>Ocultar</button>
+        </div>
         <div className="who">
           <strong>{me.display_name}</strong>
           <span>{me.roles.map((r) => r.name).join(", ") || "Sem papel"}</span>

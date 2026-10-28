@@ -234,6 +234,7 @@ def prep_mark_read(study_id: uuid.UUID, c: Ctx = Depends(ctx_any)):
 def prep_check(study_id: uuid.UUID, body: CheckIn, c: Ctx = Depends(needs("ris.exam.prepare"))):
     from vyonix.ris import prep
     with c.session() as s:
+        _require(c, s)                     # módulo RIS habilitado e licenciado
         prep.set_check(s, study_id, body.code, body.done, **c.actor)
         return prep.detail(s, study_id, c.p.user_id)
 
@@ -243,6 +244,7 @@ def prep_comment(study_id: uuid.UUID, body: TextIn, c: Ctx = Depends(ctx_any)):
     from vyonix.ris import prep
     _prep_reader(c)
     with c.session() as s:
+        _require(c, s)                     # módulo RIS habilitado e licenciado
         _prep_scope(c, s, study_id)
         cm = prep.add_comment(s, study_id, body.text, **c.actor)
         return {"id": str(cm.id)}
@@ -256,6 +258,7 @@ def prep_flag(study_id: uuid.UUID, body: FlagIn, c: Ctx = Depends(ctx_any)):
     if not (c.p.has("ris.exam.prepare") or (c.p.has("report.read") and body.code in prep.REQUESTS + ("other",))):
         raise Forbidden("Sem permissão para registrar esta sinalização.", code="forbidden")
     with c.session() as s:
+        _require(c, s)                     # módulo RIS habilitado e licenciado
         _prep_scope(c, s, study_id)
         f = prep.add_flag(s, study_id, body.code, body.note, **c.actor)
         return {"id": str(f.id)}
@@ -265,6 +268,7 @@ def prep_flag(study_id: uuid.UUID, body: FlagIn, c: Ctx = Depends(ctx_any)):
 def prep_flag_resolve(flag_id: uuid.UUID, c: Ctx = Depends(needs("ris.exam.prepare"))):
     from vyonix.ris import prep
     with c.session() as s:
+        _require(c, s)                     # módulo RIS habilitado e licenciado
         prep.resolve_flag(s, flag_id, **c.actor)
     return {"ok": True}
 
@@ -280,6 +284,7 @@ async def prep_attach(study_id: uuid.UUID, request: Request, kind: str = "docume
         if len(data) > prep.MAX_AUDIO:
             raise ValidationFailed("Arquivo acima do tamanho permitido.")
     with c.session() as s:
+        _require(c, s)                     # módulo RIS habilitado e licenciado
         a = prep.add_attachment(s, study_id, bytes(data), kind=kind, filename=filename, key=_att_key(c), **c.actor)
         return {"id": str(a.id), "media_type": a.media_type}
 
@@ -305,6 +310,7 @@ def prep_attachment(attachment_id: uuid.UUID, c: Ctx = Depends(ctx_any)):
 def prep_priority(study_id: uuid.UUID, body: PriorityIn, c: Ctx = Depends(needs("ris.exam.priority"))):
     from vyonix.ris import prep
     with c.session() as s:
+        _require(c, s)                     # módulo RIS habilitado e licenciado
         return {"priority": prep.set_priority(s, study_id, body.priority, reason=body.reason, **c.actor)}
 
 
@@ -312,6 +318,7 @@ def prep_priority(study_id: uuid.UUID, body: PriorityIn, c: Ctx = Depends(needs(
 def prep_duplicate(study_id: uuid.UUID, body: DuplicateIn, c: Ctx = Depends(needs("ris.exam.prepare"))):
     from vyonix.ris import prep
     with c.session() as s:
+        _require(c, s)                     # módulo RIS habilitado e licenciado
         prep.decide_duplicate(s, study_id, duplicate_of=body.duplicate_of, note=body.note, **c.actor)
         return prep.detail(s, study_id, c.p.user_id)
 
@@ -320,6 +327,7 @@ def prep_duplicate(study_id: uuid.UUID, body: DuplicateIn, c: Ctx = Depends(need
 def prep_forward(study_id: uuid.UUID, c: Ctx = Depends(needs("ris.exam.prepare"))):
     from vyonix.ris import prep
     with c.session() as s:
+        _require(c, s)                     # módulo RIS habilitado e licenciado
         return prep.forward(s, study_id, **c.actor)
 
 
@@ -327,6 +335,7 @@ def prep_forward(study_id: uuid.UUID, c: Ctx = Depends(needs("ris.exam.prepare")
 def prep_return(study_id: uuid.UUID, body: ReasonIn, c: Ctx = Depends(needs("report.write"))):
     from vyonix.ris import prep
     with c.session() as s:
+        _require(c, s)                     # módulo RIS habilitado e licenciado
         _prep_scope(c, s, study_id)
         prep.return_for_correction(s, study_id, body.reason, **c.actor)
     return {"ok": True}
@@ -336,6 +345,7 @@ def prep_return(study_id: uuid.UUID, body: ReasonIn, c: Ctx = Depends(needs("rep
 def prep_cancel(study_id: uuid.UUID, body: ReasonIn, c: Ctx = Depends(needs("ris.exam.cancel"))):
     from vyonix.ris import prep
     with c.session() as s:
+        _require(c, s)                     # módulo RIS habilitado e licenciado
         prep.cancel(s, study_id, body.reason, **c.actor)
     return {"ok": True}
 
@@ -344,6 +354,7 @@ def prep_cancel(study_id: uuid.UUID, body: ReasonIn, c: Ctx = Depends(needs("ris
 def prep_share(study_id: uuid.UUID, body: ShareIn, c: Ctx = Depends(needs("ris.exam.share"))):
     from vyonix.ris import prep
     with c.session() as s:
+        _require(c, s)                     # módulo RIS habilitado e licenciado
         sh = prep.share(s, study_id, body.user_id, scope=body.scope, hours=body.hours, **c.actor)
         return {"id": str(sh.id), "expires_at": sh.expires_at.isoformat()}
 
@@ -352,5 +363,6 @@ def prep_share(study_id: uuid.UUID, body: ShareIn, c: Ctx = Depends(needs("ris.e
 def prep_unshare(share_id: uuid.UUID, c: Ctx = Depends(needs("ris.exam.share"))):
     from vyonix.ris import prep
     with c.session() as s:
+        _require(c, s)                     # módulo RIS habilitado e licenciado
         prep.revoke_share(s, share_id, **c.actor)
     return {"ok": True}
