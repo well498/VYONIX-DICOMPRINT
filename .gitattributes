@@ -3,3 +3,5 @@ installer/homologacao/*.cmd text eol=crlf
 installer/homologacao/*.txt text eol=crlf
 installer/homologacao/*.url text eol=crlf
 installer/common/*.cmd text eol=crlf
+installer/validacao/*.cmd text eol=crlf
+installer/validacao/*.ps1 -text

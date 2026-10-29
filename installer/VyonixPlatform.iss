@@ -71,6 +71,7 @@ Type: filesandordirs; Name: "{app}\_internal"
 [Files]
 Source: "{#DistDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "common\*"; DestDir: "{app}"; Flags: ignoreversion
+Source: "validacao\*"; DestDir: "{app}\validacao"; Flags: ignoreversion
 #ifdef Homolog
 Source: "homologacao\*"; DestDir: "{app}"; Flags: ignoreversion
 #endif
@@ -80,6 +81,7 @@ Source: "homologacao\*"; DestDir: "{app}"; Flags: ignoreversion
 ; administrador), que abre o sistema ou explica o que falhou.
 Name: "{commonprograms}\VYONIX\VYONIX - Assistente de instalacao"; Filename: "{app}\Assistente_Instalacao.cmd"; WorkingDir: "{app}"
 Name: "{commonprograms}\VYONIX\VYONIX - Verificar funcionamento"; Filename: "{app}\vyonix-deploy.exe"; Parameters: "abrir --porta 8444"; WorkingDir: "{app}"
+Name: "{commonprograms}\VYONIX\VYONIX - Validar instalacao"; Filename: "{app}\validacao\Validar_VYONIX.cmd"; WorkingDir: "{app}\validacao"
 #ifdef Homolog
 Name: "{commonprograms}\VYONIX\VYONIX Homologacao - Preparar modulos"; Filename: "{app}\Preparar_Homologacao.cmd"; WorkingDir: "{app}"
 Name: "{commonprograms}\VYONIX\VYONIX Homologacao - Enviar exame simulado"; Filename: "{app}\Enviar_Exame_Simulado.cmd"; WorkingDir: "{app}"

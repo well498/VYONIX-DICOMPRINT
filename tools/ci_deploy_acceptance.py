@@ -414,6 +414,22 @@ $pf = $r | Get-NetFirewallPortFilter
         assert all(v == "Running" for v in states.values()), states
         return f"parado: {[(c['id'], c['status']) for c in down['checks'] if c['status'] != 'ok'][:6]}; depois: {states}"
 
+    @check("2.11", "Kit de validação do proprietário (Validar_VYONIX.ps1, somente leitura): C1–C4 aprovados; reinício pendente")
+    def _():
+        ps1 = ROOT / "installer" / "validacao" / "Validar_VYONIX.ps1"
+        outdir = OUT / "validacao"
+        outdir.mkdir(parents=True, exist_ok=True)
+        p = sh(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", ps1, "-Porta", "8444",
+                "-Saida", outdir, "-SemAbrir"], timeout=300)
+        text = p.stdout
+        for need in ("[APROVADO] VYONIX instalado e configurado", "[APROVADO] Servicos do Windows",
+                     "[APROVADO] Acesso neste computador", "[APROVADO] Acesso pelo IP da rede",
+                     "[PENDENTE] Reinicializacao real do Windows"):
+            assert need in text, f"faltou '{need}' em: {text[-1500:]}"
+        reports = list(outdir.glob("VYONIX_Validacao_*.html"))
+        assert reports and "Resultado geral" in reports[0].read_text(encoding="utf-8-sig"), reports
+        return " | ".join(l for l in text.splitlines() if l.startswith("["))[:900]
+
     @check("2.3", "Serviços com conta virtual, início automático, dependências e recuperação após falha")
     def _():
         out = []
