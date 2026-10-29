@@ -38,28 +38,38 @@ quatro mecanismos que, sozinhos ou juntos, produzem exatamente o sintoma relatad
 
 ## 3. Como recuperar a instalação atual (computador do proprietário)
 
-Ferramenta `Recuperar_VYONIX.cmd` (pasta `recuperacao` do pacote de validação). Ela **não depende** da instalação
-com defeito.
+Passo a passo para o proprietário: `Procedimento_Recuperacao_Instalacao_Proprietario.md`. Checklist:
+`Checklist_Validacao_P0.md`. Garantias da ferramenta `Recuperar_VYONIX` (pedido de 29/10, 17:05):
 
-1. Copie a pasta para a Área de Trabalho e dê dois cliques em **Recuperar_VYONIX.cmd** (aceite o pedido de
-   administrador). Ela faz primeiro **só o diagnóstico** e abre um relatório (`VYONIX_Recuperacao_<data>.html` na
-   Área de Trabalho). **Envie esse relatório** — ele mostra qual das causas acima ocorreu no seu computador.
-2. Ela pergunta se deve **aplicar** a recuperação. Responda **S** e digite **RECUPERAR**. O que ela faz:
-   para e remove os 4 serviços do VYONIX Platform (nunca o DICOM Print), fecha processos da pasta do programa,
-   **renomeia** (não apaga) a pasta do programa para `Platform.anterior-<data>` e remove o registro de desinstalação
-   só se o desinstalador não existir mais (com cópia `.reg` na Área de Trabalho).
-3. Se o relatório disser **REINICIAR**, reinicie o Windows.
-4. Instale a nova versão normalmente. Ela reconhece os dados e, ao final, conclui a **atualização** (deixe marcado).
-5. Rode **VYONIX - Validar instalacao** e siga o roteiro P0 (acesso pelo IP, reinício sem login).
+| Exigência | Como a ferramenta atende |
+|---|---|
+| Primeira execução só diagnóstico | Sem `-Aplicar` nenhum comando que altere algo é executado (teste automático `test_recovery_diagnosis_path_is_strictly_read_only`; CI 2.13 compara serviços, registro, arquivos do programa, backups e firewall antes/depois). Única gravação: o relatório HTML na Área de Trabalho |
+| Identificar o que pertence ao VYONIX | Serviço pertence se o programa dele está em `Program Files\VYONIX\Platform`; processos idem; banco pelo `-D` do serviço do PostgreSQL. Serviço com o mesmo nome e programa em outro lugar: **NÃO PERTENCE**, nunca alterado. DICOM Print listado como nunca alterado |
+| Confirmação explícita com plano | Plano exibido antes (serviços, processos, pasta, dados, backup, impactos, limitações, reversão); só `RECUPERAR` continua; outra resposta → código 3, nada alterado |
+| Integridade do banco + backup consistente + prova de restauração | Core/Worker/PACS parados (sem escritas); `pg_dump` completo (lê todas as páginas, com somas de verificação ativas); restauração num banco temporário `vyonix_verif_*` e comparação da contagem de linhas de todas as tabelas; `backup.json` compatível com a restauração do DEPLOY. Sem banco acessível: cópia a frio conferida por SHA-256 de cada arquivo + estado "shut down" (`pg_controldata`). Último recurso: backup existente íntegro e legível. **Sem backup confirmado: religa os serviços e para (código 4)** |
+| Estado anterior registrado | `Backups\recuperacao-<data>\estado-anterior`: serviços (JSON + `.reg` + recuperação automática), registro de desinstalação, firewall, lista de arquivos; configurações em `configuracao\` |
+| Reversão | `Reverter_VYONIX.cmd`: pasta de volta, registro de volta, serviços pelo reparo oficial, verificação; nunca toca o banco. Restauração do banco: operação separada com confirmação `RESTAURAR <nome>` |
+| Falhas | Serviço preso → marcado para exclusão, aviso REINICIAR, resultado PARCIAL (código 5); arquivo preso → pasta não renomeada, nada apagado; reexecução segura |
+
+Atualização após a recuperação: o instalador detecta os dados (ProgramData) e executa a **atualização** do DEPLOY
+(backup → migrações → serviços → verificação). Em falha, a execução para, registra o erro, reverte os passos
+reversíveis e **nunca apaga um banco existente ou de estado desconhecido** (corrigido em 29/10: antes, um banco
+momentaneamente inacessível na captura podia ser tratado como "criado agora").
 
 ## 4. Testes
 
-* Locais: `tests_deploy/test_uninstall.py` (8): ordem desativar → parar → encerrar → excluir; serviço marcado para
-  exclusão; execução interrompida abandonada na desinstalação; processos só da pasta do programa (nunca o próprio);
-  instalador sem o DICOM Print e sem apagar dados; ferramenta de recuperação só leitura por padrão e sem tocar dados.
-* CI Windows (`deploy-windows`, critério **2.12**): desinstalar **com o assistente aberto e uma execução
-  interrompida** → nada preso, pasta do programa vazia, serviços removidos, dados preservados, registro gravado;
-  reinstalar depois de desinstalar (dados reconhecidos, atualização); atualizar por cima com o assistente aberto;
-  reparo de serviço apagado por fora; ferramenta de recuperação (diagnóstico sem alterar; aplicar libera a
-  reinstalação; dados intactos; DICOM Print em execução).
-* **Pendente (critério de conclusão do P0):** execução no computador do proprietário; Windows 10 e 11 (BLK-04).
+* Locais: `tests_deploy/test_uninstall.py` (12) e `tests_deploy/test_faults.py` (6): ordem desativar → parar →
+  encerrar → excluir; serviço marcado para exclusão; execução interrompida abandonada; processos só da pasta do
+  programa; diagnóstico sem comandos de alteração; plano antes da confirmação; backup e estado antes de remover;
+  reversão sem tocar o banco; falhas simuladas só por variável de ambiente; reversão do banco nunca apaga banco
+  existente/desconhecido.
+* CI Windows `deploy-windows`:
+  * **2.12** — desinstalar com o assistente aberto e uma execução interrompida; reinstalar; atualizar por cima;
+    reparar; ferramenta de recuperação (diagnóstico, aplicar, reinstalar).
+  * **2.13 (novo)** — diagnóstico só leitura (antes = depois); cancelamento antes da confirmação; falha na remoção de
+    serviço (aberto por outro programa) + serviço alheio com o mesmo nome + falha ao renomear (arquivo preso) →
+    parcial, nada apagado, processos alheios intactos, backup restaurado em banco temporário; reexecução (cópia a
+    frio); reversão (sistema e dados de volta); falha **simulada** na migração (para, registra, backup antes,
+    restauração e nova atualização); falha **simulada** na inicialização (registra; nova atualização conclui).
+* **Pendente (critério de conclusão do P0):** execução no computador do proprietário (checklist); Windows 10 e 11
+  (BLK-04); reinício real sem login (o CI do GitHub não pode reiniciar).

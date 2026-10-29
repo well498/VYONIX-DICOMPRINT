@@ -3,15 +3,27 @@
 * **Atualizado em:** 2026-10-29 (fim da tarde) · ramo `develop`
 * **Regra permanente do proprietário (29/10):** todo novo pedido é **acrescentado** ao planejamento; nada é
   cancelado, reiniciado ou descartado. P0 pode reordenar, preservando o progresso (justificativa registrada aqui).
-* **Ponto exato de parada:** commit `efbae29` (P0 desinstalação/atualização/reparo/recuperação) enviado depois do
-  fim do `deploy-windows` de `5a51301`; aguardando `deploy-windows` (critério 2.12) e o instalador de homologação
-  (`flavor=homologacao`) para entregar a versão de teste e o kit de recuperação ao proprietário.
+* **Ponto exato de parada:** `f9c04e3` (+ documentos) enviado com `[skip ci]` para não cancelar os runs Windows
+  `40944999029` (comercial, 78ce54b) e `40945047712` (homologação). Ao terminarem: registrar resultados por critério e
+  disparar `deploy-windows` (ambos os sabores) em `f9c04e3`+, que inclui o novo critério **2.13** (recuperação com
+  falhas, reexecução, reversão, falhas simuladas de migração e inicialização). **Kit e instalador só são entregues
+  com 2.12, 2.13 e a homologação aprovados nesse commit.**
 
 ## Em execução
 | Pri | Tarefa | Situação |
 |---|---|---|
 | P0 | Desinstalador que não removia; atualização direta; Reparar; recuperação da instalação atual; logs | Implementado (`efbae29`), testes locais OK; **CI Windows 2.12 em execução**; depois: versão de teste + kit `VYONIX_Kit_P0_Recuperacao.zip`; **resolvido só após validação no computador do proprietário** e Windows 10/11 (BLK-04) |
 | P0 | Inicialização automática sem login, acesso pelo IP (bc9cf28) | Corrigido e aprovado no CI (2.10/2.11); **aguarda validação presencial** |
+
+## Pedido de 29/10 17:05 — validação do procedimento de recuperação (P0)
+| Item | Situação |
+|---|---|
+| 1. Diagnóstico estritamente não destrutivo + inventário do que pertence ao VYONIX | Implementado (`f9c04e3`); teste local; CI 2.13 (antes = depois) **a executar** |
+| 2. Confirmação explícita com plano (serviços, processos, pastas, dados, backups, impactos, limites); nada alheio | Implementado; serviço alheio com o mesmo nome e processo alheio testados no CI 2.13 **a executar** |
+| 3. Integridade do banco, backup consistente com configurações, prova de restauração, estado anterior, reversão | Implementado (pg_dump + restauração em banco temporário + contagens; cópia a frio SHA-256; `estado-anterior`; `Reverter_VYONIX`) — CI **a executar** |
+| 4. Atualização após a recuperação (detecção, preservação, migrações, parada segura, serviços, verificação) | Coberto por 2.12/2.8; corrigido risco de a reversão apagar banco de estado desconhecido |
+| 5. Testes: cancelamento, falha ao renomear, falha na remoção de serviço, falha na migração, falha na inicialização, restauração, reexecução | Escritos no CI 2.13 (migração/inicialização por falha **simulada**, declarado) — **não executados ainda** |
+| 6. Entrega: instalador, kit, procedimento, checklist, coleta de logs, reversão | Documentos prontos (`Procedimento_Recuperacao_Instalacao_Proprietario.md`, `Checklist_Validacao_P0.md`); entrega **só após aprovação do CI** |
 
 ## Concluídas em 29/10 (com testes)
 * Editor de laudos rico, DOCX com formatação, frases rápidas completas, modelos pessoais e continuidade, revisão e
