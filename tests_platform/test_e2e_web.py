@@ -13,6 +13,7 @@ import socket
 import tempfile
 import threading
 import time
+import re
 import unittest
 from pathlib import Path
 
@@ -268,15 +269,37 @@ class WebE2E(unittest.TestCase):
         row = pg.get_by_role("row", name="MARIA SINTETICA SILVA")
         expect(row).to_be_visible()
         expect(row.get_by_role("cell", name="CT", exact=True)).to_be_visible()
+        # menu único "Abrir imagens": VYONIX Viewer, comparação, Weasis e Oviyam (indisponíveis até o admin ligar)
+        row.get_by_role("button", name="Abrir imagens ▾").click()
+        menu = row.get_by_role("menu", name="Abrir imagens")
+        expect(menu.get_by_role("menuitem", name="Abrir com Weasis")).to_be_disabled()
+        expect(menu.get_by_text("Indisponível: Desativado pelo administrador (aguardando validação).")).to_be_visible()
+        expect(menu.get_by_role("menuitem", name="Abrir com Oviyam")).to_be_disabled()
+        expect(menu.get_by_text("Comparar: nenhum exame anterior com imagens disponível para você.")).to_be_visible()
+        self.shot(pg, "08b-abrir-imagens")
         with pg.expect_popup() as pop:                              # lançador: o servidor decide protocolo e escopo
-            row.get_by_role("button", name="Abrir no Viewer").click()
+            menu.get_by_role("menuitem", name="VYONIX Viewer").click()
         popup = pop.value
         popup.wait_for_url(f"**/viewer/viewer?StudyInstanceUIDs={uid(1)}")
         self.assertIsNone(popup.evaluate("window.opener"))                          # sem acesso à janela de origem
         popup.close()
         expect(row.get_by_role("status")).to_contain_text("Padrão (1 quadro)")
-        row.get_by_role("button", name="Comparar…").click()
-        expect(row.get_by_text("Nenhum exame anterior com imagens disponível para você.")).to_be_visible()
+        # Weasis ligado pelo administrador: o link weasis:// leva só o código de manifesto de uso único
+        from vyonix.settings import service as settings
+        with db.session(self.tenant) as s:
+            settings.put(s, "pacs", "external_viewers", {**settings.get(s, "pacs", "external_viewers"),
+                                                         "weasis_enabled": True}, actor="admin", reason="e2e")
+        pg.reload()
+        row = pg.get_by_role("row", name="MARIA SINTETICA SILVA")
+        row.get_by_role("button", name="Abrir imagens ▾").click()
+        row.get_by_role("menu", name="Abrir imagens").get_by_role("menuitem", name="Abrir com Weasis").click()
+        fallback = row.get_by_role("link", name="Se o Weasis não abrir, clique aqui")
+        expect(fallback).to_have_attribute("href", re.compile(r"^weasis://\?%24dicom%3Aget\+-w\+%22https"))
+        self.assertNotIn("Bearer", fallback.get_attribute("href"))
+        expect(row.get_by_role("status")).to_contain_text("instale o Weasis")
+        with db.session(self.tenant) as s:
+            settings.put(s, "pacs", "external_viewers", {**settings.get(s, "pacs", "external_viewers"),
+                                                         "weasis_enabled": False}, actor="admin", reason="e2e")
         pg.get_by_role("button", name="Protocolos do Viewer").click()
         vp = pg.get_by_role("form", name="Novo protocolo do Viewer")
         vp.get_by_label("Protocolo da instituição").check()
@@ -405,8 +428,11 @@ class WebE2E(unittest.TestCase):
         pg.get_by_role("button", name="Filtrar").click()
         row = pg.get_by_role("row", name="CR_SALA2")
         expect(row.get_by_text("Imagens recebidas")).to_be_visible()
-        self.assertEqual(row.get_by_role("link", name="Abrir no Viewer").get_attribute("href"),
-                         f"/viewer/viewer?StudyInstanceUIDs={study_uid}")
+        with pg.expect_popup() as pop:                              # mesmo menu "Abrir imagens" na agenda
+            row.get_by_role("button", name="Abrir imagens ▾").click()
+            row.get_by_role("menuitem", name="VYONIX Viewer").click()
+        pop.value.wait_for_url(f"**/viewer/viewer?StudyInstanceUIDs={study_uid}**")   # + protocolo (grade, test_4)
+        pop.value.close()
 
     def test_6_dicom_stations(self):
         """Nós DICOM (PACS): cadastro completo, detalhes do equipamento, aparece para a recepção no
@@ -733,7 +759,9 @@ class WebE2E(unittest.TestCase):
         pg.get_by_role("button", name="Buscar").click()
         pg.get_by_role("button", name="Helena Laudo Sintetica").click()
         ficha = pg.get_by_role("article", name="Paciente Helena Laudo Sintetica")
-        expect(ficha.get_by_text("laudo liberado")).to_be_visible()
+        expect(ficha.get_by_text("laudo liberado").first).to_be_visible()
+        hist = ficha.get_by_role("region", name="Histórico do paciente")                # histórico integrado
+        expect(hist).to_contain_text("laudo liberado")
         href = ficha.get_by_role("link", name="PDF do laudo").get_attribute("href")
         self.assertRegex(href, r"^/api/v1/report/reports/[0-9a-f-]{36}/pdf$")
         with db.session(self.tenant) as s:

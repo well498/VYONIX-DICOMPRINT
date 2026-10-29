@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { fmtDate, get, type Me } from "../api";
 import { Notice, Page, useLoad } from "../ui";
+import { OpenImages } from "../viewer";
 
 type Item = { order_id: string; accession: string | null; priority: string; patient_name: string; procedure: string | null;
   modality: string | null; requester: string | null; stage: string; flags: string[]; requested_at: string;
@@ -72,7 +73,7 @@ export function ExamCenterPage({ me }: { me: Me }) {
                 {x.critical && <span className="tag tag-warn">achado crítico</span>}</span></td>
               <td className="nowrap">{x.scheduled_at ? fmtDate(x.scheduled_at) : "—"}{x.room ? <><br /><span className="field-hint">{x.room}</span></> : null}</td>
               <td>{x.images ?? "—"}{x.images_check ? <span className="field-hint"> (MPPS {x.images_check.received}/{x.images_check.expected})</span> : null}
-                {canView && x.received_at && x.study_instance_uid && <><br /><a href={`/viewer/viewer?StudyInstanceUIDs=${encodeURIComponent(x.study_instance_uid)}`} target="_blank" rel="noopener">Viewer</a></>}</td>
+                {canView && x.received_at && x.study_instance_uid && <><br /><OpenImages studyUid={x.study_instance_uid} compact /></>}</td>
               <td>{x.reported_at ? fmtDate(x.reported_at) : x.report_id ? "em redação" : "—"}</td>
               <td className="nowrap">até imagens: {dur(x.minutes_to_images)}<br />até laudo: {dur(x.minutes_to_report)}</td>
             </tr>))}</tbody>

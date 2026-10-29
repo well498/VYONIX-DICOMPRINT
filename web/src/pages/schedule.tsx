@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { patch, post, get, type Me } from "../api";
 import { Field, Notice, Page, useAction, useLoad } from "../ui";
+import { OpenImages } from "../viewer";
 
 type Item = {
   schedule_id: string; sps_id: string; status: string; accession: string; priority: string; modality: string;
@@ -179,8 +180,7 @@ export function SchedulePage({ me }: { me: Me }) {
                     title="Imagens informadas pela modalidade (MPPS) × recebidas pelo PACS">imagens {it.images.received}/{it.images.expected}</span>}
                   {it.mpps_summary && <MppsSummary s={it.mpps_summary} />}
                   {canView && ["received", "completed"].includes(it.status) && (
-                    <> <a href={`/viewer/viewer?StudyInstanceUIDs=${encodeURIComponent(it.study_instance_uid)}`}
-                      target="_blank" rel="noopener">Abrir no Viewer</a></>)}</td>
+                    <> <OpenImages studyUid={it.study_instance_uid} compact /></>)}</td>
                 {canManage && (
                   <td className="actions"><div className="row-actions">
                     {it.status === "scheduled" && <button onClick={() => void setStatus(it, "arrived")}>Check-in</button>}

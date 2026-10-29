@@ -216,3 +216,19 @@ class ViewerProtocol(TenantMixin, Base):
     compare_prior: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     prior_same_modality: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
     created_by: Mapped[str] = mapped_column(String(120), nullable=False)
+
+
+class ViewerToken(TenantMixin, Base):
+    """Credencial de curta duração para visualizador externo, presa a **um estudo** e a **um usuário**. Só o SHA-256
+    fica guardado. ``manifest``: código de uso único (minutos) que vai no link ``weasis://``; ``access``: credencial
+    entregue dentro do manifesto (HTTPS) e enviada pelo Weasis no cabeçalho ``Authorization`` (nunca na URL)."""
+    __tablename__ = "viewer_tokens"
+    __table_args__ = (Index("uq_pacs_viewer_tokens_hash", "tenant_id", "token_hash", unique=True), SCHEMA)
+    token_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    kind: Mapped[str] = mapped_column(String(10), nullable=False)                # manifest | access
+    viewer: Mapped[str] = mapped_column(String(12), nullable=False)              # weasis
+    study_uid: Mapped[str] = mapped_column(String(64), nullable=False)
+    user_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

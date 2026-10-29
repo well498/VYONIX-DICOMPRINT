@@ -650,3 +650,74 @@ def delete_viewer_protocol(pid: uuid.UUID, c: Ctx = Depends(needs("pacs.studies.
             c.require("pacs.viewer.protocols")
         viewing.delete_protocol(s, pid, owner_user_id=owner, **c.actor)
     return Response(status_code=204)
+
+
+# --------------------------------------------------------------------------- visualizadores externos (Weasis, Oviyam)
+@router.get("/external/viewers")
+def external_viewers(c: Ctx = Depends(needs("pacs.studies.read"))):
+    """Visualizadores disponíveis para o menu "Abrir imagens" (com o motivo quando indisponível)."""
+    from vyonix.pacs import external
+    with c.session() as s:
+        return external.availability(s)
+
+
+@router.post("/external/{viewer}/launch")
+def external_launch(viewer: str, request: Request, study_uid: str, c: Ctx = Depends(needs("pacs.studies.read"))):
+    """Weasis: link ``weasis://`` com manifesto de uso único (2 min). Oviyam: endereço do serviço configurado.
+    POST (com o token anti-CSRF da sessão): cria credencial, não é um link que outra página possa disparar."""
+    from vyonix.pacs import external
+    with c.session() as s:
+        return external.launch(s, c.p, study_uid, viewer, base_url=str(request.base_url), ip=c.ip)
+
+
+def _bearer(request: Request) -> str:
+    from vyonix.errors import Unauthorized
+    h = request.headers.get("authorization") or ""
+    if not h.lower().startswith("bearer "):
+        raise Unauthorized("Credencial do visualizador ausente (cabeçalho Authorization).")
+    return h[7:].strip()
+
+
+@router.get("/external/weasis/manifest/{code}")
+def weasis_manifest(code: str, request: Request):
+    """Manifesto do Weasis. Autenticado só pelo código de uso único (o Weasis não tem a sessão do navegador)."""
+    from vyonix.api.app import platform
+    from vyonix.errors import Unauthorized
+    from vyonix.pacs import external
+    parts = external.split_token(code)
+    if parts is None:
+        raise Unauthorized("Link do Weasis inválido.")
+    plat = platform(request)
+    ip = request.client.host if request.client else None
+    with plat.db.session(parts[0]) as s:
+        xml = external.manifest(s, parts[0], code, base_url=str(request.base_url), ip=ip)
+    return Response(xml, media_type="application/xml", headers={"Cache-Control": "no-store"})
+
+
+@router.get("/external/wado")
+def external_wado(request: Request, requestType: str = "", studyUID: str = "", seriesUID: str = "",  # noqa: N803
+                  objectUID: str = "", contentType: str = "application/dicom"):  # noqa: N803
+    """WADO-URI (PS3.18) só para visualizadores externos, com a credencial do estudo no cabeçalho Authorization —
+    credencial na URL é recusada."""
+    from vyonix.api.app import platform
+    from vyonix.errors import Unauthorized
+    from vyonix.pacs import backend_for, external
+    if "token" in request.query_params or "access_token" in request.query_params:
+        raise ValidationFailed("Credencial na URL não é aceita: use o cabeçalho Authorization.")
+    if requestType.upper() != "WADO" or not (studyUID and seriesUID and objectUID):
+        raise ValidationFailed("WADO-URI: informe requestType=WADO, studyUID, seriesUID e objectUID.")
+    if contentType.split(";")[0].strip() not in ("application/dicom", "*/*", ""):
+        raise ValidationFailed("Só application/dicom é oferecido aos visualizadores externos.")
+    token = _bearer(request)
+    parts = external.split_token(token)
+    if parts is None:
+        raise Unauthorized("Credencial do visualizador inválida.")
+    plat = platform(request)
+    b = backend_for(plat)
+    if b is None:
+        raise Unavailable("Armazenamento DICOM não configurado (pacs_orthanc_url).")
+    ip = request.client.host if request.client else None
+    with plat.db.session(parts[0]) as s:
+        data = _wrap(lambda: external.wado_instance(s, b, token, study_uid=studyUID, series_uid=seriesUID,
+                                                    sop_uid=objectUID, ip=ip))
+    return Response(data, media_type="application/dicom", headers={"Cache-Control": "no-store"})

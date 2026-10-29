@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { get, post } from "../api";
 import { Notice, Page, useAction, useLoad } from "../ui";
-import { ViewerButtons, ViewerProtocolsPanel } from "../viewer";
+import { OpenImages, ViewerProtocolsPanel } from "../viewer";
 
 // Atributo DICOM JSON (PS3.18 F.2): {"vr": "...", "Value": [...]}
 type Attr = { vr: string; Value?: unknown[] };
@@ -145,7 +145,7 @@ export function ImagesPage({ me }: { me: { permissions: string[] } }) {
                   <td className="num">{val(s, "00201208")}</td>
                   <td className="nowrap">{val(s, "00080050") || "—"}</td>
                   <td className="actions"><div className="row-actions">
-                    <ViewerButtons studyUid={uid} />
+                    <OpenImages studyUid={uid} />
                     <button className="link" aria-expanded={!!q} onClick={() => void toggleQuality(uid)}>Qualidade</button>
                     {isAdmin && (dests.data ?? []).length > 0 && <button className="link" onClick={() => setSendFor(sendFor?.uid === uid ? null : { uid, dest: dests.data![0].id })}>Enviar…</button>}
                   </div></td>

@@ -29,5 +29,8 @@ prática da instalação) — aguarda o proprietário; sem novas funcionalidades
 * Avaliação prática da homologação (instalador `344ab09`) e relatos de falhas.
 * BLK-01: escolher a alternativa (recomendada: separar a plataforma agora, rotacionar o Print depois) — nada de
   destruir/substituir/revogar até nova decisão.
-* BLK-15 (recusa na associação; ativar na instalação só com aprovação específica), BLK-16 (edge → cloud), BLK-14 (ICP-Brasil), BLK-01 (chave de emissão: escolher
+* Visualizadores externos: ligar o Weasis na homologação (e confiar o certificado no computador); decidir sobre o
+  Oviyam (proposta de isolamento em `docs/platform/Visualizadores_Weasis_Oviyam.md`).
+* Escopo das imagens por vínculo (`pacs/viewer.access = linked`): ligar por padrão muda o comportamento homologado.
+* BLK-15 (recusa na associação; simulação aprovada no CI; ativar na instalação só com aprovação específica), BLK-16 (edge → cloud), BLK-14 (ICP-Brasil), BLK-01 (chave de emissão: escolher
   caminho A ou B e autorizar a destruição das cópias — plano em `docs/security/`).

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { fmtDate, get, patch, type Me } from "../api";
 import { Notice, Page, useAction, useLoad } from "../ui";
+import { OpenImages } from "../viewer";
 import { PRIORITY, PrepSheet } from "./prep";
 
 type PrepItem = { study_id: string; patient_name: string | null; accession: string | null; modality: string | null;
@@ -131,7 +132,7 @@ export function TechnicianPage({ me }: { me: Me }) {
             <td>{[e.room, e.station_aet].filter(Boolean).join(" · ") || "—"}</td>
             <td>{STATUS[e.status] ?? e.status}{e.mpps_status && <span className="tag" title="Informado pela modalidade (MPPS)">modalidade: {e.mpps_status.toLowerCase()}</span>}
               {e.images && <span className={`tag${e.images.received < e.images.expected ? " tag-warn" : ""}`}>imagens {e.images.received}/{e.images.expected}</span>}
-              {canView && ["received", "completed"].includes(e.status) && <> <a href={`/viewer/viewer?StudyInstanceUIDs=${encodeURIComponent(e.study_instance_uid)}`} target="_blank" rel="noopener">Viewer</a></>}</td>
+              {canView && ["received", "completed"].includes(e.status) && <> <OpenImages studyUid={e.study_instance_uid} compact /></>}</td>
             {canPerform && <td className="actions"><div className="row-actions">
               {e.status === "scheduled" && <button onClick={() => void move(e, "arrived", "chegada registrada")}>Chegou</button>}
               {["scheduled", "arrived"].includes(e.status) && <button onClick={() => void move(e, "in_progress", "exame iniciado")}>Iniciar</button>}

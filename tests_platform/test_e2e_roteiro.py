@@ -196,8 +196,12 @@ class Roteiro(unittest.TestCase):
         self.shot(tp, "r05-central-exames-tecnico")
         tp.get_by_role("button", name="Preparar Maria Ficticia").click()
         sheet = tp.get_by_role("dialog", name="Preparação do estudo")
-        expect(sheet.get_by_role("link", name="Abrir Viewer")).to_have_attribute(
-            "href", f"/viewer/viewer?StudyInstanceUIDs={r['study_instance_uid']}")
+        sheet.get_by_role("button", name="Abrir imagens ▾").click()          # mesmo menu em todas as telas
+        with tp.expect_popup() as pop:
+            sheet.get_by_role("menuitem", name="VYONIX Viewer").click()
+        pop.value.wait_for_url(f"**/viewer/viewer?StudyInstanceUIDs={r['study_instance_uid']}")
+        pop.value.close()
+        expect(sheet.get_by_role("menuitem", name="Abrir com Weasis")).to_have_count(0)  # menu fecha após abrir
         self.shot(tp, "r06-painel-acoes")
         sheet.get_by_role("button", name="Comentários").click()
         sheet.get_by_role("textbox", name="Comentário").fill("Paciente orientada (comentário fictício).")

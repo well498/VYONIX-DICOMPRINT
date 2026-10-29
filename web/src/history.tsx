@@ -1,6 +1,6 @@
 import { fmtDate, get } from "./api";
 import { Notice, useLoad } from "./ui";
-import { ViewerButtons } from "./viewer";
+import { OpenImages } from "./viewer";
 
 /** Histórico integrado do paciente (PACS, RIS e laudos): um item por exame, sem duplicar; exame de unidade sem
  * vínculo aparece restrito. Sem texto de laudo. */
@@ -43,7 +43,7 @@ export function PatientHistory({ patientId }: { patientId: string }) {
                   {x.report.status === "final" && d.can_read_reports && <> <a href={`/api/v1/report/reports/${x.report.id}/pdf`}>PDF</a></>}</>}
                 {x.documents && x.documents.length > 0 && <> · documentos: {x.documents.map((doc) => doc.kind === "attachment"
                   ? `${doc.count} anexo(s) da preparação` : `${doc.modality}${doc.description ? ` (${doc.description})` : ""}`).join(", ")}</>}
-                {x.study_instance_uid && d.can_view_images && <> <ViewerButtons studyUid={x.study_instance_uid} label="Viewer" compact /></>}
+                {x.study_instance_uid && d.can_view_images && <> <OpenImages studyUid={x.study_instance_uid} compact /></>}
               </span>)}
           {x.kind === "order" && <span>Pedido {x.accession ?? ""} — {x.description ?? "procedimento não informado"} · {ORDER[x.order_status ?? ""] ?? x.order_status}
             {x.schedule && x.schedule.length > 0 && ` · agendado ${fmtDate(x.schedule[0].at)}`}{x.requester ? ` · solicitante ${x.requester}` : ""}</span>}

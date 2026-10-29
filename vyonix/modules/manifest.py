@@ -93,6 +93,20 @@ class ViewerSettings(_Strict):
     allow_personal: bool = Field(True, description="Médicos podem salvar protocolos de exibição pessoais")
 
 
+class ExternalViewers(_Strict):
+    """Visualizadores além do VYONIX Viewer (desligados até a validação e a autorização do proprietário)."""
+    weasis_enabled: bool = Field(False, description="Weasis (instalado no computador do usuário): abrir pelo link "
+                                                    "weasis:// com manifesto de uso único")
+    weasis_access_minutes: int = Field(60, ge=5, le=480, description="Validade da credencial do Weasis para o estudo "
+                                                                      "(minutos)")
+    oviyam_enabled: bool = Field(False, description="Oviyam (serviço web separado): NÃO homologado — o Oviyam consulta o "
+                                                    "PACS com o próprio AE e não aplica as permissões do VYONIX")
+    oviyam_url: str = Field("", max_length=300, pattern=r"^(|https://[^\s\"'<>]+)$",
+                            description="Endereço HTTPS do Oviyam (ex.: https://servidor:8443/oviyam2)")
+    oviyam_server_name: str = Field("", max_length=60, pattern=r"^[A-Za-z0-9 _.-]*$",
+                                    description="Nome do servidor PACS cadastrado no Oviyam")
+
+
 class ExamWorkflow(_Strict):
     """Etapas do fluxo do exame usadas pela instituição. Cadastro do paciente, recepção no PACS, laudo e liberação são
     sempre usados; as demais podem ser desligadas em clínicas com fluxo simplificado (respeitando as dependências)."""
@@ -203,7 +217,8 @@ PACS = ModuleManifest(
                  "pacs.viewer.protocols": "Definir os protocolos de exibição do Viewer da instituição"},
     settings=(SettingSpec("retention", PacsRetention, "Retenção de estudos (relatório; nada é excluído)"),
               SettingSpec("reception", PacsReception, "Recepção DICOM: de qualquer equipamento ou só dos cadastrados"),
-              SettingSpec("viewer", ViewerSettings, "Viewer: acesso às imagens e protocolos pessoais")),
+              SettingSpec("viewer", ViewerSettings, "Viewer: acesso às imagens e protocolos pessoais"),
+              SettingSpec("external_viewers", ExternalViewers, "Visualizadores externos: Weasis e Oviyam")),
     publishes=("pacs.study.received.v1",),
 )
 

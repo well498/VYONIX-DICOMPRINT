@@ -395,3 +395,14 @@ Assinaturas: o revisor libera sempre com a própria senha e a própria imagem au
 | `1913882` | BLK-15 fase simulada: `vyonix/pacs/association.py` (lista de nós autorizados nas modalidades do Orthanc; só entradas `vyx-`) | `test_pacs_association_block.py`: cálculo/plano local OK; recusa real **só no CI** (Orthanc próprio do teste) — não validado até o CI |
 | `06e39e0` | Frases: categorias, busca, favoritas, atalho próprio (`phrase_prefs`), duplicar, campos `{{...}}`/`[[...]]`; versões com autor, revisor (no hash), liberador e resumo de alterações; modelos pessoais: exportação/recuperação com SHA-256, proposta à instituição, resumo sem conteúdo | `test_report_editor.py` 14/14; módulos de laudo + migrações + arquitetura 65/65; e2e web 9/9 |
 | (este) | BLK-01: escopo confirmado (Print e plataforma compartilham lista de chaves e `product_id`) e alternativas; avaliação de privacidade/continuidade dos modelos pessoais | documentação |
+
+### Continuação (29/10, tarde) — Viewer (referência SMooTH) e visualizadores externos
+
+| Commit | Entrega | Testes |
+|---|---|---|
+| `5a51301` | Viewer: análise de lacunas (`docs/platform/Viewer_Analise_Lacunas_SMooTH.md`), lançador com protocolos (padrão/grade/comparação), comparação só com anteriores autorizados, protocolos por modalidade/procedimento e pessoais (`pacs_0009`), escopo opcional por vínculo no DICOMweb (`pacs/viewer.access`), histórico integrado do paciente, identificação do exame em cada quadro | `test_viewer_launch.py` 3/3; e2e web; e2e do Viewer com comparação **só no CI viewer** |
+| (este) | Menu único **Abrir imagens** (VYONIX Viewer, comparação, Weasis, Oviyam) em todas as telas de estudo; **Weasis** por `weasis://` + manifesto 2.5 de uso único + credencial de estudo no cabeçalho (`pacs_0010`); **Oviyam** desligado e não homologado (controle de acesso próprio); ambos desligados por padrão (`pacs/external_viewers`) | `test_external_viewers.py` 3/3 (manifesto validado no XSD oficial do Weasis); e2e web/roteiro; `tests_platform` local 256 OK (3 só no CI) |
+
+CI do lote `a6e1e7a`: platform (inclui BLK-15 com Orthanc real), viewer, Windows release e deploy-windows — **aprovados**.
+Pendências: abrir no Weasis real (homologação; certificado confiável), portal do paciente (BLK-06), decisão sobre o
+Oviyam, extensão VYONIX do OHIF (sincronização zoom/janela, ferramentas por protocolo), medição com estudo volumoso.

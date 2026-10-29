@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { del, errorText, fmtDate, get, post } from "./api";
 import { Field, Notice, useAction, useLoad } from "./ui";
 
@@ -14,7 +14,7 @@ const SOURCE: Record<string, string> = { explicit: "escolhido agora", personal: 
 
 function day(d: string | null) { return d ? fmtDate(d + "T12:00:00", false) : "sem data"; }
 
-async function open(studyUid: string, params: Record<string, string> = {}): Promise<Launch> {
+async function openVyonix(studyUid: string, params: Record<string, string> = {}): Promise<Launch> {
   const w = window.open("about:blank", "_blank");     // abre já (bloqueadores de pop-up) e navega depois
   try {
     const r = await get<Launch>(`/pacs/viewer/launch?${new URLSearchParams({ study_uid: studyUid, ...params })}`);
@@ -34,7 +34,7 @@ export function ViewerButtons({ studyUid, label = "Abrir no Viewer", compact = f
   async function go(params: Record<string, string> = {}) {
     setMsg(null);
     try {
-      const r = await open(studyUid, params);
+      const r = await openVyonix(studyUid, params);
       setMsg(r.note ?? (r.prior ? `Comparando com ${r.prior.modality ?? ""} de ${day(r.prior.study_date)} (${SOURCE[r.source] ?? r.source}).`
         : `Aberto: ${r.layout_name} (${SOURCE[r.source] ?? r.source}).`));
     } catch (e) { setMsg(errorText(e)); }
@@ -119,4 +119,107 @@ export function ViewerProtocolsPanel() {
         </form>)}
     </section>
   );
+}
+
+type Avail = Record<"vyonix" | "weasis" | "oviyam", { available: boolean; label: string; reason: string | null }>;
+let availCache: Promise<Avail> | null = null;
+function availability(): Promise<Avail> {
+  if (!availCache) {
+    availCache = get<Avail>("/pacs/external/viewers").catch((e) => { availCache = null; throw e; });
+    setTimeout(() => { availCache = null; }, 60000);      // configuração alterada pelo administrador vale em 1 min
+  }
+  return availCache;
+}
+
+/** Menu único "Abrir imagens" (mesma experiência em toda a plataforma): VYONIX Viewer no navegador, comparação
+ * com anterior, Weasis (aplicativo local) e Oviyam (serviço web). O servidor confere permissão, organização e
+ * vínculo em cada abertura; aqui só se mostra o que está disponível e por quê. */
+export function OpenImages({ studyUid, compact = false }: { studyUid: string; compact?: boolean }) {
+  const [open, setOpenState] = useState(false);
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+  const btn = useRef<HTMLButtonElement>(null);
+  function setOpen(v: boolean) {                         // menu fixo na tela: não é cortado por tabelas com rolagem
+    if (v && btn.current) {
+      const r = btn.current.getBoundingClientRect();
+      const width = Math.min(416, window.innerWidth - 16);
+      setPos({ top: r.bottom + 4, left: Math.max(8, Math.min(r.left, window.innerWidth - width - 8)) });
+    }
+    setOpenState(v);
+  }
+  useEffect(() => {
+    if (!open) return undefined;
+    const follow = () => setOpen(true);                  // acompanha o botão ao rolar ou redimensionar
+    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") setOpenState(false); };
+    window.addEventListener("resize", follow);
+    window.addEventListener("scroll", follow, true);
+    window.addEventListener("keydown", esc);
+    return () => { window.removeEventListener("resize", follow); window.removeEventListener("scroll", follow, true);
+      window.removeEventListener("keydown", esc); };
+  }, [open]);
+  const [msg, setMsg] = useState<{ text: string; weasis?: string; help?: string[] } | null>(null);
+  const av = useLoad(async () => (open ? await availability() : null), [open]);
+  async function vyonix(params: Record<string, string> = {}) {
+    setMsg(null);
+    try {
+      const r = await openVyonix(studyUid, params);
+      setMsg({ text: r.note ?? (r.prior ? `VYONIX Viewer: comparando com ${r.prior.modality ?? ""} de ${day(r.prior.study_date)}.`
+        : `VYONIX Viewer: ${r.layout_name} (${SOURCE[r.source] ?? r.source}).`) });
+    } catch (e) { setMsg({ text: errorText(e) }); }
+    setOpen(false);
+  }
+  async function external(viewer: "weasis" | "oviyam") {
+    setMsg(null);
+    const w = viewer === "oviyam" ? window.open("about:blank", "_blank") : null;
+    try {
+      const r = await post<{ uri?: string; url?: string; help: string[] }>(`/pacs/external/${viewer}/launch?${new URLSearchParams({ study_uid: studyUid })}`, {});
+      if (viewer === "weasis" && r.uri) {
+        window.location.href = r.uri;                       // o sistema entrega o link weasis:// ao aplicativo
+        setMsg({ text: "Abrindo no Weasis…", weasis: r.uri, help: r.help });
+      } else if (r.url) {
+        if (w) { w.opener = null; w.location.href = r.url; } else window.open(r.url, "_blank", "noopener");
+        setMsg({ text: "Oviyam aberto em nova aba.", help: r.help });
+      }
+    } catch (e) { w?.close(); setMsg({ text: errorText(e) }); }
+    setOpen(false);
+  }
+  const item = (key: "weasis" | "oviyam", title: string, sub: string) => {
+    const a = av.data?.[key];
+    return (
+      <li key={key}><button type="button" role="menuitem" disabled={!a?.available} onClick={() => void external(key)}>
+        <strong>{title}</strong> <span className="sub">— {sub}</span>
+        {a && !a.available && <span className="field-hint"> Indisponível: {a.reason}</span>}</button></li>);
+  };
+  return (
+    <span className="open-images">
+      <button ref={btn} type="button" className={compact ? "link" : undefined} aria-haspopup="menu" aria-expanded={open}
+        onClick={() => setOpen(!open)}>Abrir imagens ▾</button>
+      {open && (
+        <ul className="open-images-menu" role="menu" aria-label="Abrir imagens" style={pos ?? undefined}>
+          <li><button type="button" role="menuitem" onClick={() => void vyonix()}>
+            <strong>VYONIX Viewer</strong> <span className="sub">— no navegador</span></button></li>
+          <li><ComparePick studyUid={studyUid} onPick={(uid) => void vyonix({ prior: uid })} /></li>
+          {av.loading && <li className="field-hint">Verificando visualizadores…</li>}
+          {av.error && <li className="field-hint">{av.error}</li>}
+          {av.data && item("weasis", "Abrir com Weasis", "visualização avançada (aplicativo instalado)")}
+          {av.data && item("oviyam", "Abrir com Oviyam", "visualização pelo navegador")}
+        </ul>)}
+      {msg && <span className="field-hint" role="status"> {msg.text}
+        {msg.weasis && <> <a href={msg.weasis}>Se o Weasis não abrir, clique aqui</a>.</>}
+        {msg.help && <span className="open-images-help">{msg.help.join(" ")}</span>}</span>}
+    </span>
+  );
+}
+
+function ComparePick({ studyUid, onPick }: { studyUid: string; onPick: (uid: string) => void }) {
+  const info = useLoad(async () => await get<Launch>(`/pacs/viewer/launch?${new URLSearchParams({ study_uid: studyUid, preview: "true", layout: "compare" })}`)
+    .catch(() => null), [studyUid]);
+  const priors = info.data?.priors ?? [];
+  if (info.loading) return <span className="field-hint">Buscando exames anteriores…</span>;
+  if (priors.length === 0) return <span className="field-hint">Comparar: nenhum exame anterior com imagens disponível para você.</span>;
+  return (
+    <select aria-label="Comparar com exame anterior" defaultValue="" onChange={(e) => { if (e.target.value) onPick(e.target.value); }}>
+      <option value="">VYONIX Viewer — comparar com anterior…</option>
+      {priors.map((p) => <option key={p.study_instance_uid} value={p.study_instance_uid}>
+        {day(p.study_date)} · {p.modality ?? "—"} · {p.description ?? p.accession ?? "exame"}{p.same_modality ? " ★" : ""}</option>)}
+    </select>);
 }

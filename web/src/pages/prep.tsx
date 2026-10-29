@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { blob, del, errorText, fmtDate, get, post, upload } from "../api";
 import { Notice, useAction, useLoad } from "../ui";
+import { OpenImages } from "../viewer";
 
 export type PrepDetail = {
   study_id: string; study_instance_uid: string;
@@ -93,7 +94,7 @@ export function PrepSheet({ studyId, onClose, onChanged }: { studyId: string; on
           {act.view}
           {tool === null && (
             <nav className="acts" aria-label="Ações do estudo">
-              {x.can.viewer && <Row icon="viewer" label="Abrir Viewer" href={`/viewer/viewer?StudyInstanceUIDs=${encodeURIComponent(x.study_instance_uid)}`} />}
+              {x.can.viewer && <div className="act act-images"><span className="act-ico"><Icon name="viewer" /></span><OpenImages studyUid={x.study_instance_uid} /></div>}
               {x.can.prepare && !closed && <Row icon="audio" label="Gravar áudio" onClick={() => setTool("audio")} />}
               {x.can.prepare && !closed && <Row icon="photo" label="Fotografar documento" onClick={() => setTool("photo")} />}
               <Row icon="attach" label="Anexos" onClick={() => setTool("attach")}
@@ -163,7 +164,7 @@ export function Priors({ studyId, compact = false }: { studyId: string; compact?
             {x.description ? ` · ${x.description}` : ""}{x.same_modality && <span className="pill">mesma modalidade</span>}</span>
           <span className="prior-acts">
             {x.restricted ? <span className="sub">unidade sem vínculo</span> : <>
-              {x.study_instance_uid && <a href={`/viewer/viewer?StudyInstanceUIDs=${encodeURIComponent(x.study_instance_uid)}`} target="_blank" rel="noopener">Imagens</a>}
+              {x.study_instance_uid && <OpenImages studyUid={x.study_instance_uid} compact />}
               {x.report?.status === "final" ? <a href={`/api/v1/report/reports/${x.report.id}/pdf`} target="_blank" rel="noopener">Laudo (PDF)</a>
                 : <span className="sub">{x.report ? "laudo em rascunho" : "sem laudo"}</span>}</>}
           </span>

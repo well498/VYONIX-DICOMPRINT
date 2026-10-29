@@ -348,3 +348,17 @@ fieldset.plain legend { font-weight: 600; margin-bottom: .3rem; }
 .patient-history li.ph-order::before { background: var(--amber); }
 .patient-history li.ph-encounter::before { background: var(--line); }
 .ph-date { display: inline-block; min-width: 6.5rem; font-variant-numeric: tabular-nums; color: var(--ink); font-weight: 600; }
+
+/* menu "Abrir imagens" (mesmo componente em todas as telas) */
+.open-images { position: relative; display: inline-block; }
+.open-images-menu { position: fixed; z-index: 60; width: min(26rem, calc(100vw - 16px)); margin: 0;
+  padding: .35rem; list-style: none; background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius-s);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, .12); }
+.open-images-menu li { margin: 0; }
+.open-images-menu button { display: block; width: 100%; text-align: left; border: 0; background: none; padding: .45rem .55rem;
+  border-radius: var(--radius-s); white-space: normal; }
+.open-images-menu button:hover:not(:disabled) { background: var(--panel); }
+.open-images-menu button:disabled { opacity: .65; cursor: not-allowed; }
+.open-images-menu select { width: 100%; margin: .2rem 0; }
+.open-images-help { display: block; }
+.act-images { display: flex; align-items: center; gap: .5rem; }
