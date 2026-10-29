@@ -77,7 +77,7 @@ class PendingRun(unittest.TestCase):
         import tempfile
         from vyonix_deploy import cli
         from vyonix_deploy.db import DeployDB
-        with tempfile.TemporaryDirectory() as t:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as t:
             db = DeployDB(Path(t) / "deploy.db")
             db.x("INSERT INTO runs(id, kind, status, created_at, updated_at, config_json) VALUES ('r1','install','running','1','1','{}')")
             d = mock.Mock()
@@ -91,6 +91,7 @@ class PendingRun(unittest.TestCase):
             d.resume_pending.assert_not_called()
             self.assertEqual(db.run("r1")["status"], "abandoned")
             self.assertIsNone(db.unfinished())
+            getattr(db, "close", lambda: None)()                 # Windows: arquivo aberto impede apagar a pasta
 
 
 class Steps(unittest.TestCase):
