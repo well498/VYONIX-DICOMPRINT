@@ -9,8 +9,8 @@ Registro dos impedimentos (Comando Executivo de continuidade, §4). Um bloqueio 
 * **Aprovação:** depende de decisão expressa do responsável.
 * **Técnico:** a equipe resolve sozinha.
 
-* **Atualizado em:** 2026-10-24 (01:12, instruções do proprietário)
-* **Bloqueios abertos:** 11. **Resolvidos:** 5.
+* **Atualizado em:** 2026-10-28 (noite)
+* **Bloqueios abertos:** 13. **Resolvidos:** 5.
 
 ## Abertos
 
@@ -28,6 +28,8 @@ Registro dos impedimentos (Comando Executivo de continuidade, §4). Um bloqueio 
 | BLK-12 | Recuperação da senha administrativa do License Manager adiada por decisão do proprietário (24/10/2026). Proibido nesta fase: redefinir senhas, excluir contas ou alterar credenciais | License Manager | Aprovação · médio | Decisão do proprietário | Liberação expressa do proprietário | Proprietário | **Sim** | Todo o desenvolvimento independente; a ferramenta da rotação de chave (passo 4) fica pronta para quando o acesso for retomado | Autorização expressa do proprietário |
 | BLK-13 | Ensaios em campo (equipamentos e clínicas reais) | Print, PACS, Viewer | Aprovação · alto | Decisão do proprietário (24/10/2026): testes do DICOM Print só no laboratório offline | Autorização expressa | Proprietário | **Sim** | Testes automatizados e homologação no laboratório offline | Autorização expressa do proprietário para cada ensaio |
 | BLK-14 | Assinatura digital de laudos (ICP-Brasil: certificado A1/A3, padrão PAdES/CAdES, carimbo de tempo) | REPORT | Aprovação · médio | Exige decisão de padrão, custo de certificados e enquadramento regulatório | Decisão do proprietário | Proprietário | **Sim** | Laudos com liberação por confirmação de senha, versões imutáveis com SHA-256 e verificação (a tela informa que não é assinatura digital) | Padrão e certificados definidos |
+| BLK-15 | Recusa de C-STORE de equipamento não cadastrado **já na associação** (hoje: retenção no índice, sem exclusão) | PACS, DEPLOY | Aprovação · baixo | Exige mudar a configuração do Orthanc instalada (`DicomAlwaysAllowStore=false` + modalidades sincronizadas pelo Core) | Decisão do proprietário | Proprietário | **Sim** | Política "só cadastrados" com retenção e decisão do administrador | Aprovação registrada + teste no Windows com o Orthanc real |
+| BLK-16 | Sincronização edge → cloud de estudos (modelo VNEdge/VNA) | PACS | Aprovação · médio | Define onde ficam dados clínicos, contrato e LGPD | Decisão do proprietário e ADR | Proprietário | **Sim** | Edge e cloud funcionam separados | ADR aprovada |
 
 ## Resolvidos
 

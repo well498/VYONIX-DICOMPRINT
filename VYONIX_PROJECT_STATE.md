@@ -3,7 +3,7 @@
 Memória técnica do projeto (Prompt Mestre §53). Lida no início e atualizada no fim de cada entrega.
 Não contém credenciais, chaves privadas nem dados de pacientes.
 
-* **Atualizado em:** 2026-10-24
+* **Atualizado em:** 2026-10-28 (noite)
 * **Repositório:** `well498/VYONIX-DICOMPRINT`, ramo `develop`
 * **Especificação vigente:** Prompt Mestre Final v1.0 (2026-10-23); decisões em [`docs/adr/`](docs/adr/README.md)
 * **Rastreabilidade:** [`VYONIX_REQUIREMENTS_TRACEABILITY.md`](VYONIX_REQUIREMENTS_TRACEABILITY.md)
@@ -340,3 +340,24 @@ informa que não é assinatura digital.
 **Instabilidade conhecida:** o processo do pytest no Windows às vezes termina com `0xC0000409` depois de todos os
 testes aprovados (encerramento do interpretador). A Windows release registra aviso quando o JUnit está limpo e
 continua reprovando qualquer falha ou erro de teste. Investigar a origem (Qt/threads no encerramento).
+
+## Sessão de 2026-10-28 (noite) — estudo dcm4chee/J4Care e evolução autônoma
+
+**Pedido:** Prompt Mestre "Estudo do dcm4chee, evolução do PACS e desenvolvimento autônomo" + complemento J4Care
+SMooTH (VNA, Viewer, VNEdge, VNIN). Estudo e matriz: `docs/platform/Estudo_Referencias_dcm4chee_J4Care.md`.
+
+| Commit | Entrega | Testes |
+|---|---|---|
+| `344ab09` | DEPLOY: assistente abre o navegador por atalho `.url` (relato da homologação: abria a pasta Documentos); atalhos de homologação | `tests_deploy/test_wizard.py`; homologação no Windows 13/13 (run 40783644239) |
+| `485df19` | **Nós DICOM**: cadastro completo do equipamento, edição auditada, C-ECHO, status, histórico de conexões (Q/R aceitas/recusadas com motivo, C-STORE, C-MOVE recusado), política de recepção `pacs/reception` (padrão = qualquer equipamento; opcional = só cadastrados, com retenção sem exclusão e decisão do admin); migração `pacs_0006` (aditiva) | `test_pacs_nodes.py` 6/6; `test_pacs_orthanc.py::test_reception_only_from_registered_equipment` (Orthanc real, CI); e2e Nós DICOM |
+| `57ca030` | **Minha Produção**: dia, mês, período, unidade, modalidade, pendências, tempo médio, CSV/PDF; permissões own/all/financial; tabela de valores opcional | `test_report_production.py` 3/3; e2e roteiro (r10) |
+| `69459b5` | **Fluxo do exame** configurável (`ris/workflow`: agendamento e worklist, com dependência) e **linha do tempo do exame** | `test_ris_workflow.py` |
+| `2fcf974` | Estudo dcm4chee × SMooTH × VYONIX; **exames anteriores** do paciente (preparação e laudo); **alerta de espaço em disco** no monitoramento | `test_ris_workflow.py::test_priors_of_same_patient`; `test_monitoring.py::test_disk_space_levels_grouped_by_volume` |
+
+**Regressão local:** `tests_platform` completo 215 OK antes do último ciclo (2 dependentes do Orthanc só no CI);
+módulos afetados reexecutados depois de cada mudança (PACS, Q/R, RIS, laudos, monitoramento, e2e 18/18).
+
+**Preservado:** comportamento homologado de recepção (aceita qualquer equipamento por padrão), BKL-10, instalação do
+DICOM Print, configuração do Orthanc instalada pelo DEPLOY. Nenhuma exclusão automática de estudos.
+
+**Próxima tarefa programada:** ver `VYONIX_NEXT_ACTION.md`.

@@ -100,3 +100,21 @@ As evidências citadas são reproduzíveis: suítes de teste no repositório e e
 | 2026-10-27 | RIS-01 parcial: agendamento, worklist e MWL por DICOM; UID com raiz 2.25 |
 | 2026-10-27 | RIS-01: interface web Agenda; PACS: backup automático diário (Worker + DEPLOY + monitoramento); BKL-10 aprovado e integrado à develop (próxima versão de laboratório) |
 | 2026-10-27 | PAC-01: backup e restauração do PACS (exportação verificada, recuperação de desastre) |
+| 2026-10-28 (noite) | Estudo dcm4chee/J4Care: PAC-NOS (nós DICOM completos, C-ECHO, histórico, política de recepção), REP-PROD (Minha Produção), RIS-FLUXO (etapas configuráveis e linha do tempo), PAC-PRIORS (exames anteriores locais), MON-DISCO (espaço em disco) |
+
+## 5. Requisitos do estudo dcm4chee/J4Care (28/10/2026)
+
+| ID | Requisito | Situação | Implementação | Testes |
+|---|---|---|---|---|
+| PAC-NOS-01 | Cadastro do equipamento: identificação, fabricante, modelo, modalidade, AE, IP/nome, porta, organização e unidade, serviços permitidos, status | Implementado | `vyonix/pacs/nodes.py`, `pacs_0006`, tela Nós DICOM | `test_pacs_nodes.py`, e2e |
+| PAC-NOS-02 | Teste de associação (C-ECHO) | Implementado | `nodes.echo` | `test_pacs_nodes.py::Echo` |
+| PAC-NOS-03 | Histórico de conexões e registros de erros; associações recusadas registradas | Implementado | `pacs.dicom_events`, `dimse_qr` | `test_pacs_nodes.py::QRHistory` |
+| PAC-NOS-04 | Bloqueio de AE desconhecido no C-STORE | Parcial (no índice, com retenção; recusa na associação = BLK-15) | `pacs/reception`, `pacs.store_holds` | `test_pacs_nodes.py`, `test_pacs_orthanc.py` |
+| PAC-NOS-05 | Regras de roteamento | Planejado (próximo ciclo) | — | — |
+| PAC-NOS-06 | Isolamento entre clínicas nos nós | Implementado | RLS, unidade validada na organização | `test_pacs_nodes.py` |
+| RIS-FLUXO-01 | Etapas configuráveis com dependências | Implementado (agendamento, worklist; preparação e distribuição já configuráveis) | `ris/workflow` | `test_ris_workflow.py` |
+| RIS-FLUXO-02 | Estado, responsável, horário e histórico por etapa | Implementado (linha do tempo) | `vyonix/ris/timeline.py` | `test_ris_workflow.py` |
+| REP-PROD-01 | Minha Produção (diária, mensal, período, clínica, modalidade, finalizados, pendentes, tempo médio, PDF, CSV) | Implementado | `vyonix/report/production.py` | `test_report_production.py` |
+| REP-PROD-02 | Permissão independente para valores financeiros; sem acesso à produção de outros sem autorização | Implementado | `report.production.*` | `test_report_production.py` |
+| PAC-PRIORS-01 | Exames anteriores disponíveis para comparação | Parcial (índice local; pré-busca remota planejada) | `timeline.priors` | `test_ris_workflow.py` |
+| MON-DISCO-01 | Controle de espaço em disco com alerta | Implementado | `monitoring.disk_check` | `test_monitoring.py` |
