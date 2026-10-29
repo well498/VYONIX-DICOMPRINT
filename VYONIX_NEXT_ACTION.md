@@ -22,6 +22,14 @@
 * Análises: BLK-01 (escopo do licenciamento e alternativas), privacidade/continuidade de modelos, lacunas do Viewer,
   Weasis/Oviyam.
 
+## Validação que só o computador do proprietário (ou uma VM própria) pode fazer
+O CI do GitHub não permite reiniciar a máquina (o reinício encerra a execução). Por isso ficam **para a validação
+presencial**, sem serem declarados aprovados: reinício real do Windows com os serviços subindo **sem login e sem
+terminal** (C6/C7 do kit de validação), Windows 10/11 (BLK-04), recuperação da instalação atual com a ferramenta,
+abertura real no Weasis. O CI cobre: serviços automáticos com conta de serviço, ordem de dependência e partida a frio
+(tudo parado → iniciar), queda do banco e do processo, instalação, atualização por cima da versão anterior (bc9cf28),
+reparo, desinstalação com o assistente aberto, reinstalação e ferramenta de recuperação.
+
 ## Pendentes (ordem)
 | Pri | Tarefa | Dependência |
 |---|---|---|
