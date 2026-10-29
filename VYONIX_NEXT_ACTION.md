@@ -15,6 +15,13 @@
 | P0 | Desinstalador que não removia; atualização direta; Reparar; recuperação da instalação atual; logs | Implementado (`efbae29`), testes locais OK; **CI Windows 2.12 em execução**; depois: versão de teste + kit `VYONIX_Kit_P0_Recuperacao.zip`; **resolvido só após validação no computador do proprietário** e Windows 10/11 (BLK-04) |
 | P0 | Inicialização automática sem login, acesso pelo IP (bc9cf28) | Corrigido e aprovado no CI (2.10/2.11); **aguarda validação presencial** |
 
+## Resultados CI Windows (29/10)
+| Run | Commit | Resultado |
+|---|---|---|
+| `40944999029` comercial | 78ce54b | 34 aprovados, 6 reprovados, 1 não executado. Os 6 vêm de uma só causa: o passo que fecha processos da pasta do programa encerrava o próprio `unins000.exe` (código −1) e a desinstalação seguia em segundo plano, derrubando os testes seguintes. Corrigido em `4bb8b0f` |
+| `40945047712` homologação | 28d25ce (=78ce54b + docs) | 0a–9 aprovados (inclui atualização por cima de bc9cf28); 10–14 sem resultado visível (limite de 10 avisos do GitHub; agora há resumo único); 15 reprovado (mesma causa) |
+| `40951093428` comercial / `40951161126` homologação | b22bcc4 | **em execução** (inclui 2.13) |
+
 ## Pedido de 29/10 17:05 — validação do procedimento de recuperação (P0)
 | Item | Situação |
 |---|---|
