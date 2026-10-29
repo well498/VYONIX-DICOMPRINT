@@ -76,7 +76,9 @@ else {
       if (-not $s -or (Get-Service -Name $n -ErrorAction SilentlyContinue)) { continue }
       if (-not $s.Exe -or -not (Test-Path $s.Exe)) { Acao "Servico $n nao recriado: programa $($s.Exe) ausente"; $codigo = 5; continue }
       $modo = switch ($s.StartMode) { "Manual" { "Manual" } "Disabled" { "Manual" } default { "Automatic" } }
-      New-Service -Name $n -BinaryPathName $s.PathName -DisplayName $s.DisplayName -StartupType $modo -DependsOn @($s.DependOn | Where-Object { $_ }) -ErrorAction SilentlyContinue | Out-Null
+      $ns = @{ Name = $n; BinaryPathName = $s.PathName; DisplayName = $s.DisplayName; StartupType = $modo }
+      $dep2 = @($s.DependOn | Where-Object { $_ }); if ($dep2.Count) { $ns.DependsOn = $dep2 }
+      New-Service @ns -ErrorAction SilentlyContinue | Out-Null
       if ($s.Description) { & sc.exe description $n $s.Description | Out-Null }
       if ($s.StartName -and $s.StartName -ne "LocalSystem") { & sc.exe config $n obj= $s.StartName | Out-Null }
       if ($s.Delayed -eq 1) { & sc.exe config $n start= delayed-auto | Out-Null }
