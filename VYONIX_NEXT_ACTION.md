@@ -1,36 +1,40 @@
-# VYONIX — Próxima ação executável
+# VYONIX — Próxima ação executável e registro de tarefas
 
-* **Atualizado em:** 2026-10-29 · ramo `develop`
-* **Último commit local:** ver `git log -1`; CI do lote enviado: platform, viewer, deploy-windows, Windows release.
+* **Atualizado em:** 2026-10-29 (fim da tarde) · ramo `develop`
+* **Regra permanente do proprietário (29/10):** todo novo pedido é **acrescentado** ao planejamento; nada é
+  cancelado, reiniciado ou descartado. P0 pode reordenar, preservando o progresso (justificativa registrada aqui).
+* **Ponto exato de parada:** commit `efbae29` (P0 desinstalação/atualização/reparo/recuperação) enviado depois do
+  fim do `deploy-windows` de `5a51301`; aguardando `deploy-windows` (critério 2.12) e o instalador de homologação
+  (`flavor=homologacao`) para entregar a versão de teste e o kit de recuperação ao proprietário.
 
-## Agora
-1. **P0 (prioridade máxima):** aguardar a validação presencial do instalador `bc9cf28` com o kit
-   `installer/validacao` e o roteiro `docs/homologacao/Roteiro_Validacao_P0_Instalacao.md`; corrigir qualquer falha
-   relatada antes de declarar resolvido. Não alterar a instalação atual do proprietário sem autorização.
-2. Em paralelo (independente do instalador): editor rico, frases, modelos pessoais e revisão **feitos**; seguir com
-   segurança/testes e o bloqueio de associação DICOM simulado (BLK-15, só em ambiente de teste).
+## Em execução
+| Pri | Tarefa | Situação |
+|---|---|---|
+| P0 | Desinstalador que não removia; atualização direta; Reparar; recuperação da instalação atual; logs | Implementado (`efbae29`), testes locais OK; **CI Windows 2.12 em execução**; depois: versão de teste + kit `VYONIX_Kit_P0_Recuperacao.zip`; **resolvido só após validação no computador do proprietário** e Windows 10/11 (BLK-04) |
+| P0 | Inicialização automática sem login, acesso pelo IP (bc9cf28) | Corrigido e aprovado no CI (2.10/2.11); **aguarda validação presencial** |
 
-## Auditoria geral (29/10/2026)
-Ver `VYONIX_RESUMO_EXECUTIVO.md`, `VYONIX_AUDITORIA_GERAL.md`, `VYONIX_INVENTARIO_FUNCIONAL.md`,
-`VYONIX_PENDENCIAS_PRIORIZADAS.md` e `VYONIX_PLANO_CONCLUSAO.md`. Próxima ação: Fase P0 do plano (confirmação
-prática da instalação) — aguarda o proprietário; sem novas funcionalidades até lá.
+## Concluídas em 29/10 (com testes)
+* Editor de laudos rico, DOCX com formatação, frases rápidas completas, modelos pessoais e continuidade, revisão e
+  autoria das versões (`047408d`, `06e39e0`).
+* BLK-15 simulado (recusa na associação) — aprovado no CI com Orthanc real (`1913882`); não ativado na instalação.
+* Viewer: comparação, protocolos, escopo por vínculo opcional, histórico do paciente (`5a51301`; CI viewer aprovado).
+* Menu único "Abrir imagens" com VYONIX Viewer, Weasis e Oviyam (desligados) (`77f02bc`).
+* Análises: BLK-01 (escopo do licenciamento e alternativas), privacidade/continuidade de modelos, lacunas do Viewer,
+  Weasis/Oviyam.
 
-## Feito em 29/10
-* Correção definitiva da inicialização e do acesso web (`docs/homologacao/Correcao_Inicializacao_Acesso_Web.md`),
-  validação no Windows do CI (critérios 2.10) e novo instalador de homologação.
-* Storage commitment SCP, encaminhamento de estudos, protótipo Edge Sync (ADR-0014, desabilitado).
+## Pendentes (ordem)
+| Pri | Tarefa | Dependência |
+|---|---|---|
+| P0 | Validação presencial: recuperar a instalação atual, instalar a versão de teste, atualizar, reparar, desinstalar, reinício sem login, acesso pelo IP | proprietário |
+| P0 | Windows 10 e 11 | BLK-04 (máquinas) |
+| P1 | Weasis: validar abertura real num Windows com o Weasis instalado (protocolo `weasis://`, certificado HTTPS confiável — sem desligar verificações), revogação/expiração/isolamento em uso real; requisitos das estações | proprietário (computador de teste) |
+| P2 | Extensão VYONIX do OHIF: sincronização de zoom/pan e janela/nível na comparação, ferramentas por protocolo | proposta técnica antes (mudança estrutural moderada) |
+| P2 | Oviyam: estudo de execução isolada e subordinada às permissões do VYONIX (sem Java/Tomcat na instalação atual) | se inviável, permanece desativado |
+| P2 | Portal do paciente (abrir os próprios exames no navegador) | BLK-06 (LGPD/CFM) e segurança |
+| P2 | Medição de desempenho com estudo volumoso no Viewer | — |
+| P2 | Encaminhamento: reenviar imagens tardias; receptor HL7 ADT/ORM; DICOM TLS no Q/R | — |
 
-## Próximo ciclo (autorizado, sem decisão comercial)
-1. Encaminhamento: reenviar imagens que chegam depois do envio concluído.
-3. **Receptor HL7 ADT/ORM (MLLP)** para HIS externo.
-4. DICOM TLS opcional no Q/R.
-
-## Aguardando o proprietário
-* Avaliação prática da homologação (instalador `344ab09`) e relatos de falhas.
-* BLK-01: escolher a alternativa (recomendada: separar a plataforma agora, rotacionar o Print depois) — nada de
-  destruir/substituir/revogar até nova decisão.
-* Visualizadores externos: ligar o Weasis na homologação (e confiar o certificado no computador); decidir sobre o
-  Oviyam (proposta de isolamento em `docs/platform/Visualizadores_Weasis_Oviyam.md`).
-* Escopo das imagens por vínculo (`pacs/viewer.access = linked`): ligar por padrão muda o comportamento homologado.
-* BLK-15 (recusa na associação; simulação aprovada no CI; ativar na instalação só com aprovação específica), BLK-16 (edge → cloud), BLK-14 (ICP-Brasil), BLK-01 (chave de emissão: escolher
-  caminho A ou B e autorizar a destruição das cópias — plano em `docs/security/`).
+## Aguardando decisão do proprietário
+* BLK-01: alternativa para a chave (recomendada: separar a plataforma agora; Print depois) — nada destruído/revogado.
+* Escopo das imagens por vínculo como padrão (hoje: `organization`, comportamento homologado).
+* BLK-15 na instalação; BLK-16; BLK-14; BLK-06; BLK-04; BLK-02; BLK-08; publicação.
