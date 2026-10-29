@@ -22,7 +22,8 @@ from vyonix.errors import Conflict, NotFound, ValidationFailed
 from vyonix.events.bus import publish
 from vyonix.report.models import CriticalAlert, Report, ReportTemplate, ReportVersion
 
-MAX_BODY = 20000
+MAX_BODY = 20000            # texto simples
+MAX_HTML_BODY = 200000     # texto rico (marcação HTML segura)
 
 
 # ------------------------------------------------------------------ modelos (versões em vyonix/report/templates.py)
@@ -37,9 +38,10 @@ def save_template(s: Session, *, name: str, body: str = "", modality: str | None
 
 
 def templates(s: Session, *, modality: str | None = None, include_inactive: bool = False,
-              only_published: bool = False) -> list[dict]:
+              only_published: bool = False, user_id: uuid.UUID | None = None) -> list[dict]:
     from vyonix.report import templates as tpl
-    return tpl.listing(s, modality=modality, include_inactive=include_inactive, only_published=only_published)
+    return tpl.listing(s, modality=modality, include_inactive=include_inactive, only_published=only_published,
+                       user_id=user_id)
 
 
 # ------------------------------------------------------------------ laudos
@@ -49,10 +51,16 @@ def _out(r: Report, s: Session, *, versions: bool = False) -> dict[str, Any]:
          "order_id": str(r.order_id) if r.order_id else None, "status": r.status, "body": r.body,
          "critical": r.critical, "critical_note": r.critical_note, "author": r.author, "version": r.version,
          "finalized_by": r.finalized_by, "finalized_at": r.finalized_at.isoformat() if r.finalized_at else None,
-         "row_version": r.row_version, "updated_at": r.updated_at.isoformat() if r.updated_at else None}
+         "row_version": r.row_version, "updated_at": r.updated_at.isoformat() if r.updated_at else None,
+         "body_format": r.body_format or "text", "draft_revision": r.draft_revision,
+         "review": None if r.status != "review" and not r.review_note else {
+             "requested_by": r.review_requested_by, "note": r.review_note,
+             "requested_at": r.review_requested_at.isoformat() if r.review_requested_at else None,
+             "reviewer_id": str(r.reviewer_id) if r.reviewer_id else None}}
     if versions:
         d["versions"] = [{"version": v.version, "kind": v.kind, "body": v.body, "critical": v.critical,
                           "signed_by": v.signed_by, "signed_at": v.signed_at.isoformat(), "sha256": v.sha256,
+                          "body_format": v.body_format or "text", "author": v.author,
                           "signature_mode": "handwritten_image" if v.signature_image_id else "password"}
                          for v in s.execute(select(ReportVersion).where(ReportVersion.report_id == r.id)
                                             .order_by(ReportVersion.version)).scalars()]
@@ -82,14 +90,17 @@ def open_report(s: Session, study_id: uuid.UUID, *, template_id: uuid.UUID | Non
     if template_id:
         from vyonix.report import templates as tpl
         t = s.get(ReportTemplate, template_id)
-        if t is None or not t.active:
+        if t is None or not t.active or not tpl.owned_by(t, actor_id):
             raise NotFound("Modelo não encontrado.")
         v = tpl.published(s, t)
         if v is None:
             raise Conflict("O modelo ainda não tem versão publicada.")
         body, tver = tpl.compose(v, tpl.context(s, st.id)), v.version   # campos administrativos já preenchidos
+        fmt = v.content_format or "text"
+    else:
+        fmt = "text"
     r = Report(study_id=st.id, order_id=st.order_id, status="draft", body=body, critical=False, author=actor[:120],
-               version=0, template_id=template_id if template_id else None, template_version=tver)
+               version=0, template_id=template_id if template_id else None, template_version=tver, body_format=fmt)
     s.add(r)
     s.flush()
     audit.record(s, actor=actor, actor_id=actor_id, ip=ip, action="report.open", target_type="report", target_id=r.id,
@@ -97,24 +108,103 @@ def open_report(s: Session, study_id: uuid.UUID, *, template_id: uuid.UUID | Non
     return r
 
 
+def _revision(s: Session, r: Report, *, actor: str, event: str = "save") -> None:
+    """Histórico do rascunho: grava o conteúdo atual como nova revisão (quem, quando, o quê)."""
+    from vyonix.report.models import DraftRevision
+    r.draft_revision = (r.draft_revision or 0) + 1
+    s.add(DraftRevision(report_id=r.id, revision=r.draft_revision, body=r.body or "", body_format=r.body_format or "text",
+                        author=actor[:120], event=event))
+
+
 def update_draft(s: Session, report_id: uuid.UUID, *, body: str, critical: bool = False,
-                 critical_note: str | None = None, expected_version: int | None = None, actor: str, actor_id=None,
-                 ip=None) -> Report:
+                 critical_note: str | None = None, expected_version: int | None = None, body_format: str | None = None,
+                 reviewer: bool = False, actor: str, actor_id=None, ip=None) -> Report:
+    """Grava o rascunho. ``body_format``: ``text`` (padrão, compatível) ou ``html`` (texto rico, sanitizado).
+    Em revisão, só quem revisa (``reviewer``) altera o texto."""
+    from vyonix.report import richtext
+    r = s.get(Report, report_id)
+    if r is None:
+        raise NotFound("Laudo não encontrado.")
+    if r.status == "review" and not reviewer:
+        raise Conflict("O laudo está em revisão: só o revisor altera o texto até devolver ou liberar.")
+    if r.status not in ("draft", "review"):
+        raise Conflict("Laudo liberado não pode ser editado; registre um adendo.")
+    if expected_version is not None and r.row_version != expected_version:
+        raise Conflict("O laudo foi alterado por outra pessoa. Recarregue antes de salvar.")
+    fmt = body_format or r.body_format or "text"
+    limit = MAX_HTML_BODY if fmt == "html" else MAX_BODY
+    if len(body or "") > limit:
+        raise ValidationFailed(f"Texto do laudo: até {limit} caracteres.")
+    body, fmt = richtext.normalize(body, fmt)
+    changed = (body != (r.body or "")) or (fmt != (r.body_format or "text"))
+    r.body, r.body_format, r.critical = body, fmt, bool(critical)
+    r.critical_note = ((critical_note or "").strip()[:300] or None) if critical else None
+    if changed:
+        _revision(s, r, actor=actor)
+    s.flush()
+    audit.record(s, actor=actor, actor_id=actor_id, ip=ip, action="report.draft.save", target_type="report",
+                 target_id=r.id, details={"chars": len(r.body), "critical": r.critical, "format": fmt,
+                                          "revision": r.draft_revision})
+    return r
+
+
+def request_review(s: Session, report_id: uuid.UUID, *, reviewer_id: uuid.UUID | None = None, note: str | None = None,
+                   expected_version: int | None = None, actor: str, actor_id=None, ip=None) -> Report:
+    """Envia o rascunho para revisão (segunda leitura). O texto fica bloqueado para o autor até a devolução."""
+    from vyonix.report.models import Physician
     r = s.get(Report, report_id)
     if r is None:
         raise NotFound("Laudo não encontrado.")
     if r.status != "draft":
-        raise Conflict("Laudo liberado não pode ser editado; registre um adendo.")
+        raise Conflict("Só rascunho pode ser enviado para revisão.")
     if expected_version is not None and r.row_version != expected_version:
-        raise Conflict("O laudo foi alterado por outra pessoa. Recarregue antes de salvar.")
-    if len(body or "") > MAX_BODY:
-        raise ValidationFailed(f"Texto do laudo: até {MAX_BODY} caracteres.")
-    r.body, r.critical = body or "", bool(critical)
-    r.critical_note = ((critical_note or "").strip()[:300] or None) if critical else None
+        raise Conflict("O laudo foi alterado por outra pessoa. Recarregue antes de enviar.")
+    if not (r.body or "").strip():
+        raise ValidationFailed("Laudo vazio não pode ser enviado para revisão.")
+    if reviewer_id is not None:
+        ph = s.get(Physician, reviewer_id)
+        if ph is None or not ph.active:
+            raise NotFound("Revisor não encontrado ou inativo.")
+        if ph.user_id == actor_id:
+            raise ValidationFailed("O revisor precisa ser outro médico.")
+    me = s.execute(select(Physician).where(Physician.user_id == actor_id)).scalar_one_or_none() if actor_id else None
+    r.status, r.reviewer_id = "review", reviewer_id
+    r.review_requested_by, r.review_requested_at = (me.full_name if me else actor)[:120], utcnow()
+    r.review_note = (note or "").strip()[:1000] or None
+    _revision(s, r, actor=actor, event="review_request")
     s.flush()
-    audit.record(s, actor=actor, actor_id=actor_id, ip=ip, action="report.draft.save", target_type="report",
-                 target_id=r.id, details={"chars": len(r.body), "critical": r.critical})
+    audit.record(s, actor=actor, actor_id=actor_id, ip=ip, action="report.review.request", target_type="report",
+                 target_id=r.id, details={"reviewer_id": str(reviewer_id) if reviewer_id else None,
+                                          "revision": r.draft_revision})
     return r
+
+
+def return_review(s: Session, report_id: uuid.UUID, *, note: str, actor: str, actor_id=None, ip=None) -> Report:
+    """O revisor devolve o laudo ao autor com a observação (o texto volta a ser editável pelo autor)."""
+    r = s.get(Report, report_id)
+    if r is None:
+        raise NotFound("Laudo não encontrado.")
+    if r.status != "review":
+        raise Conflict("O laudo não está em revisão.")
+    note = (note or "").strip()
+    if not note:
+        raise ValidationFailed("Escreva o que precisa ser revisto.")
+    r.status, r.review_note = "draft", note[:1000]
+    _revision(s, r, actor=actor, event="return")
+    s.flush()
+    audit.record(s, actor=actor, actor_id=actor_id, ip=ip, action="report.review.return", target_type="report",
+                 target_id=r.id, details={"revision": r.draft_revision})
+    return r
+
+
+def revisions(s: Session, report_id: uuid.UUID) -> list[dict[str, Any]]:
+    from vyonix.report.models import DraftRevision
+    if s.get(Report, report_id) is None:
+        raise NotFound("Laudo não encontrado.")
+    return [{"revision": x.revision, "author": x.author, "event": x.event, "at": x.created_at.isoformat(),
+             "body": x.body, "body_format": x.body_format}
+            for x in s.execute(select(DraftRevision).where(DraftRevision.report_id == report_id)
+                               .order_by(DraftRevision.revision)).scalars()]
 
 
 def _ts(dt) -> str:
@@ -122,21 +212,31 @@ def _ts(dt) -> str:
     return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 
-def canonical(study_uid: str | None, version: int, kind: str, body: str, critical: bool, signer: str, at: str) -> bytes:
-    return json.dumps({"study_instance_uid": study_uid, "version": version, "kind": kind, "body": body,
-                       "critical": critical, "signed_by": signer, "signed_at": at},
-                      ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+def canonical(study_uid: str | None, version: int, kind: str, body: str, critical: bool, signer: str, at: str,
+              body_format: str = "text", author: str | None = None) -> bytes:
+    """Conteúdo canônico assinado por SHA-256. Formato e autor só entram quando diferem do padrão (texto; o próprio
+    signatário), para que versões antigas continuem com o mesmo hash."""
+    d = {"study_instance_uid": study_uid, "version": version, "kind": kind, "body": body,
+         "critical": critical, "signed_by": signer, "signed_at": at}
+    if body_format and body_format != "text":
+        d["body_format"] = body_format
+    if author:
+        d["author"] = author
+    return json.dumps(d, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
 
 
 def _new_version(s: Session, r: Report, *, kind: str, body: str, critical: bool, actor: str, actor_id,
-                 signature_image_id: uuid.UUID | None = None) -> ReportVersion:
+                 signature_image_id: uuid.UUID | None = None, body_format: str = "text",
+                 author: str | None = None) -> ReportVersion:
     st = s.get(Study, r.study_id)
     now = utcnow()
     n = r.version + 1
     v = ReportVersion(report_id=r.id, version=n, kind=kind, body=body, critical=critical, signed_by=actor[:120],
                       signed_by_id=actor_id, signed_at=now, signature_image_id=signature_image_id,
+                      body_format=body_format, author=(author or None) and author[:120],
                       sha256=hashlib.sha256(canonical(st.study_instance_uid if st else None, n, kind, body, critical,
-                                                      actor[:120], _ts(now))).hexdigest())
+                                                      actor[:120], _ts(now), body_format,
+                                                      (author or None) and author[:120])).hexdigest())
     s.add(v)
     r.version = n
     return v
@@ -166,28 +266,35 @@ def _applied(s: Session, r: Report, v: ReportVersion, phys, *, actor: str, actor
 
 
 def finalize(s: Session, report_id: uuid.UUID, *, expected_version: int | None = None, actor: str, actor_id=None,
-             ip=None, batch: str | None = None) -> Report:
+             ip=None, batch: str | None = None, reviewer: bool = False) -> Report:
     """Libera o laudo (a API já confirmou a senha de quem libera)."""
     r = s.get(Report, report_id)
     if r is None:
         raise NotFound("Laudo não encontrado.")
-    if r.status != "draft":
+    if r.status not in ("draft", "review"):
         raise Conflict("Laudo já liberado.")
     if expected_version is not None and r.row_version != expected_version:
         raise Conflict("O laudo foi alterado por outra pessoa. Recarregue antes de liberar.")
+    if r.status == "review" and not reviewer:
+        raise Conflict("O laudo está em revisão: a liberação é do revisor.")
     if not (r.body or "").strip():
         raise ValidationFailed("Laudo vazio não pode ser liberado.")
     if r.critical and not r.critical_note:
         raise ValidationFailed("Descreva o achado crítico antes de liberar.")
     from vyonix.report import physicians, signature
     phys = _signer(s, r, actor_id)
+    if r.status == "draft" and phys.requires_review:
+        raise Conflict("Seus laudos passam por revisão: envie para revisão em vez de liberar.", code="review_required")
+    if r.status == "review" and r.reviewer_id and r.reviewer_id != phys.id:
+        raise Conflict("Este laudo foi enviado para revisão de outro médico.")
     signer, sig = physicians.identification(phys), signature.for_release(s, phys)
+    author = r.review_requested_by if r.status == "review" else None      # quem redigiu, quando outro libera
     from vyonix.report import branding
     st_ = s.get(Study, r.study_id)
     eff = branding.effective(s, st_.site_id if st_ else None)            # identidade vigente fica registrada
     r.branding_org_version, r.branding_site_version = eff["org_version"], eff["site_version"]
     v = _new_version(s, r, kind="final", body=r.body, critical=r.critical, actor=signer, actor_id=actor_id,
-                     signature_image_id=sig)
+                     signature_image_id=sig, body_format=r.body_format or "text", author=author)
     r.status, r.finalized_by, r.finalized_at = "final", signer[:120], v.signed_at
     from vyonix.report import queue
     queue.close_for_study(s, r.study_id)              # atribuição da fila concluída
@@ -199,7 +306,8 @@ def finalize(s: Session, report_id: uuid.UUID, *, expected_version: int | None =
             clinical.set_order_status(s, o.id, "completed", actor=actor, actor_id=actor_id, ip=ip)
     audit.record(s, actor=actor, actor_id=actor_id, ip=ip, action="report.finalize", target_type="report",
                  target_id=r.id, details={"version": v.version, "sha256": v.sha256, "critical": r.critical,
-                                          **({"batch": batch} if batch else {})})
+                                          **({"batch": batch} if batch else {}),
+                                          **({"reviewed_from": author} if author else {})})
     _applied(s, r, v, phys, actor=actor, actor_id=actor_id, ip=ip)
     publish(s, "report.finalized.v1", {"report_id": str(r.id), "study_id": str(r.study_id), "version": v.version},
             source="report", subject_kind="report", subject_id=r.id)
@@ -331,7 +439,7 @@ def pdf(s: Session, report_id: uuid.UUID, *, actor: str, actor_id=None, ip=None,
     block = signature_block(s, r)
     if draft:
         out = {"draft": True, "versions": [{"version": r.version + 1, "kind": "draft", "body": r.body or "",
-                                            "critical": r.critical}]}
+                                            "critical": r.critical, "body_format": r.body_format or "text"}]}
         eff = branding.effective(s, st.site_id if st else None)
     else:
         out = _out(r, s, versions=True)
@@ -376,7 +484,7 @@ def verify(s: Session, report_id: uuid.UUID) -> dict[str, Any]:
                         .order_by(ReportVersion.version)).scalars())
     for v in vs:
         h = hashlib.sha256(canonical(st.study_instance_uid if st else None, v.version, v.kind, v.body, v.critical,
-                                     v.signed_by, _ts(v.signed_at))).hexdigest()
+                                     v.signed_by, _ts(v.signed_at), v.body_format or "text", v.author)).hexdigest()
         if h != v.sha256:
             bad.append(v.version)
     seq_ok = [v.version for v in vs] == list(range(1, len(vs) + 1)) and r.version == len(vs)
@@ -393,7 +501,7 @@ def worklist(s: Session, *, status: str | None = None, modality: str | None = No
          .outerjoin(Report, Report.study_id == Study.id))
     if status == "pending":
         q = q.where(Report.id.is_(None))
-    elif status in ("draft", "final"):
+    elif status in ("draft", "final", "review"):
         q = q.where(Report.status == status)
     if modality:
         q = q.where(Study.modality == modality.strip().upper())

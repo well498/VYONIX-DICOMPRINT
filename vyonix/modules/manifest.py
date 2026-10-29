@@ -227,7 +227,11 @@ REPORT = ModuleManifest(
                  "report.assign": "Distribuir exames na fila de laudos (vê todas as unidades)",
                  "report.production.own": "Consultar a própria produção (Minha Produção)",
                  "report.production.all": "Consultar a produção de qualquer médico da instituição",
-                 "report.production.financial": "Ver valores financeiros na produção médica"},
+                 "report.production.financial": "Ver valores financeiros na produção médica",
+                 "report.templates.own": "Criar e usar modelos pessoais (só o próprio médico vê)",
+                 "report.phrases.own": "Criar e usar frases rápidas pessoais",
+                 "report.phrases.manage": "Gerenciar as frases rápidas da instituição",
+                 "report.review": "Revisar laudos de outros médicos (segunda leitura): devolver ou liberar"},
     settings=(SettingSpec("distribution", Distribution, "Distribuição dos exames aos médicos"),
               SettingSpec("production", Production, "Valores de referência da produção médica (opcional)")),
     publishes=("report.finalized.v1", "report.amended.v1", "report.critical.v1"),
@@ -253,6 +257,7 @@ ROLE_TEMPLATES: dict[str, tuple[str, list[str], str]] = {
                                                "report.read", "report.assign", "print.jobs.read", "core.users.read"],
                         "Coordena agenda, exames, conciliação e a distribuição de laudos; não libera laudos"),
     "gestor_telelaudos": ("Gestor de Telelaudos", ["report.read", "report.assign", "report.templates.manage",
+                                                   "report.phrases.manage",
                                                    "ris.exam.priority", "ris.exam.share",
                                                    "report.physicians.manage", "report.branding.manage",
                                                    "clinical.studies.read", "pacs.studies.read"],
@@ -285,7 +290,9 @@ DEFAULT_ROLES: dict[str, tuple[str, list[str]]] = {
     "medico": ("Médico", ["core.license.read", "clinical.patients.read", "clinical.orders.read",
                           "clinical.studies.read", "pacs.studies.read", "ris.schedule.read", "report.read",
                           "report.write", "report.sign", "report.templates.manage",
-                          "report.production.own"]),     # sem cadastro de médicos nem valores financeiros
+                          "report.production.own", "report.templates.own", "report.phrases.own"]),
+    # sem cadastro de médicos nem valores financeiros; revisar laudo de outro médico (report.review) é concedido
+    # pelo administrador a quem faz a segunda leitura
     "tecnico": ("Técnico", ["core.license.read", "clinical.patients.read", "clinical.orders.read",
                             "clinical.studies.read", "clinical.studies.reconcile", "print.jobs.read",
                             "print.jobs.manage", "pacs.studies.read", "pacs.studies.store", "ris.schedule.read",

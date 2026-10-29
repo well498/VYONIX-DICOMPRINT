@@ -50,7 +50,9 @@ def _data(s: Session, report_id: uuid.UUID) -> dict[str, Any]:
 def _text(vs: list[ReportVersion]) -> str:
     parts = []
     for v in vs:
-        parts.append(v.body if v.kind == "final" else f"ADENDO ({v.signed_at.strftime('%d/%m/%Y %H:%M')}): {v.body}")
+        from vyonix.report import richtext
+        txt = richtext.to_text(v.body, v.body_format or "text")
+        parts.append(txt if v.kind == "final" else f"ADENDO ({v.signed_at.strftime('%d/%m/%Y %H:%M')}): {txt}")
     return "\n\n".join(parts)
 
 

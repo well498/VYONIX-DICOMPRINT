@@ -218,7 +218,11 @@ def render(report: dict[str, Any], *, patient: dict[str, Any], study: dict[str, 
         story.append(para(title, "k" if not draft else "w"))
         if v["critical"]:
             story.append(para("Achado crítico", "w"))
-        story += [Spacer(1, 1.5 * mm), para(v["body"]), Spacer(1, 2 * mm)]
+        from vyonix.report import richtext
+        story += [Spacer(1, 1.5 * mm),
+                  *richtext.to_flowables(v["body"], v.get("body_format") or "text",
+                                         {"b": st["b"], "h3": st["k"], "h4": st["k"]}, width=pw - ml - mr),
+                  Spacer(1, 2 * mm)]
         if draft:
             continue
         items = signer_block(v)
@@ -268,12 +272,12 @@ def sample_signature() -> tuple[bytes, int, int]:
 
 
 def preview(branding: dict[str, Any], institution: dict[str, Any], *, pages: int = 1, body: str | None = None,
-            block: dict[str, Any] | None = None) -> bytes:
+            block: dict[str, Any] | None = None, body_format: str = "text") -> bytes:
     """Pré-visualização A4 (identidade ou modelo) com dados fictícios (sem dados de pacientes)."""
     sample = ("Técnica: exame realizado com protocolo padrão (texto de exemplo).\nAchados: texto de exemplo para "
               "conferir margens, fontes, cores, cabeçalho, rodapé e quebra de página.\nConclusão: exemplo.")
     text = body if body is not None else "\n\n".join([sample] * (6 * pages))
-    rep = {"versions": [{"version": 1, "kind": "final", "body": text, "critical": False,
+    rep = {"versions": [{"version": 1, "kind": "final", "body": text, "critical": False, "body_format": body_format,
                          "signed_by": "Dr(a). Exemplo — CRM 000000/UF", "signed_at": "2026-01-01T12:00:00+00:00",
                          "sha256": "0" * 64, "signature_image": sample_signature(),
                          "signer": {"name": "Dr(a). Exemplo", "crm": "CRM 000000/UF", "rqe": "00000",

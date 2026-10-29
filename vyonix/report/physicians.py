@@ -36,7 +36,7 @@ def identification(p: Physician) -> str:
 def _out(p: Physician, links: list[PhysicianLink]) -> dict[str, Any]:
     return {"id": str(p.id), "user_id": str(p.user_id), "full_name": p.full_name, "crm": p.crm, "crm_uf": p.crm_uf,
             "rqe": p.rqe, "specialties": p.specialties, "footer": p.footer, "identification": identification(p),
-            "active": p.active,
+            "active": p.active, "requires_review": p.requires_review,
             "links": [{"id": str(x.id), "site_id": str(x.site_id) if x.site_id else None,
                        "valid_from": x.valid_from.isoformat(), "valid_to": x.valid_to.isoformat() if x.valid_to else None}
                       for x in links]}
@@ -44,7 +44,8 @@ def _out(p: Physician, links: list[PhysicianLink]) -> dict[str, Any]:
 
 def save(s: Session, *, user_id: uuid.UUID, full_name: str, crm: str, crm_uf: str, rqe: str | None = None,
          specialties: list[str] | None = None, footer: str | None = None, active: bool = True,
-         physician_id: uuid.UUID | None = None, actor: str, actor_id=None, ip=None) -> Physician:
+         requires_review: bool = False, physician_id: uuid.UUID | None = None, actor: str, actor_id=None,
+         ip=None) -> Physician:
     from vyonix.auth.models import User
     name = (full_name or "").strip()
     crm_n, uf = re.sub(r"\D", "", crm or ""), (crm_uf or "").strip().upper()
@@ -75,9 +76,11 @@ def save(s: Session, *, user_id: uuid.UUID, full_name: str, crm: str, crm_uf: st
     p.user_id, p.full_name, p.crm, p.crm_uf, p.rqe = user_id, name[:160], crm_n, uf, rqe_n
     p.specialties = [x.strip()[:80] for x in (specialties or []) if x and x.strip()][:10]
     p.footer, p.active = ((footer or "").strip()[:200] or None), bool(active)
+    p.requires_review = bool(requires_review)
     s.flush()
     audit.record(s, actor=actor, actor_id=actor_id, ip=ip, action="report.physician.save", target_type="physician",
-                 target_id=p.id, details={"crm": f"{crm_n}/{uf}", "active": p.active})
+                 target_id=p.id, details={"crm": f"{crm_n}/{uf}", "active": p.active,
+                                          "requires_review": p.requires_review})
     return p
 
 

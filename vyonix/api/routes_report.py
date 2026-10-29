@@ -8,6 +8,7 @@ from datetime import date
 
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 
 from vyonix.api.app import Ctx, needs
 from vyonix.auth import service as auth
@@ -56,10 +57,30 @@ class OpenIn(BaseModel):
 
 
 class DraftIn(BaseModel):
-    body: str = Field("", max_length=rep.MAX_BODY)
+    body: str = Field("", max_length=rep.MAX_HTML_BODY)      # limite por formato validado no serviço
+    body_format: str | None = Field(None, pattern="^(text|html)$")
     critical: bool = False
     critical_note: str | None = Field(None, max_length=300)
     row_version: int | None = None
+
+
+class ReviewRequestIn(BaseModel):
+    reviewer_id: uuid.UUID | None = None
+    note: str | None = Field(None, max_length=1000)
+    row_version: int | None = None
+
+
+class ReviewReturnIn(BaseModel):
+    note: str = Field(min_length=1, max_length=1000)
+
+
+class PhraseIn(BaseModel):
+    title: str = Field(min_length=1, max_length=120)
+    body: str = Field(min_length=1, max_length=20000)
+    shortcut: str | None = Field(None, max_length=31)
+    modality: str | None = Field(None, max_length=16)
+    active: bool = True
+    personal: bool = True
 
 
 class SignIn(BaseModel):
@@ -76,9 +97,11 @@ class AddendumIn(BaseModel):
 class TemplateIn(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     body: str = Field("", max_length=rep.MAX_BODY)            # compatibilidade: vira a seção de achados
-    technique: str = Field("", max_length=10000)
-    findings: str | None = Field(None, max_length=10000)
-    conclusion: str = Field("", max_length=10000)
+    technique: str = Field("", max_length=tpl.MAX_SECTION_HTML)    # limite por formato validado no serviço
+    findings: str | None = Field(None, max_length=tpl.MAX_SECTION_HTML)
+    conclusion: str = Field("", max_length=tpl.MAX_SECTION_HTML)
+    content_format: str = Field("text", pattern="^(text|html)$")
+    personal: bool = False
     modality: str | None = Field(None, max_length=16)
     procedure_id: uuid.UUID | None = None
     site_id: uuid.UUID | None = None
@@ -90,7 +113,7 @@ class TemplateIn(BaseModel):
         return {"name": self.name, "modality": self.modality, "active": self.active, "technique": self.technique,
                 "findings": self.findings if self.findings is not None else self.body, "conclusion": self.conclusion,
                 "procedure_id": self.procedure_id, "site_id": self.site_id, "preferred": self.preferred,
-                "signature_block": self.signature_block}
+                "signature_block": self.signature_block, "content_format": self.content_format}
 
 
 class PublishIn(BaseModel):
@@ -161,8 +184,67 @@ def save_draft(rid: uuid.UUID, body: DraftIn, c: Ctx = Depends(needs("report.wri
         _require(c, s)
         _in_scope(c, s, report_id=rid)
         rep.update_draft(s, rid, body=body.body, critical=body.critical, critical_note=body.critical_note,
-                         expected_version=body.row_version, **c.actor)
+                         expected_version=body.row_version, body_format=body.body_format,
+                         reviewer=_is_reviewer(c, s, rid), **c.actor)
         return rep.get(s, rid)
+
+
+def _is_reviewer(c: Ctx, s, rid: uuid.UUID) -> bool:
+    """Revisor deste laudo: tem ``report.review``, não é quem pediu a revisão e (se o pedido nomeou alguém) é o
+    médico indicado."""
+    from vyonix.report.models import Physician, Report
+    r = s.get(Report, rid)
+    if r is None or r.status != "review" or not c.p.has("report.review"):
+        return False
+    me = s.execute(select(Physician).where(Physician.user_id == c.p.user_id)).scalar_one_or_none()
+    if me is None:
+        return False
+    if r.reviewer_id is not None:
+        return r.reviewer_id == me.id
+    return r.review_requested_by != me.full_name[:120] and r.author != c.p.username[:120]
+
+
+@router.post("/reports/{rid}/review")
+def request_review(rid: uuid.UUID, body: ReviewRequestIn, c: Ctx = Depends(needs("report.write"))):
+    """Envia o rascunho para revisão (segunda leitura)."""
+    with c.session() as s:
+        _require(c, s)
+        _in_scope(c, s, report_id=rid)
+        rep.request_review(s, rid, reviewer_id=body.reviewer_id, note=body.note, expected_version=body.row_version,
+                           actor=c.p.display_name or c.p.username, actor_id=c.p.user_id, ip=c.ip)
+        return rep.get(s, rid)
+
+
+@router.post("/reports/{rid}/review/return")
+def return_review(rid: uuid.UUID, body: ReviewReturnIn, c: Ctx = Depends(needs("report.review"))):
+    with c.session() as s:
+        _require(c, s)
+        _in_scope(c, s, report_id=rid)
+        if not _is_reviewer(c, s, rid):
+            raise Forbidden("Só o revisor deste laudo pode devolvê-lo.", code="not_reviewer")
+        rep.return_review(s, rid, note=body.note, actor=c.p.display_name or c.p.username, actor_id=c.p.user_id,
+                          ip=c.ip)
+        return rep.get(s, rid)
+
+
+@router.get("/reports/{rid}/revisions")
+def draft_revisions(rid: uuid.UUID, c: Ctx = Depends(needs("report.read"))):
+    with c.session() as s:
+        _in_scope(c, s, report_id=rid)
+        return {"items": rep.revisions(s, rid)}
+
+
+@router.get("/reviewers")
+def reviewers(c: Ctx = Depends(needs("report.write"))):
+    """Médicos ativos que podem ser indicados como revisores (têm ``report.review``), exceto o próprio usuário."""
+    from vyonix.report.models import Physician
+    with c.session() as s:
+        out = []
+        for p in s.execute(select(Physician).where(Physician.active.is_(True)).order_by(Physician.full_name)).scalars():
+            if p.user_id == c.p.user_id or not auth.user_has(s, p.user_id, "report.review"):
+                continue
+            out.append({"id": str(p.id), "name": phys.identification(p)})
+        return {"items": out}
 
 
 @router.post("/reports/{rid}/finalize")
@@ -176,7 +258,7 @@ def finalize(rid: uuid.UUID, body: SignIn, c: Ctx = Depends(needs("report.sign")
         raise Forbidden("Senha incorreta: o laudo não foi liberado.", code="password_mismatch")
     with c.session() as s:
         rep.finalize(s, rid, expected_version=body.row_version, actor=c.p.display_name or c.p.username,
-                     actor_id=c.p.user_id, ip=c.ip)
+                     actor_id=c.p.user_id, ip=c.ip, reviewer=_is_reviewer(c, s, rid))
         return rep.get(s, rid)
 
 
@@ -284,30 +366,54 @@ def list_templates(modality: str | None = None, include_inactive: bool = False, 
                    c: Ctx = Depends(needs("report.read"))):
     with c.session() as s:
         return {"items": rep.templates(s, modality=modality, include_inactive=include_inactive,
-                                       only_published=published),
+                                       only_published=published, user_id=c.p.user_id),
                 "fields": tpl.FIELDS}
 
 
+def _tpl_owner(c: Ctx, personal: bool):
+    """Dono do modelo a gravar: pessoal exige ``report.templates.own``; da instituição, ``report.templates.manage``."""
+    if personal:
+        c.require("report.templates.own")
+        return c.p.user_id
+    c.require("report.templates.manage")
+    return None
+
+
+def _tpl_access(c: Ctx, s, tid: uuid.UUID):
+    """Modelo existente que o usuário pode alterar/publicar: o pessoal dele ou, com ``manage``, o da instituição."""
+    from vyonix.errors import NotFound
+    from vyonix.report.models import ReportTemplate
+    t = s.get(ReportTemplate, tid)
+    if t is None or not tpl.owned_by(t, c.p.user_id):
+        raise NotFound("Modelo não encontrado.")
+    _tpl_owner(c, t.owner_user_id is not None)
+    return t
+
+
 @router.post("/templates", status_code=201)
-def create_template(body: TemplateIn, c: Ctx = Depends(needs("report.templates.manage"))):
+def create_template(body: TemplateIn, c: Ctx = Depends(needs("report.read"))):
+    owner = _tpl_owner(c, body.personal)
     with c.session() as s:
-        t, v = tpl.save(s, **body.kw(), **c.actor)
-        return {"id": str(t.id), "version": v.version, "status": v.status}
+        t, v = tpl.save(s, **body.kw(), owner_user_id=owner, **c.actor)
+        return {"id": str(t.id), "version": v.version, "status": v.status, "personal": owner is not None}
 
 
 @router.put("/templates/{tid}")
-def update_template(tid: uuid.UUID, body: TemplateIn, c: Ctx = Depends(needs("report.templates.manage"))):
+def update_template(tid: uuid.UUID, body: TemplateIn, c: Ctx = Depends(needs("report.read"))):
     with c.session() as s:
-        t, v = tpl.save(s, template_id=tid, **body.kw(), **c.actor)
-        return {"id": str(t.id), "version": v.version, "status": v.status}
+        t = _tpl_access(c, s, tid)
+        t, v = tpl.save(s, template_id=tid, **body.kw(), owner_user_id=t.owner_user_id, **c.actor)
+        return {"id": str(t.id), "version": v.version, "status": v.status, "personal": t.owner_user_id is not None}
 
 
 @router.post("/templates/import-docx", status_code=201)
-async def import_docx(request: Request, name: str | None = None, modality: str | None = None,
-                      c: Ctx = Depends(needs("report.templates.manage"))):
-    """Importação assistida: cria um **rascunho** com o relatório de incompatibilidades (publicar exige conferência)."""
+async def import_docx(request: Request, name: str | None = None, modality: str | None = None, personal: bool = False,
+                      c: Ctx = Depends(needs("report.read"))):
+    """Importação assistida: cria um **rascunho** com o relatório de incompatibilidades (publicar exige conferência).
+    A formatação do Word (negrito, itálico, sublinhado, listas, tabelas, títulos) é preservada em texto rico seguro."""
     from vyonix.errors import ValidationFailed
     from vyonix.report import docx_import
+    owner = _tpl_owner(c, personal)
     data = bytearray()
     async for chunk in request.stream():
         data += chunk
@@ -323,7 +429,7 @@ async def import_docx(request: Request, name: str | None = None, modality: str |
     with c.session() as s:
         t, v = tpl.save(s, name=(name or conv["name"] or "Modelo importado").strip()[:120], modality=modality,
                         technique=conv["technique"], findings=conv["findings"], conclusion=conv["conclusion"],
-                        **c.actor)
+                        content_format=conv.get("format", "text"), owner_user_id=owner, **c.actor)
         v.import_report = {"issues": conv["issues"], "fields": conv["fields"], "header": conv["header"],
                            "footer": conv["footer"]}
         s.flush()
@@ -334,14 +440,15 @@ async def import_docx(request: Request, name: str | None = None, modality: str |
 
 
 @router.post("/templates/{tid}/publish")
-def publish_template(tid: uuid.UUID, body: PublishIn, c: Ctx = Depends(needs("report.templates.manage"))):
+def publish_template(tid: uuid.UUID, body: PublishIn, c: Ctx = Depends(needs("report.read"))):
     with c.session() as s:
+        _tpl_access(c, s, tid)
         v = tpl.publish(s, tid, reviewed=body.reviewed, **c.actor)
         return {"id": str(tid), "version": v.version, "status": v.status}
 
 
 @router.get("/templates/{tid}/preview")
-def preview_template(tid: uuid.UUID, c: Ctx = Depends(needs("report.templates.manage"))):
+def preview_template(tid: uuid.UUID, c: Ctx = Depends(needs("report.read"))):
     """PDF A4 do rascunho (ou da versão publicada) com dados fictícios e a identidade da organização."""
     from fastapi.responses import Response
     from vyonix.errors import NotFound
@@ -352,13 +459,67 @@ def preview_template(tid: uuid.UUID, c: Ctx = Depends(needs("report.templates.ma
         t = s.get(ReportTemplate, tid)
         if t is None:
             raise NotFound("Modelo não encontrado.")
-        item = next(x for x in tpl.listing(s, include_inactive=True) if x["id"] == str(tid))
+        _tpl_access(c, s, tid)
+        item = next(x for x in tpl.listing(s, include_inactive=True, user_id=c.p.user_id) if x["id"] == str(tid))
+        fmt = (item["draft"] or {}).get("content_format") or item["content_format"]
         text = tpl.compose(item["draft"], tpl.sample_context()) if item["draft"] else \
-            tpl.render(item["body"], tpl.sample_context())
+            tpl.render(item["body"], tpl.sample_context(), fmt)
         blk = (item["draft"] or {}).get("signature_block") or item["signature_block"]
-        data = pdf.preview(brand.effective(s, None), settings.get(s, "core", "institution"), body=text, block=blk)
+        data = pdf.preview(brand.effective(s, None), settings.get(s, "core", "institution"), body=text, block=blk,
+                           body_format=fmt)
     return Response(data, media_type="application/pdf",
                     headers={"Content-Disposition": 'inline; filename="previa-modelo.pdf"', "Cache-Control": "no-store"})
+
+
+# ------------------------------------------------------------------ frases rápidas
+def _phrase_owner(c: Ctx, personal: bool):
+    if personal:
+        c.require("report.phrases.own")
+        return c.p.user_id
+    c.require("report.phrases.manage")
+    return None
+
+
+@router.get("/phrases")
+def list_phrases(modality: str | None = None, scope: str = "all", include_inactive: bool = False,
+                 c: Ctx = Depends(needs("report.read"))):
+    from vyonix.report import phrases
+    with c.session() as s:
+        return {"items": phrases.listing(s, user_id=c.p.user_id, modality=modality, scope=scope,
+                                         include_inactive=include_inactive),
+                "can_own": c.p.has("report.phrases.own"), "can_manage": c.p.has("report.phrases.manage")}
+
+
+@router.post("/phrases", status_code=201)
+def create_phrase(body: PhraseIn, c: Ctx = Depends(needs("report.read"))):
+    from vyonix.report import phrases
+    owner = _phrase_owner(c, body.personal)
+    with c.session() as s:
+        p = phrases.save(s, title=body.title, body=body.body, shortcut=body.shortcut, modality=body.modality,
+                         active=body.active, owner_user_id=owner, user_id=c.p.user_id, **c.actor)
+        return phrases._out(p)
+
+
+@router.put("/phrases/{pid}")
+def update_phrase(pid: uuid.UUID, body: PhraseIn, c: Ctx = Depends(needs("report.read"))):
+    from vyonix.report import phrases
+    with c.session() as s:
+        cur = phrases.get(s, pid, user_id=c.p.user_id)
+        owner = _phrase_owner(c, cur.owner_user_id is not None)
+        p = phrases.save(s, title=body.title, body=body.body, shortcut=body.shortcut, modality=body.modality,
+                         active=body.active, owner_user_id=owner, phrase_id=pid, user_id=c.p.user_id, **c.actor)
+        return phrases._out(p)
+
+
+@router.delete("/phrases/{pid}", status_code=204)
+def delete_phrase(pid: uuid.UUID, c: Ctx = Depends(needs("report.read"))):
+    from fastapi.responses import Response
+    from vyonix.report import phrases
+    with c.session() as s:
+        cur = phrases.get(s, pid, user_id=c.p.user_id)
+        _phrase_owner(c, cur.owner_user_id is not None)
+        phrases.delete(s, pid, user_id=c.p.user_id, **c.actor)
+    return Response(status_code=204)
 
 
 # ------------------------------------------------------------------ médicos (TELELAUDO T1)
@@ -371,6 +532,7 @@ class PhysicianIn(BaseModel):
     specialties: list[str] = Field(default_factory=list, max_length=10)
     footer: str | None = Field(None, max_length=200)
     active: bool = True
+    requires_review: bool = False
 
 
 class LinkIn(BaseModel):

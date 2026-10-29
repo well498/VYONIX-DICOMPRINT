@@ -372,3 +372,18 @@ DICOM Print, configuração do Orthanc instalada pelo DEPLOY. Nenhuma exclusão 
 | `d573da4` | Storage Commitment Push Model SCP — `test_pacs_commitment.py` |
 | `0e0a39a` | **Correção definitiva da inicialização e do acesso web**: diagnóstico de inicialização sem administrador, atalho que verifica antes de abrir, firewall do perfil Público só para a sub-rede local, http:// redirecionado para https://, verificação do acesso no assistente; CI Windows 2.10 — `test_startup.py`, `test_https_server.py` |
 | (seguinte) | Protótipo Edge Sync (ADR-0014; desabilitado; central simulado) — `test_edge_sync.py`; migração `pacs_0008` (aditiva) |
+
+## Sessão de 2026-10-29 (tarde) — P0 em validação presencial; editor, frases, modelos pessoais e revisão
+
+**P0 (instalação):** não considerado resolvido até a validação do instalador `bc9cf28` no computador de destino
+(acesso pelo IP, sem login no Windows, reinício real). Kit: `installer/validacao/Validar_VYONIX.cmd/.ps1` (somente
+leitura) + `docs/homologacao/Roteiro_Validacao_P0_Instalacao.md`; CI Windows critério 2.11 executa o validador.
+
+| Commit | Entrega | Testes |
+|---|---|---|
+| `1a4350c` | Kit de validação P0; plano de substituição/revogação das chaves (`docs/security/Plano_Substituicao_Revogacao_Chaves_2026-10-29.md`, nada executado) | CI deploy-windows 2.11 |
+| (este) | **Editor de laudos com texto rico** (subconjunto HTML seguro `vyonix/report/richtext.py`, sanitizado no servidor e no navegador; PDF com negrito/itálico/sublinhado/listas/tabelas; FHIR/HL7 em texto derivado; hash idêntico para laudos em texto). **Importação DOCX preserva a formatação** do Word (listas, títulos, tabelas com mesclagem). **Frases rápidas** (pessoais × instituição, atalho `/x`, modalidade). **Modelos pessoais** (`report.templates.own`; fora da seleção automática). **Revisão (segunda leitura)**: status `review`, médico com revisão obrigatória, revisor (`report.review`) devolve ou libera com a própria assinatura, versão registra autor × liberador, **histórico do rascunho**. Migração `report_0011` (aditiva) | `test_report_editor.py` 11/11 (inclui fuzz do sanitizador), `test_report_docx.py`, e2e laudos; `tests_platform` local 245 OK (2 só no CI) |
+
+Permissões novas: `report.templates.own`, `report.phrases.own` (papel Médico), `report.phrases.manage` (modelo Gestor
+de Telelaudos), `report.review` (concedida pelo administrador). O médico mantém `report.templates.manage`.
+Assinaturas: o revisor libera sempre com a própria senha e a própria imagem autorizada; ninguém usa a assinatura de outro.

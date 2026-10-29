@@ -41,8 +41,10 @@ def make_docx() -> bytes:
 
 class DocxImport(unittest.TestCase):
     def test_convert_sections_and_issues(self):
+        """Modo texto simples (compatibilidade): tabelas e formatação viram texto e são relatadas."""
         from vyonix.report import docx_import
-        r = docx_import.convert(make_docx())
+        r = docx_import.convert(make_docx(), rich=False)
+        self.assertEqual(r["format"], "text")
         self.assertEqual(r["technique"], "Aquisição com contraste em {{paciente.nome}}.")
         self.assertIn("Fígado de dimensões normais.", r["findings"])
         self.assertIn("Baço | 10 cm", r["findings"])
@@ -52,6 +54,39 @@ class DocxImport(unittest.TestCase):
         joined = " ".join(r["issues"])
         for want in ("Tabela convertida", "Negrito", "Cabeçalho e rodapé"):
             self.assertIn(want, joined)
+
+    def test_convert_preserves_word_formatting(self):
+        """Modo padrão: negrito, itálico, sublinhado, listas, títulos e tabelas (com mesclagem) viram HTML seguro."""
+        import docx
+        from vyonix.report import docx_import, richtext
+        d = docx.Document()
+        d.add_paragraph("Técnica:")
+        p = d.add_paragraph()
+        p.add_run("Negrito").bold = True
+        p.add_run(" e ")
+        p.add_run("itálico").italic = True
+        p.add_run(" e ")
+        p.add_run("sublinhado").underline = True
+        d.add_paragraph("Achados")
+        d.add_paragraph("Item A", style="List Bullet")
+        d.add_paragraph("Item B", style="List Bullet")
+        d.add_paragraph("Passo 1", style="List Number")
+        d.add_heading("Fígado", level=2)
+        t = d.add_table(rows=2, cols=3)
+        t.cell(0, 0).merge(t.cell(0, 1))
+        t.cell(0, 0).text, t.cell(1, 2).text = "Mesclada", "a<b"
+        d.add_paragraph("Conclusão: normal.")
+        buf = io.BytesIO()
+        d.save(buf)
+        r = docx_import.convert(buf.getvalue())
+        self.assertEqual(r["format"], "html")
+        self.assertEqual(r["technique"], "<p><strong>Negrito</strong> e <em>itálico</em> e <u>sublinhado</u></p>")
+        self.assertIn("<ul><li>Item A</li><li>Item B</li></ul><ol><li>Passo 1</li></ol><h3>Fígado</h3>", r["findings"])
+        self.assertIn('<td colspan="2">Mesclada</td>', r["findings"])
+        self.assertIn("a&lt;b", r["findings"])                                   # texto escapado, não marcação
+        self.assertEqual(r["conclusion"], "<p>normal.</p>")
+        self.assertEqual(richtext.sanitize(r["findings"]), r["findings"])        # já dentro da lista permitida
+        self.assertFalse(any("Negrito" in i or "Tabela" in i for i in r["issues"]))
 
     def test_rejects_unsafe_or_invalid(self):
         from vyonix.errors import ValidationFailed
@@ -85,6 +120,8 @@ class DocxApi(ApiBase):
         it = next(x for x in items if x["id"] == d["id"])
         self.assertIsNone(it["published_version"])
         self.assertIn("[paciente.cpf]", it["draft"]["findings"])
+        self.assertEqual(it["draft"]["content_format"], "html")
+        self.assertIn("<table>", it["draft"]["findings"])                       # tabela do Word preservada
         self.assertTrue(it["draft"]["import_report"]["issues"])
         self.assertEqual(c.post(f"/api/v1/report/templates/{d['id']}/publish", json={}).status_code, 422)
         self.assertEqual(c.post(f"/api/v1/report/templates/{d['id']}/publish", json={"reviewed": True}).status_code, 200)

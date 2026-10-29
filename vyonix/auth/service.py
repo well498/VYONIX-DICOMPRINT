@@ -442,6 +442,15 @@ def authenticate(s: Session, token: str, *, touch: bool = True) -> Principal:
                      session_id=ses.id, csrf=ses.csrf, stage=_stage(s, u, ses), grants=grants, roles=roles)
 
 
+def user_has(s: Session, user_id: uuid.UUID, perm: str) -> bool:
+    """O usuário (ativo) tem a permissão por algum papel (em qualquer unidade)? Para listas como "revisores"."""
+    u = s.get(User, user_id)
+    if u is None or not u.active:
+        return False
+    return s.execute(select(RolePermission.id).join(UserRole, UserRole.role_id == RolePermission.role_id)
+                     .where(UserRole.user_id == user_id, RolePermission.permission == perm).limit(1)).first() is not None
+
+
 def logout(s: Session, p: Principal, ip: str | None = None) -> None:
     ses = s.get(AuthSession, p.session_id)
     if ses and ses.ended_at is None:

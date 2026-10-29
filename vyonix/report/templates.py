@@ -6,6 +6,11 @@
 * Seções: técnica, achados e conclusão. Campos dinâmicos ``{{campo}}`` só da lista abaixo (validados ao salvar);
   preenchidos com os dados do cadastro/RIS/PACS ao abrir o laudo. Campo sem dado fica ``[não informado]``.
 * Modelos antigos (sem versões) continuam utilizáveis: o texto vira a versão 1 publicada no primeiro uso.
+* **Texto rico:** a versão pode ser ``text`` (padrão) ou ``html`` (subconjunto seguro de ``richtext``: negrito,
+  itálico, sublinhado, listas, tabelas e títulos — p.ex. importado do Word). Campos dinâmicos em HTML são preenchidos
+  com o valor **escapado** (um nome com ``<`` não vira marcação).
+* **Modelos pessoais:** ``owner_user_id`` preenchido = modelo do próprio médico; só ele vê, usa e edita. Não entram
+  na seleção automática (T4), que continua só com os modelos da instituição.
 """
 
 from __future__ import annotations
@@ -23,7 +28,8 @@ from vyonix.db.base import utcnow
 from vyonix.errors import Conflict, NotFound, ValidationFailed
 from vyonix.report.models import ReportTemplate, TemplateVersion
 
-MAX_SECTION = 10000
+MAX_SECTION = 10000          # texto simples
+MAX_SECTION_HTML = 100000    # texto rico (marcação conta no tamanho)
 FIELDS = {
     "paciente.nome": "Nome do paciente", "paciente.nascimento": "Data de nascimento", "paciente.sexo": "Sexo",
     "paciente.idade": "Idade", "exame.modalidade": "Modalidade", "exame.descricao": "Descrição do exame",
@@ -39,16 +45,32 @@ def unknown_fields(*texts: str) -> list[str]:
     return sorted({m for t in texts for m in _RE.findall(t or "") if m not in FIELDS})
 
 
-def render(text: str, ctx: dict[str, str | None]) -> str:
-    return _RE.sub(lambda m: (ctx.get(m.group(1)) or MISSING) if m.group(1) in FIELDS else m.group(0), text or "")
+def render(text: str, ctx: dict[str, str | None], fmt: str = "text") -> str:
+    import html as _html
+    esc = (lambda x: _html.escape(x, quote=False)) if fmt == "html" else (lambda x: x)
+    return _RE.sub(lambda m: esc(ctx.get(m.group(1)) or MISSING) if m.group(1) in FIELDS else m.group(0), text or "")
+
+
+def fmt_of(v: TemplateVersion | dict | None) -> str:
+    if v is None:
+        return "text"
+    return (v.get("content_format") if isinstance(v, dict) else getattr(v, "content_format", None)) or "text"
 
 
 def compose(v: TemplateVersion | dict, ctx: dict[str, str | None] | None = None) -> str:
-    """Texto inicial do laudo a partir das seções (só as preenchidas), com os campos já preenchidos."""
+    """Texto inicial do laudo a partir das seções (só as preenchidas), com os campos já preenchidos. Em HTML, cada
+    seção vem com o título em negrito e o conteúdo formatado do modelo."""
+    import html as _html
+    from vyonix.report import richtext
     get = (lambda k: v.get(k, "")) if isinstance(v, dict) else (lambda k: getattr(v, k))
-    parts = [f"{title}:\n{(get(k) or '').strip()}" for k, title in SECTIONS if (get(k) or "").strip()]
-    text = "\n\n".join(parts)
-    return render(text, ctx) if ctx is not None else text
+    fmt = fmt_of(v)
+    if fmt == "html":
+        text = "".join(f"<p><strong>{_html.escape(title)}:</strong></p>{(get(k) or '').strip()}"
+                       for k, title in SECTIONS if richtext.to_text(get(k) or "", "html").strip())
+    else:
+        parts = [f"{title}:\n{(get(k) or '').strip()}" for k, title in SECTIONS if (get(k) or "").strip()]
+        text = "\n\n".join(parts)
+    return render(text, ctx, fmt) if ctx is not None else text
 
 
 def context(s: Session, study_id: uuid.UUID) -> dict[str, str | None]:
@@ -119,16 +141,24 @@ def published(s: Session, t: ReportTemplate) -> TemplateVersion | None:
 def save(s: Session, *, name: str, modality: str | None = None, procedure_id: uuid.UUID | None = None,
          site_id: uuid.UUID | None = None, preferred: bool = False, active: bool = True, technique: str = "",
          findings: str = "", conclusion: str = "", template_id: uuid.UUID | None = None,
-         signature_block: dict | None = None, actor: str, actor_id=None, ip=None) -> tuple[ReportTemplate, TemplateVersion]:
-    """Cria ou altera o modelo e grava o rascunho (cria um rascunho novo se a última versão já foi publicada)."""
+         signature_block: dict | None = None, content_format: str = "text", owner_user_id: uuid.UUID | None = None,
+         actor: str, actor_id=None, ip=None) -> tuple[ReportTemplate, TemplateVersion]:
+    """Cria ou altera o modelo e grava o rascunho (cria um rascunho novo se a última versão já foi publicada).
+    ``owner_user_id``: modelo pessoal desse usuário (só na criação; um modelo não muda de dono)."""
     from vyonix.clinical.models import Procedure
+    from vyonix.report import richtext
     from vyonix.tenancy.models import Site
     name = (name or "").strip()
     if not name or len(name) > 120:
         raise ValidationFailed("Nome do modelo: 1 a 120 caracteres.")
+    if content_format not in richtext.FORMATS:
+        raise ValidationFailed("Formato do modelo inválido.")
+    limit = MAX_SECTION_HTML if content_format == "html" else MAX_SECTION
     for txt in (technique, findings, conclusion):
-        if len(txt or "") > MAX_SECTION:
-            raise ValidationFailed(f"Cada seção do modelo: até {MAX_SECTION} caracteres.")
+        if len(txt or "") > limit:
+            raise ValidationFailed(f"Cada seção do modelo: até {limit} caracteres.")
+    if content_format == "html":
+        technique, findings, conclusion = (richtext.sanitize(x) for x in (technique, findings, conclusion))
     bad = unknown_fields(technique, findings, conclusion)
     if bad:
         raise ValidationFailed(f"Campos desconhecidos no modelo: {', '.join(bad)}.",
@@ -144,8 +174,12 @@ def save(s: Session, *, name: str, modality: str | None = None, procedure_id: uu
     dup = s.execute(select(ReportTemplate).where(func.lower(ReportTemplate.name) == name.lower())).scalar_one_or_none()
     if dup is not None and dup is not t:
         raise Conflict("Já existe um modelo com esse nome.")
+    if t is not None and t.owner_user_id != owner_user_id:
+        raise NotFound("Modelo não encontrado.")                  # pessoal de outro usuário, ou troca de dono
+    if owner_user_id is not None and (procedure_id or site_id or preferred):
+        procedure_id, site_id, preferred = None, None, False      # pessoal: sem regras de seleção automática
     if t is None:
-        t = ReportTemplate(name=name, created_by=actor[:120], body="")
+        t = ReportTemplate(name=name, created_by=actor[:120], body="", owner_user_id=owner_user_id)
         s.add(t)
     published(s, t) if t.id else None                             # converte modelo antigo antes de versionar
     t.name, t.active, t.preferred = name, bool(active), bool(preferred)
@@ -159,14 +193,16 @@ def save(s: Session, *, name: str, modality: str | None = None, procedure_id: uu
                             created_by=actor[:120])
         s.add(v)
     v.technique, v.findings, v.conclusion = technique or "", findings or "", conclusion or ""
+    v.content_format = content_format
     if block is not None:
         v.signature_block = block
     elif v.signature_block is None and vs:                         # novo rascunho herda o bloco da versão anterior
         v.signature_block = next((x.signature_block for x in reversed(vs) if x.signature_block), None)
-    t.body = compose(v)                                           # texto legível do rascunho mais recente
+    t.body = richtext.to_text(compose(v), content_format)[:MAX_SECTION * 3]   # texto legível do último rascunho
     s.flush()
     audit.record(s, actor=actor, actor_id=actor_id, ip=ip, action="report.template.save", target_type="report_template",
-                 target_id=t.id, details={"name": t.name, "version": v.version, "status": "draft"})
+                 target_id=t.id, details={"name": t.name, "version": v.version, "status": "draft",
+                                          "format": content_format, "personal": owner_user_id is not None})
     return t, v
 
 
@@ -181,7 +217,8 @@ def publish(s: Session, template_id: uuid.UUID, *, reviewed: bool, actor: str, a
     draft = vs[-1] if vs and vs[-1].status == "draft" else None
     if draft is None:
         raise Conflict("Não há rascunho para publicar.")
-    if not compose(draft).strip():
+    from vyonix.report import richtext
+    if not richtext.to_text(compose(draft), fmt_of(draft)).strip():
         raise ValidationFailed("Modelo vazio não pode ser publicado.")
     for v in vs:
         if v.status == "published":
@@ -193,13 +230,21 @@ def publish(s: Session, template_id: uuid.UUID, *, reviewed: bool, actor: str, a
     return draft
 
 
+def owned_by(t: ReportTemplate, user_id) -> bool:
+    """Modelo visível para o usuário: da instituição ou pessoal dele."""
+    return t.owner_user_id is None or (user_id is not None and t.owner_user_id == user_id)
+
+
 def listing(s: Session, *, modality: str | None = None, include_inactive: bool = False,
-            only_published: bool = False) -> list[dict[str, Any]]:
+            only_published: bool = False, user_id: uuid.UUID | None = None) -> list[dict[str, Any]]:
+    """Modelos da instituição e os pessoais de ``user_id`` (os pessoais de outros médicos nunca aparecem)."""
     q = select(ReportTemplate).order_by(ReportTemplate.name)
     if not include_inactive:
         q = q.where(ReportTemplate.active.is_(True))
     out = []
     for t in s.execute(q).scalars():
+        if not owned_by(t, user_id):
+            continue
         if modality and t.modality and t.modality != modality.upper():
             continue
         pub = published(s, t)
@@ -210,11 +255,13 @@ def listing(s: Session, *, modality: str | None = None, include_inactive: bool =
         out.append({"id": str(t.id), "name": t.name, "modality": t.modality, "active": t.active,
                     "procedure_id": str(t.procedure_id) if t.procedure_id else None,
                     "site_id": str(t.site_id) if t.site_id else None, "preferred": t.preferred,
-                    "body": compose(pub) if pub else "",
+                    "body": compose(pub) if pub else "", "content_format": fmt_of(pub or last),
+                    "personal": t.owner_user_id is not None,
                     "published_version": pub.version if pub else None,
                     "draft": None if last is None or last.status != "draft" else
                     {"version": last.version, "technique": last.technique, "findings": last.findings,
                      "conclusion": last.conclusion, "import_report": last.import_report,
+                     "content_format": fmt_of(last),
                      "signature_block": block_settings(last.signature_block)},
                     "signature_block": block_settings((pub or last).signature_block if (pub or last) else None),
                     "versions": [{"version": v.version, "status": v.status, "created_by": v.created_by,
@@ -251,7 +298,8 @@ def select_for(s: Session, study_id: uuid.UUID) -> dict[str, Any]:
         raise NotFound("Estudo não encontrado.")
     o = s.get(Order, st.order_id) if st.order_id else None
     proc, mod, site = (o.procedure_id if o else None), (st.modality or "").upper() or None, st.site_id
-    cands = [t for t in s.execute(select(ReportTemplate).where(ReportTemplate.active.is_(True))).scalars()
+    cands = [t for t in s.execute(select(ReportTemplate).where(ReportTemplate.active.is_(True),
+                                                                ReportTemplate.owner_user_id.is_(None))).scalars()
              if published(s, t) is not None]
 
     def match(t: ReportTemplate, level: int) -> bool:

@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
-import { fmtDate, get, post, put, upload, type Me } from "../api";
+import { del, fmtDate, get, post, put, upload, type Me } from "../api";
+import { asHtml, RichEditor, RichView, type Phrase } from "../richtext";
 import { Priors } from "./prep";
 import { Field, Notice, Page, useAction, useLoad } from "../ui";
 import { BrandingPanel } from "./branding";
@@ -7,20 +8,25 @@ import { MySignaturePanel, PhysiciansPanel } from "./physicians";
 
 type Row = { study_id: string; study_instance_uid: string; accession: string | null; modality: string | null;
   study_date: string | null; description: string | null; patient_name: string | null; report_id: string | null;
-  report_status: "pending" | "draft" | "final"; critical: boolean;
+  report_status: "pending" | "draft" | "review" | "final"; critical: boolean;
   assignment: null | { physician: string; priority: string; due_at: string; overdue: boolean } };
 type Version = { version: number; kind: "final" | "addendum"; body: string; critical: boolean; signed_by: string;
-  signed_at: string; sha256: string; signature_mode?: "password" | "handwritten_image" };
-type Report = { id: string; study_id: string; study_instance_uid: string | null; status: "draft" | "final"; body: string;
-  critical: boolean; critical_note: string | null; author: string; version: number; finalized_by: string | null;
-  finalized_at: string | null; row_version: number; versions: Version[] };
+  signed_at: string; sha256: string; signature_mode?: "password" | "handwritten_image"; body_format?: string;
+  author?: string | null };
+type Review = { requested_by: string | null; note: string | null; requested_at: string | null; reviewer_id: string | null };
+type Report = { id: string; study_id: string; study_instance_uid: string | null; status: "draft" | "review" | "final";
+  body: string; body_format?: string; critical: boolean; critical_note: string | null; author: string; version: number;
+  finalized_by: string | null; finalized_at: string | null; row_version: number; versions: Version[];
+  draft_revision?: number; review?: Review | null };
+type Revision = { revision: number; author: string; event: string; at: string; body: string; body_format: string };
+const REV_EVENT: Record<string, string> = { save: "gravação", review_request: "enviado para revisão", return: "devolvido pelo revisor" };
 type Alert = { id: string; report_id: string; version: number; note: string | null; created_at: string;
   patient_name: string | null; accession: string | null; modality: string | null; requester: string | null;
   signed_by: string | null };
 type Template = { id: string; name: string; modality: string | null; body: string; active: boolean };
 
 const PRIORITY: Record<string, string> = { routine: "rotina", urgent: "urgente", stat: "imediato" };
-const STATUS: Record<string, string> = { pending: "Sem laudo", draft: "Rascunho", final: "Liberado" };
+const STATUS: Record<string, string> = { pending: "Sem laudo", draft: "Rascunho", review: "Em revisão", final: "Liberado" };
 const MODE: Record<string, string> = { password: "Liberado com confirmação de senha",
   handwritten_image: "Senha + imagem da assinatura manuscrita (visual; não é assinatura digital)" };
 type Block = { show_image: boolean; position: "block" | "footer"; align: "left" | "center" | "right"; height_mm: number;
@@ -43,6 +49,7 @@ export function ReportsPage({ me }: { me: Me }) {
   const [showPhysicians, setShowPhysicians] = useState(false);
   const [showBranding, setShowBranding] = useState(false);
   const [showSignature, setShowSignature] = useState(false);
+  const [showPhrases, setShowPhrases] = useState(false);
   const [picked, setPicked] = useState<string[]>([]);
   const [batch, setBatch] = useState({ confirm: false, password: "" });
   const act = useAction();
@@ -94,20 +101,23 @@ export function ReportsPage({ me }: { me: Me }) {
           {showBranding ? "Fechar identidade" : "Identidade visual"}</button>}
         {can("report.physicians.manage") && <button onClick={() => setShowPhysicians(!showPhysicians)}>
           {showPhysicians ? "Fechar médicos" : "Médicos"}</button>}
-        {can("report.templates.manage") && <button onClick={() => setShowTemplates(!showTemplates)}>
-          {showTemplates ? "Fechar modelos" : "Modelos de laudo"}</button>}</>}>
+        {(can("report.templates.manage") || can("report.templates.own")) && <button onClick={() => setShowTemplates(!showTemplates)}>
+          {showTemplates ? "Fechar modelos" : "Modelos de laudo"}</button>}
+        {(can("report.phrases.own") || can("report.phrases.manage")) && <button onClick={() => setShowPhrases(!showPhrases)}>
+          {showPhrases ? "Fechar frases" : "Frases rápidas"}</button>}</>}>
       {act.view}
       {can("report.sign") && showSignature && <MySignaturePanel />}
       {showBranding && <BrandingPanel />}
       {showPhysicians && <PhysiciansPanel me={me} />}
-      {showTemplates && <Templates />}
+      {showTemplates && <Templates me={me} />}
+      {showPhrases && <Phrases me={me} />}
       <CriticalAlerts canAck={can("report.write")} tick={tick} />
       {open && <Editor me={me} row={open.row} initial={open.report}
         onClose={() => { setOpen(null); setTick(tick + 1); void list.reload(); }} />}
       <form className="filters" role="search" aria-label="Filtrar laudos" onSubmit={(e) => { e.preventDefault(); setQuery(filters); }}>
         <select aria-label="Situação do laudo" value={filters.status} onChange={(e) => setFilters({ ...filters, status: e.target.value })}>
           <option value="pending">Sem laudo</option><option value="draft">Rascunho</option>
-          <option value="final">Liberado</option><option value="all">Todos</option>
+          <option value="review">Em revisão</option><option value="final">Liberado</option><option value="all">Todos</option>
         </select>
         <input placeholder="Modalidade" aria-label="Modalidade" maxLength={16} value={filters.modality}
           onChange={(e) => setFilters({ ...filters, modality: e.target.value })} />
@@ -172,8 +182,17 @@ export function ReportsPage({ me }: { me: Me }) {
 function Editor({ me, row, initial, onClose }: { me: Me; row: Row; initial: Report | null; onClose: () => void }) {
   const can = (p: string) => me.permissions.includes(p);
   const [report, setReport] = useState<Report | null>(initial);
-  const [draft, setDraft] = useState({ body: initial?.body ?? "", critical: initial?.critical ?? false,
+  const [draft, setDraft] = useState({ body: asHtml(initial?.body ?? "", initial?.body_format), critical: initial?.critical ?? false,
     note: initial?.critical_note ?? "" });
+  const [review, setReview] = useState({ reviewer: "", note: "" });
+  const [showRevs, setShowRevs] = useState(false);
+  const phrases = useLoad(async () => (can("report.write")
+    ? (await get<{ items: Phrase[] }>(`/report/phrases?${new URLSearchParams(row.modality ? { modality: row.modality } : {})}`)).items : []), []);
+  const reviewers = useLoad(async () => (report?.status === "draft" && can("report.write")
+    ? (await get<{ items: { id: string; name: string }[] }>("/report/reviewers")).items : []), [report?.status]);
+  const revs = useLoad(async () => (showRevs && report ? (await get<{ items: Revision[] }>(`/report/reports/${report.id}/revisions`)).items : []),
+    [showRevs, report?.row_version]);
+  const editable = report?.status === "draft" ? can("report.write") : report?.status === "review" && can("report.review");
   const [template, setTemplate] = useState("auto");
   const [password, setPassword] = useState("");
   const [add, setAdd] = useState({ text: "", critical: false, password: "" });
@@ -191,22 +210,41 @@ function Editor({ me, row, initial, onClose }: { me: Me; row: Row; initial: Repo
     await act.run(async () => {
       const r = await post<Report>("/report/reports", template === "auto" ? { study_id: row.study_id, auto: true }
         : { study_id: row.study_id, template_id: template || null });
-      setReport(r); setDraft({ body: r.body, critical: r.critical, note: r.critical_note ?? "" });
+      setReport(r); setDraft({ body: asHtml(r.body, r.body_format), critical: r.critical, note: r.critical_note ?? "" });
     }, "Rascunho criado.");
   }
   async function save() {
     if (!report) return;
     await act.run(async () => {
-      const r = await put<Report>(`/report/reports/${report.id}`, { body: draft.body, critical: draft.critical,
+      const r = await put<Report>(`/report/reports/${report.id}`, { body: draft.body, body_format: "html", critical: draft.critical,
         critical_note: draft.critical ? draft.note : null, row_version: report.row_version });
       setReport(r);
     }, "Rascunho salvo.");
+  }
+  async function sendReview(e: FormEvent) {
+    e.preventDefault();
+    if (!report) return;
+    await act.run(async () => {
+      const saved = await put<Report>(`/report/reports/${report.id}`, { body: draft.body, body_format: "html", critical: draft.critical,
+        critical_note: draft.critical ? draft.note : null, row_version: report.row_version });
+      const r = await post<Report>(`/report/reports/${report.id}/review`, { reviewer_id: review.reviewer || null,
+        note: review.note || null, row_version: saved.row_version });
+      setReport(r); setReview({ reviewer: "", note: "" });
+    }, "Laudo enviado para revisão. O texto fica bloqueado para você até a devolução.");
+  }
+  async function returnReview(e: FormEvent) {
+    e.preventDefault();
+    if (!report) return;
+    await act.run(async () => {
+      const r = await post<Report>(`/report/reports/${report.id}/review/return`, { note: review.note });
+      setReport(r); setReview({ reviewer: "", note: "" });
+    }, "Laudo devolvido ao autor com a sua observação.");
   }
   async function finalize(e: FormEvent) {
     e.preventDefault();
     if (!report) return;
     const ok = await act.run(async () => {
-      const saved = await put<Report>(`/report/reports/${report.id}`, { body: draft.body, critical: draft.critical,
+      const saved = await put<Report>(`/report/reports/${report.id}`, { body: draft.body, body_format: "html", critical: draft.critical,
         critical_note: draft.critical ? draft.note : null, row_version: report.row_version });
       setReport(saved);                                  // mantém a versão atual mesmo se a senha for recusada
       const r = await post<Report>(`/report/reports/${report.id}/finalize`, { password, row_version: saved.row_version });
@@ -242,21 +280,47 @@ function Editor({ me, row, initial, onClose }: { me: Me; row: Row; initial: Repo
             {template === "auto" && suggestion.data && <p className="field-hint">{suggestion.data.status === "selected"
               ? `Modelo selecionado: ${suggestion.data.name} (regra: ${suggestion.data.level}).` : suggestion.data.message}</p>}</div>
         </div>) : <Notice kind="info">Sem laudo para este estudo.</Notice>)}
-      {report?.status === "draft" && (
+      {report && report.status !== "final" && (
         <>
-          <Field label="Texto do laudo">
-            <textarea rows={14} value={draft.body} readOnly={!can("report.write")}
-              onChange={(e) => setDraft({ ...draft, body: e.target.value })} />
-          </Field>
-          <label className="check"><input type="checkbox" checked={draft.critical} disabled={!can("report.write")}
+          {report.status === "review" && <Notice kind="info">Em revisão — enviado por {report.review?.requested_by ?? "—"} em {fmtDate(report.review?.requested_at)}
+            {report.review?.note ? `. Observação: ${report.review.note}` : ""}. {editable ? "Você pode ajustar o texto, devolver ao autor ou liberar." : "O texto fica bloqueado até a devolução ou a liberação pelo revisor."}</Notice>}
+          {report.status === "draft" && report.review?.note && <Notice kind="warn">Devolvido pelo revisor: {report.review.note}</Notice>}
+          <RichEditor label="Texto do laudo" value={draft.body} readOnly={!editable} rows={14}
+            phrases={phrases.data ?? []} onChange={(h) => setDraft((d) => ({ ...d, body: h }))}
+            hint="Negrito, itálico, sublinhado, listas e tabelas aparecem iguais no PDF. Frases: escolha na lista ou digite o atalho (ex.: /normal) e espaço." />
+          <label className="check"><input type="checkbox" checked={draft.critical} disabled={!editable}
             onChange={(e) => setDraft({ ...draft, critical: e.target.checked })} /> Achado crítico</label>
           {draft.critical && <Field label="Descrição do achado crítico" hint="Obrigatória para liberar; gera aviso ao solicitante">
-            <input maxLength={300} value={draft.note} onChange={(e) => setDraft({ ...draft, note: e.target.value })} /></Field>}
+            <input maxLength={300} value={draft.note} readOnly={!editable} onChange={(e) => setDraft({ ...draft, note: e.target.value })} /></Field>}
           <div className="row-actions">
-            {can("report.write") && <button disabled={act.busy} onClick={() => void save()}>Salvar rascunho</button>}
+            {editable && <button disabled={act.busy} onClick={() => void save()}>Salvar rascunho</button>}
             <a className="link" href={`/api/v1/report/reports/${report.id}/draft-pdf`} target="_blank" rel="noopener">Prévia do rascunho (sem assinatura)</a>
+            <button type="button" className="link" onClick={() => setShowRevs(!showRevs)}>
+              {showRevs ? "Ocultar histórico" : `Histórico do rascunho (${report.draft_revision ?? 0})`}</button>
           </div>
-          {can("report.sign") && (
+          {showRevs && (
+            <section className="panel-inset" aria-label="Histórico do rascunho">
+              {(revs.data ?? []).length === 0 && <p className="empty">Sem revisões gravadas.</p>}
+              {(revs.data ?? []).slice().reverse().map((x) => (
+                <details key={x.revision}><summary>Revisão {x.revision} — {x.author}, {fmtDate(x.at)} ({REV_EVENT[x.event] ?? x.event})</summary>
+                  <RichView html={x.body} format={x.body_format} label={`Revisão ${x.revision}`} /></details>))}
+            </section>)}
+          {report.status === "draft" && can("report.write") && (
+            <form className="filters" aria-label="Enviar para revisão" onSubmit={sendReview}>
+              <select aria-label="Revisor" value={review.reviewer} onChange={(e) => setReview({ ...review, reviewer: e.target.value })}>
+                <option value="">Qualquer revisor</option>
+                {(reviewers.data ?? []).map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}</select>
+              <input aria-label="Observação para o revisor" placeholder="Observação (opcional)" maxLength={1000} value={review.note}
+                onChange={(e) => setReview({ ...review, note: e.target.value })} />
+              <button disabled={act.busy}>Enviar para revisão</button>
+            </form>)}
+          {report.status === "review" && editable && (
+            <form className="filters" aria-label="Devolver ao autor" onSubmit={returnReview}>
+              <input aria-label="O que precisa ser revisto" required placeholder="O que precisa ser revisto" maxLength={1000}
+                value={review.note} onChange={(e) => setReview({ ...review, note: e.target.value })} />
+              <button disabled={act.busy}>Devolver ao autor</button>
+            </form>)}
+          {can("report.sign") && (report.status === "draft" || editable) && (
             <form className="filters" aria-label="Liberar laudo" onSubmit={finalize}>
               <input type="password" required autoComplete="current-password" aria-label="Sua senha para liberar"
                 placeholder="Sua senha" value={password} onChange={(e) => setPassword(e.target.value)} />
@@ -284,7 +348,8 @@ function Editor({ me, row, initial, onClose }: { me: Me; row: Row; initial: Repo
               <span className="card-label">{v.kind === "final" ? "Laudo" : "Adendo"} — versão {v.version} — {v.signed_by}, {fmtDate(v.signed_at)}
                 {v.critical && <span className="tag tag-warn">Achado crítico</span>}</span>
               {v.signature_mode && <span className="field-hint">{MODE[v.signature_mode]}</span>}
-              <pre className="report-text">{v.body}</pre>
+              <RichView html={v.body} format={v.body_format} />
+              {v.author && <span className="field-hint">Redigido por {v.author}; revisado e liberado por {v.signed_by}.</span>}
               <span className="field-hint" title={v.sha256}>SHA-256 {v.sha256.slice(0, 16)}…</span>
             </article>
           ))}
@@ -306,16 +371,19 @@ function Editor({ me, row, initial, onClose }: { me: Me; row: Row; initial: Repo
 }
 
 type TplItem = Template & { published_version: number | null; preferred: boolean; procedure_id: string | null; site_id: string | null;
-  draft: null | { version: number; technique: string; findings: string; conclusion: string; signature_block?: Block;
+  content_format?: string; personal?: boolean;
+  draft: null | { version: number; technique: string; findings: string; conclusion: string; signature_block?: Block; content_format?: string;
     import_report: null | { issues: string[]; fields: string[]; header: string; footer: string } };
   signature_block?: Block;
   versions: { version: number; status: string; created_by: string; published_by: string | null; published_at: string | null }[] };
 const TPL_STATUS: Record<string, string> = { draft: "rascunho", published: "publicada", archived: "arquivada" };
 
 /** Modelos de laudo com versões (TELELAUDO T3): rascunho, pré-visualização A4 e publicação após conferência. */
-function Templates() {
+function Templates({ me }: { me: Me }) {
+  const can = (p: string) => me.permissions.includes(p);
   const list = useLoad(async () => await get<{ items: TplItem[]; fields: Record<string, string> }>("/report/templates?include_inactive=true"), []);
-  const empty = { id: "", name: "", modality: "", technique: "", findings: "", conclusion: "", procedure_id: "", site_id: "", preferred: false };
+  const empty = { id: "", name: "", modality: "", technique: "", findings: "", conclusion: "", procedure_id: "", site_id: "", preferred: false,
+    personal: !can("report.templates.manage") };
   const procs = useLoad(async () => await get<{ id: string; name: string }[]>("/procedures").catch(() => []), []);
   const sites = useLoad(async () => await get<{ id: string; name: string }[]>("/sites").catch(() => []), []);
   const [form, setForm] = useState(empty);
@@ -325,8 +393,10 @@ function Templates() {
   function edit(t: TplItem) {
     const d = t.draft;
     const pub = t.body;
-    setForm({ id: t.id, name: t.name, modality: t.modality ?? "", technique: d?.technique ?? "", findings: d?.findings ?? (d ? "" : pub),
-      conclusion: d?.conclusion ?? "", procedure_id: t.procedure_id ?? "", site_id: t.site_id ?? "", preferred: t.preferred });
+    const f = d?.content_format ?? t.content_format;
+    setForm({ id: t.id, name: t.name, modality: t.modality ?? "", technique: asHtml(d?.technique ?? "", f),
+      findings: asHtml(d?.findings ?? (d ? "" : pub), f), conclusion: asHtml(d?.conclusion ?? "", f), procedure_id: t.procedure_id ?? "",
+      site_id: t.site_id ?? "", preferred: t.preferred, personal: Boolean(t.personal) });
     setBlock(d?.signature_block ?? t.signature_block ?? BLOCK);
     setReviewed(false);
   }
@@ -334,8 +404,9 @@ function Templates() {
     e.preventDefault();
     await act.run(async () => {
       const body = { name: form.name, modality: form.modality || null, technique: form.technique, findings: form.findings,
-        conclusion: form.conclusion, procedure_id: form.procedure_id || null, site_id: form.site_id || null, preferred: form.preferred,
-        signature_block: block };
+        conclusion: form.conclusion, procedure_id: form.personal ? null : form.procedure_id || null,
+        site_id: form.personal ? null : form.site_id || null, preferred: !form.personal && form.preferred,
+        signature_block: block, content_format: "html", personal: form.personal };
       const r = form.id ? await put<{ id: string }>(`/report/templates/${form.id}`, body) : await post<{ id: string }>("/report/templates", body);
       setForm({ ...form, id: r.id }); setReviewed(false);
       await list.reload();
@@ -349,7 +420,9 @@ function Templates() {
   async function importDocx(f: File | undefined) {
     if (!f) return;
     await act.run(async () => {
-      const r = await upload<{ id: string }>(`/report/templates/import-docx?${new URLSearchParams(form.modality ? { modality: form.modality } : {})}`, f);
+      const q = new URLSearchParams(form.modality ? { modality: form.modality } : {});
+      if (form.personal) q.set("personal", "true");
+      const r = await upload<{ id: string }>(`/report/templates/import-docx?${q}`, f);
       await list.reload();
       const items = (await get<{ items: TplItem[] }>("/report/templates?include_inactive=true")).items;
       const t = items.find((x) => x.id === r.id);
@@ -362,6 +435,7 @@ function Templates() {
       {act.view}
       <ul className="history">{(list.data?.items ?? []).map((t) => (
         <li key={t.id}><button className="link" onClick={() => edit(t)}>{t.name}</button>{t.modality ? ` (${t.modality})` : ""}
+          {t.personal && <span className="tag">pessoal</span>}
           {" — "}{t.published_version ? `publicada v${t.published_version}` : "sem versão publicada"}{t.draft ? ` · rascunho v${t.draft.version}` : ""}{t.active ? "" : " — inativo"}</li>))}
       </ul>
       <div className="filters" role="group" aria-label="Importar DOCX">
@@ -376,9 +450,14 @@ function Templates() {
             <span>Sugestão para a identidade visual — cabeçalho: “{current.draft.import_report.header || "—"}”; rodapé: “{current.draft.import_report.footer || "—"}”.</span>}
         </Notice>)}
       <form onSubmit={save} aria-label="Editar modelo">
+        {can("report.templates.own") && can("report.templates.manage") && !form.id && (
+          <label className="check"><input type="checkbox" checked={form.personal} onChange={(e) => setForm({ ...form, personal: e.target.checked })} />
+            {" "}Modelo pessoal (só eu vejo e uso; não entra na seleção automática)</label>)}
+        {form.personal && <p className="field-hint">Modelo pessoal: visível apenas para você.</p>}
         <div className="grid2">
           <Field label="Nome do modelo"><input required maxLength={120} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
           <Field label="Modalidade" hint="Vazio = todas"><input maxLength={16} value={form.modality} onChange={(e) => setForm({ ...form, modality: e.target.value.toUpperCase() })} /></Field>
+          {!form.personal && <>
           <Field label="Procedimento" hint="Regra mais específica">
             <select value={form.procedure_id} onChange={(e) => setForm({ ...form, procedure_id: e.target.value })}>
               <option value="">Qualquer procedimento</option>
@@ -387,12 +466,13 @@ function Templates() {
             <select value={form.site_id} onChange={(e) => setForm({ ...form, site_id: e.target.value })}>
               <option value="">Toda a organização</option>
               {(sites.data ?? []).map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select></Field>
+          </>}
         </div>
-        <label className="check"><input type="checkbox" checked={form.preferred} onChange={(e) => setForm({ ...form, preferred: e.target.checked })} /> Preferencial (desempata modelos da mesma regra)</label>
+        {!form.personal && <label className="check"><input type="checkbox" checked={form.preferred} onChange={(e) => setForm({ ...form, preferred: e.target.checked })} /> Preferencial (desempata modelos da mesma regra)</label>}
         <p className="field-hint">Campos dinâmicos (preenchidos com os dados do exame): {Object.keys(list.data?.fields ?? {}).map((f) => `{{${f}}}`).join("  ")}</p>
-        <Field label="Técnica"><textarea rows={3} value={form.technique} onChange={(e) => setForm({ ...form, technique: e.target.value })} /></Field>
-        <Field label="Achados"><textarea rows={5} value={form.findings} onChange={(e) => setForm({ ...form, findings: e.target.value })} /></Field>
-        <Field label="Conclusão"><textarea rows={3} value={form.conclusion} onChange={(e) => setForm({ ...form, conclusion: e.target.value })} /></Field>
+        <RichEditor label="Técnica" rows={3} value={form.technique} onChange={(h) => setForm((f) => ({ ...f, technique: h }))} />
+        <RichEditor label="Achados" rows={5} value={form.findings} onChange={(h) => setForm((f) => ({ ...f, findings: h }))} />
+        <RichEditor label="Conclusão" rows={3} value={form.conclusion} onChange={(h) => setForm((f) => ({ ...f, conclusion: h }))} />
         <fieldset className="panel-inset" aria-label="Bloco de assinatura">
           <legend>Bloco de assinatura no PDF</legend>
           <p className="field-hint">Aparece só no laudo liberado. Rascunhos nunca têm assinatura. A imagem só entra se o próprio médico que liberou autorizou o uso.</p>
@@ -424,6 +504,60 @@ function Templates() {
           <button className="primary" disabled={!reviewed || act.busy} onClick={() => void publish()}>Publicar versão {current.draft.version}</button>
         </div>)}
       {current && <p className="field-hint">Versões: {current.versions.map((v) => `v${v.version} ${TPL_STATUS[v.status] ?? v.status}${v.published_by ? ` por ${v.published_by}` : ""}`).join(" · ")}</p>}
+    </section>
+  );
+}
+
+type PhraseItem = Phrase & { modality: string | null; active: boolean; text: string };
+
+/** Frases rápidas: as pessoais do médico e (com permissão) as da instituição. */
+function Phrases({ me }: { me: Me }) {
+  const can = (p: string) => me.permissions.includes(p);
+  const list = useLoad(async () => (await get<{ items: PhraseItem[] }>("/report/phrases?include_inactive=true")).items, []);
+  const empty = { id: "", title: "", shortcut: "", modality: "", body: "", active: true, personal: can("report.phrases.own") };
+  const [form, setForm] = useState(empty);
+  const act = useAction();
+  const editable = (p: PhraseItem) => (p.personal ? can("report.phrases.own") : can("report.phrases.manage"));
+  async function save(e: FormEvent) {
+    e.preventDefault();
+    await act.run(async () => {
+      const body = { title: form.title, shortcut: form.shortcut || null, modality: form.modality || null, body: form.body,
+        active: form.active, personal: form.personal };
+      if (form.id) await put(`/report/phrases/${form.id}`, body); else await post("/report/phrases", body);
+      setForm(empty); await list.reload();
+    }, "Frase salva.");
+  }
+  async function remove(id: string) {
+    await act.run(async () => { await del(`/report/phrases/${id}`); setForm(empty); await list.reload(); }, "Frase removida.");
+  }
+  return (
+    <section className="panel" aria-label="Frases rápidas">
+      <h2>Frases rápidas</h2>
+      <p className="field-hint">Use no editor do laudo pela lista “Inserir frase…” ou digitando o atalho seguido de espaço. Frases pessoais só você vê.</p>
+      {act.view}
+      <ul className="history">{(list.data ?? []).map((p) => (
+        <li key={p.id}>{editable(p) ? <button className="link" onClick={() => setForm({ id: p.id, title: p.title, shortcut: p.shortcut ?? "",
+          modality: p.modality ?? "", body: p.body, active: p.active, personal: p.personal })}>{p.title}</button> : p.title}
+          {p.shortcut && <code> {p.shortcut}</code>}{p.modality ? ` (${p.modality})` : ""}
+          <span className="tag">{p.personal ? "minha" : "instituição"}</span>{p.active ? "" : " — inativa"}</li>))}
+      </ul>
+      <form onSubmit={save} aria-label="Editar frase">
+        {!form.id && can("report.phrases.own") && can("report.phrases.manage") && (
+          <label className="check"><input type="checkbox" checked={!form.personal} onChange={(e) => setForm({ ...form, personal: !e.target.checked })} />
+            {" "}Frase da instituição (todos os médicos usam)</label>)}
+        <div className="grid2">
+          <Field label="Título da frase"><input required maxLength={120} value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} /></Field>
+          <Field label="Atalho" hint="Ex.: /normal"><input maxLength={31} value={form.shortcut} onChange={(e) => setForm({ ...form, shortcut: e.target.value.toLowerCase() })} /></Field>
+          <Field label="Modalidade da frase" hint="Vazio = todas"><input maxLength={16} value={form.modality} onChange={(e) => setForm({ ...form, modality: e.target.value.toUpperCase() })} /></Field>
+        </div>
+        <RichEditor label="Texto da frase" rows={4} value={form.body} onChange={(h) => setForm((f) => ({ ...f, body: h }))} />
+        <label className="check"><input type="checkbox" checked={form.active} onChange={(e) => setForm({ ...form, active: e.target.checked })} /> Ativa</label>
+        <div className="row-actions">
+          <button className="primary" disabled={act.busy}>Salvar frase</button>
+          {form.id && <><button type="button" className="link" onClick={() => setForm(empty)}>Nova frase</button>
+            <button type="button" className="link" onClick={() => void remove(form.id)}>Remover frase</button></>}
+        </div>
+      </form>
     </section>
   );
 }

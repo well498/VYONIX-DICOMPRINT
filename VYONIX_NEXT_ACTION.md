@@ -4,8 +4,11 @@
 * **Último commit local:** ver `git log -1`; CI do lote enviado: platform, viewer, deploy-windows, Windows release.
 
 ## Agora
-1. Conferir o CI do lote (platform com Orthanc real inclui `test_reception_only_from_registered_equipment`).
-2. Corrigir o que falhar e reenviar sem cancelar execuções em andamento.
+1. **P0 (prioridade máxima):** aguardar a validação presencial do instalador `bc9cf28` com o kit
+   `installer/validacao` e o roteiro `docs/homologacao/Roteiro_Validacao_P0_Instalacao.md`; corrigir qualquer falha
+   relatada antes de declarar resolvido. Não alterar a instalação atual do proprietário sem autorização.
+2. Em paralelo (independente do instalador): editor rico, frases, modelos pessoais e revisão **feitos**; seguir com
+   segurança/testes e o bloqueio de associação DICOM simulado (BLK-15, só em ambiente de teste).
 
 ## Auditoria geral (29/10/2026)
 Ver `VYONIX_RESUMO_EXECUTIVO.md`, `VYONIX_AUDITORIA_GERAL.md`, `VYONIX_INVENTARIO_FUNCIONAL.md`,
@@ -24,4 +27,5 @@ prática da instalação) — aguarda o proprietário; sem novas funcionalidades
 
 ## Aguardando o proprietário
 * Avaliação prática da homologação (instalador `344ab09`) e relatos de falhas.
-* BLK-15 (recusa na associação), BLK-16 (edge → cloud), BLK-14 (ICP-Brasil), BLK-01 (chave de emissão).
+* BLK-15 (recusa na associação), BLK-16 (edge → cloud), BLK-14 (ICP-Brasil), BLK-01 (chave de emissão: escolher
+  caminho A ou B e autorizar a destruição das cópias — plano em `docs/security/`).

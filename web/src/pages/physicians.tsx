@@ -4,7 +4,8 @@ import { Field, Notice, useAction, useLoad } from "../ui";
 
 type Link = { id: string; site_id: string | null; valid_from: string; valid_to: string | null };
 type Physician = { id: string; user_id: string; full_name: string; crm: string; crm_uf: string; rqe: string | null;
-  specialties: string[]; identification: string; active: boolean; links: Link[] };
+  specialties: string[]; identification: string; active: boolean; links: Link[]; requires_review?: boolean;
+  footer?: string | null };
 type User = { id: string; username: string; display_name: string };
 type Site = { id: string; name: string };
 
@@ -42,6 +43,13 @@ export function PhysiciansPanel({ me }: { me: Me }) {
     }, "Vínculo incluído.");
     if (ok) setLink(null);
   }
+  async function toggleReview(p: Physician) {
+    await act.run(async () => {
+      await put(`/report/physicians/${p.id}`, { user_id: p.user_id, full_name: p.full_name, crm: p.crm, crm_uf: p.crm_uf,
+        rqe: p.rqe, specialties: p.specialties, footer: p.footer ?? null, active: p.active, requires_review: !p.requires_review });
+      await list.reload();
+    }, p.requires_review ? "Os laudos deste médico voltam a ser liberados por ele." : "Os laudos deste médico passam por revisão antes da liberação.");
+  }
   async function endLink(id: string) {
     await act.run(async () => { await post(`/report/physician-links/${id}/end`, { valid_to: today() }); await list.reload(); },
       "Vínculo encerrado hoje.");
@@ -56,6 +64,9 @@ export function PhysiciansPanel({ me }: { me: Me }) {
       <ul className="history">
         {(list.data ?? []).map((p) => (
           <li key={p.id}><strong>{p.identification}</strong>{p.specialties.length ? ` — ${p.specialties.join(", ")}` : ""}{p.active ? "" : " (inativo)"}
+            {p.requires_review && <span className="tag">laudos com revisão obrigatória</span>}
+            {" "}<label className="check"><input type="checkbox" checked={Boolean(p.requires_review)} disabled={act.busy}
+              onChange={() => void toggleReview(p)} /> Exige revisão (segunda leitura)</label>
             <ul>{p.links.map((l) => (
               <li key={l.id}>{siteName(l.site_id)}: desde {fmtDate(l.valid_from + "T12:00:00", false)}
                 {l.valid_to ? ` até ${fmtDate(l.valid_to + "T12:00:00", false)}` : <> (vigente) <button className="link" onClick={() => void endLink(l.id)}>Encerrar</button></>}</li>))}

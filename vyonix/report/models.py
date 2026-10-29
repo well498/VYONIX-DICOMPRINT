@@ -11,7 +11,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from vyonix.db.base import Base, TenantMixin
 
 SCHEMA = {"schema": "report"}
-STATUSES = ("draft", "final")
+STATUSES = ("draft", "review", "final")
 
 
 class ReportTemplate(TenantMixin, Base):
@@ -25,6 +25,7 @@ class ReportTemplate(TenantMixin, Base):
     procedure_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("clinical.procedures.id"))
     site_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("tenancy.sites.id"))
     preferred: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    owner_user_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)            # modelo pessoal (None = da instituição)
 
 
 class TemplateVersion(TenantMixin, Base):
@@ -41,6 +42,7 @@ class TemplateVersion(TenantMixin, Base):
     published_by: Mapped[str | None] = mapped_column(String(120))
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     import_report: Mapped[dict | None] = mapped_column(JSON)            # importação DOCX (T6)
+    content_format: Mapped[str] = mapped_column(String(8), nullable=False, default="text", server_default="text")
     signature_block: Mapped[dict | None] = mapped_column(JSON)          # bloco de identificação profissional no PDF
 
 
@@ -61,6 +63,13 @@ class Report(TenantMixin, Base):
     branding_site_version: Mapped[int | None] = mapped_column(Integer)
     template_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)                         # modelo e versão usados
     template_version: Mapped[int | None] = mapped_column(Integer)
+    body_format: Mapped[str] = mapped_column(String(8), nullable=False, default="text", server_default="text")
+    # revisão (segunda leitura): quem enviou, para quem, observação da devolução
+    review_requested_by: Mapped[str | None] = mapped_column(String(120))
+    review_requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    reviewer_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)                          # physicians.id (opcional)
+    review_note: Mapped[str | None] = mapped_column(String(1000))
+    draft_revision: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
 
 
 class CriticalAlert(TenantMixin, Base):
@@ -92,6 +101,8 @@ class ReportVersion(TenantMixin, Base):
     signed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     signature_image_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)          # imagem aplicada (autorizada)
+    body_format: Mapped[str] = mapped_column(String(8), nullable=False, default="text", server_default="text")
+    author: Mapped[str | None] = mapped_column(String(120))                    # quem redigiu (revisão: ≠ quem liberou)
 
 
 class Physician(TenantMixin, Base):
@@ -108,6 +119,7 @@ class Physician(TenantMixin, Base):
     footer: Mapped[str | None] = mapped_column(String(200))
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     use_signature_image: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    requires_review: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     signature_delegate_user_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)   # administrador autorizado a enviar
 
 
@@ -184,3 +196,28 @@ class Assignment(TenantMixin, Base):
     kind: Mapped[str] = mapped_column(String(10), nullable=False, default="assigned",
                                       server_default="assigned")             # assigned | auto | claimed
     reserved_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))   # reserva do próprio médico
+
+
+class Phrase(TenantMixin, Base):
+    """Frase rápida (texto pronto): da instituição (``owner_user_id`` vazio) ou pessoal do médico."""
+    __tablename__ = "phrases"
+    __table_args__ = (Index("ix_report_phrases_owner", "tenant_id", "owner_user_id"), SCHEMA)
+    owner_user_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
+    title: Mapped[str] = mapped_column(String(120), nullable=False)
+    shortcut: Mapped[str | None] = mapped_column(String(30))
+    modality: Mapped[str | None] = mapped_column(String(16))
+    body: Mapped[str] = mapped_column(Text, nullable=False)                 # HTML seguro (richtext)
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_by: Mapped[str] = mapped_column(String(120), nullable=False)
+
+
+class DraftRevision(TenantMixin, Base):
+    """Histórico do rascunho: cada gravação com conteúdo diferente vira uma revisão (quem, quando, o quê)."""
+    __tablename__ = "draft_revisions"
+    __table_args__ = (Index("uq_report_draft_revisions", "tenant_id", "report_id", "revision", unique=True), SCHEMA)
+    report_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("report.reports.id"), nullable=False)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    body_format: Mapped[str] = mapped_column(String(8), nullable=False, default="text")
+    author: Mapped[str] = mapped_column(String(120), nullable=False)
+    event: Mapped[str] = mapped_column(String(20), nullable=False, default="save")   # save|review_request|return

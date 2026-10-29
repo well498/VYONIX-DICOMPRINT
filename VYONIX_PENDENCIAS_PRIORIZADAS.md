@@ -9,10 +9,10 @@ Requisitos essenciais e melhorias opcionais estão separados: P0/P1 são essenci
 
 | ID | Pendência | Módulo | Prior. |
 |---|---|---|---|
-| NI-01 | Editor de laudo com formatação (negrito, listas, tabelas) e saída segura no PDF | Editor | P1 |
-| NI-02 | Frases rápidas, presets e textos básicos por médico/modalidade | Editor | P2 |
-| NI-03 | Modelos pessoais do médico (com permissão) | Cadastro médico | P2 |
-| NI-04 | Revisão de laudo (segunda leitura) | Telelaudo | P2 |
+| NI-01 | Editor de laudo com formatação (negrito, listas, tabelas) e saída segura no PDF — **implementado 29/10** (`test_report_editor.py`, e2e); falta avaliação prática | Editor | P1 |
+| NI-02 | Frases rápidas, presets e textos básicos por médico/modalidade — **implementado 29/10** (pessoais e da instituição, atalhos, por modalidade) | Editor | P2 |
+| NI-03 | Modelos pessoais do médico (com permissão) — **implementado 29/10** (`report.templates.own`) | Cadastro médico | P2 |
+| NI-04 | Revisão de laudo (segunda leitura) — **implementado 29/10** (`report.review`, histórico do rascunho, autor × liberador na versão) | Telelaudo | P2 |
 | NI-05 | Cadastro de convênios | RIS | P2 |
 | NI-06 | Receptor HL7 v2 ADT/ORM (MLLP) | RIS | P2 |
 | NI-07 | Comparação lado a lado no Viewer (protocolo de exibição com exame anterior) | Viewer | P2 |
