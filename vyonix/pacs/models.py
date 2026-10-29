@@ -188,3 +188,17 @@ class PacsForwardJob(TenantMixin, Base):
     last_error: Mapped[str | None] = mapped_column(String(300))
     done_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     requested_by: Mapped[str] = mapped_column(String(120), nullable=False)
+
+
+class PacsEdgeSync(TenantMixin, Base):
+    """Fila de sincronização edge → central (protótipo ADR-0014, desabilitado): uma linha por instância local."""
+    __tablename__ = "edge_sync"
+    __table_args__ = (Index("uq_pacs_edge_sync_instance", "tenant_id", "instance_id", unique=True),
+                      Index("ix_pacs_edge_sync_due", "tenant_id", "status", "next_attempt_at"), SCHEMA)
+    instance_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+    status: Mapped[str] = mapped_column(String(12), nullable=False, default="queued")  # queued|synced|conflict|integrity
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    next_attempt_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    last_error: Mapped[str | None] = mapped_column(String(300))
+    remote_sha256: Mapped[str | None] = mapped_column(String(64))
+    synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

@@ -118,3 +118,6 @@ As evidências citadas são reproduzíveis: suítes de teste no repositório e e
 | REP-PROD-02 | Permissão independente para valores financeiros; sem acesso à produção de outros sem autorização | Implementado | `report.production.*` | `test_report_production.py` |
 | PAC-PRIORS-01 | Exames anteriores disponíveis para comparação | Parcial (índice local; pré-busca remota planejada) | `timeline.priors` | `test_ris_workflow.py` |
 | MON-DISCO-01 | Controle de espaço em disco com alerta | Implementado | `monitoring.disk_check` | `test_monitoring.py` |
+| INS-01 | Inicialização confiável e acesso web (localhost e IP da rede), diagnóstico de inicialização | Implementado (Windows real no CI; reboot real e Windows de mesa não executados) | `vyonix_deploy/startup.py`, `vyonix/api/https_server.py`, firewall Público/LocalSubnet | `test_startup.py`, `test_https_server.py`, CI 2.10 |
+| PAC-COMMIT-01 | Storage Commitment (SCP) | Implementado | `vyonix/pacs/commitment.py` | `test_pacs_commitment.py` |
+| PAC-HIB-01 | Arquitetura híbrida local + nuvem | Protótipo (desabilitado; ADR-0014; BLK-16) | `vyonix/pacs/edge_sync.py` | `test_edge_sync.py` |

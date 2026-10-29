@@ -363,3 +363,12 @@ módulos afetados reexecutados depois de cada mudança (PACS, Q/R, RIS, laudos, 
 DICOM Print, configuração do Orthanc instalada pelo DEPLOY. Nenhuma exclusão automática de estudos.
 
 **Próxima tarefa programada:** ver `VYONIX_NEXT_ACTION.md`.
+
+## Sessão de 2026-10-29 — inicialização/acesso web, PACS corporativo e arquitetura híbrida
+
+| Commit | Entrega |
+|---|---|
+| `077257d` | Encaminhamento de estudos (regras, envio manual, novas tentativas, SHA-256) — `test_pacs_forward.py` |
+| `d573da4` | Storage Commitment Push Model SCP — `test_pacs_commitment.py` |
+| `0e0a39a` | **Correção definitiva da inicialização e do acesso web**: diagnóstico de inicialização sem administrador, atalho que verifica antes de abrir, firewall do perfil Público só para a sub-rede local, http:// redirecionado para https://, verificação do acesso no assistente; CI Windows 2.10 — `test_startup.py`, `test_https_server.py` |
+| (seguinte) | Protótipo Edge Sync (ADR-0014; desabilitado; central simulado) — `test_edge_sync.py`; migração `pacs_0008` (aditiva) |
