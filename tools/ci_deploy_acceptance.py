@@ -330,6 +330,90 @@ def main() -> int:
         d = health(8444)
         return json.dumps(d)
 
+    # ---------------------------------------------------------------- 2.10 inicialização e acesso web (28/10/2026)
+    @check("2.10", "Diagnóstico de inicialização sem administrador: tudo funcionando; endereços localhost e IP da rede")
+    def _():
+        out_json = OUT / "verificar-restrito.json"
+        out_json.unlink(missing_ok=True)
+        cmd = f'cmd /c ""{DEPLOY_EXE}" verificar --porta 8444 --json > "{out_json}""'
+        subprocess.Popen(["runas", "/trustlevel:0x20000", cmd])
+        end = time.monotonic() + 180
+        while time.monotonic() < end:
+            if out_json.exists() and out_json.stat().st_size > 50:
+                try:
+                    r = json.loads(out_json.read_text(encoding="utf-8", errors="replace"))
+                    break
+                except ValueError:
+                    pass
+            time.sleep(2)
+        else:
+            raise AssertionError("verificar (token restrito) não produziu resultado")
+        bad = [c for c in r["checks"] if c["status"] == "fail"]
+        assert r["web_ok"] and not bad, bad or r
+        assert any(u.startswith("https://localhost:8444") for u in r["urls"]), r["urls"]
+        lan = [u for u in r["urls"] if "localhost" not in u]
+        assert lan, f"nenhum IP da rede respondeu: {r['checks']}"
+        state["lan_url"] = lan[0]
+        return f"status {r['status']}; endereços {r['urls']}; " + "; ".join(f"{c['id']}={c['status']}" for c in r["checks"])
+
+    @check("2.10", "Acesso pelo IP da rede por HTTPS e http:// na mesma porta redirecionado para https://")
+    def _():
+        import http.client
+        from urllib.parse import urlparse
+        u = urlparse(state["lan_url"])
+        ctx = ssl._create_unverified_context()
+        c = http.client.HTTPSConnection(u.hostname, u.port, context=ctx, timeout=15)
+        c.request("GET", "/api/v1/health")
+        r = c.getresponse()
+        body = json.loads(r.read())
+        assert r.status == 200 and body["status"] == "ok" and body["database"], body
+        c.request("GET", "/")
+        r = c.getresponse()
+        page = r.read()
+        assert r.status == 200 and b"<html" in page[:2000].lower(), r.status
+        h = http.client.HTTPConnection(u.hostname, u.port, timeout=15)
+        h.request("GET", "/pacientes")
+        r = h.getresponse()
+        assert r.status == 301 and r.getheader("Location") == f"https://{u.hostname}:{u.port}/pacientes", \
+            (r.status, r.getheader("Location"))
+        return f"https://{u.hostname}:{u.port}/ responde (API e interface); http:// → {r.getheader('Location')}"
+
+    @check("2.10", "Firewall: regra do perfil Público só para a sub-rede local (rede nova ou VM classificada como pública)")
+    def _():
+        r = powershell(r"""$r = Get-NetFirewallRule -Name 'VYONIX-core-lan-8444'; $af = $r | Get-NetFirewallAddressFilter
+$pf = $r | Get-NetFirewallPortFilter
+[pscustomobject]@{ profile=[string]$r.Profile; remote=@($af.RemoteAddress); port=[string]$pf.LocalPort; enabled=[string]$r.Enabled }""")
+        assert r["profile"] == "Public" and r["port"] == "8444" and r["enabled"] == "True", r
+        assert [x.lower() for x in as_list(r["remote"])] == ["localsubnet"], r
+        return json.dumps(r)
+
+    @check("2.10", "Banco de dados derrubado (processo encerrado à força): recuperado sozinho e o sistema volta a responder")
+    def _():
+        before = query_service("VyonixCore")["pid"]
+        sh(["taskkill", "/F", "/T", "/IM", "postgres.exe"], ok=None)
+        time.sleep(3)
+        p = deploy("verificar", "--porta", "8444", "--json", ok=(0, 1))
+        during = json.loads(p.stdout)
+        d = health(8444, timeout=180)
+        after = deploy("verificar", "--porta", "8444", "--json", ok=(0,))
+        assert json.loads(after.stdout)["web_ok"]
+        return (f"durante a queda: {[(c['id'], c['status']) for c in during['checks'] if c['status'] != 'ok']}; "
+                f"depois: health {d['status']}/banco {d['database']}; Core PID {before} → {query_service('VyonixCore')['pid']}")
+
+    @check("2.10", "Ordem de inicialização: com tudo parado, iniciar o Core sobe o banco antes (dependência) e o acesso volta")
+    def _():
+        powershell("Stop-Service VyonixWorker, VyonixCore -Force; Stop-Service VyonixPostgreSQL -Force", as_json=False,
+                   timeout=240)
+        p = deploy("verificar", "--porta", "8444", "--json", ok=(1,))
+        down = json.loads(p.stdout)
+        assert not down["web_ok"] and any(c["id"] == "service.VyonixCore" and c["status"] == "fail"
+                                          for c in down["checks"]), down
+        powershell("Start-Service VyonixCore; Start-Service VyonixWorker", as_json=False, timeout=240)
+        health(8444, timeout=180)
+        states = {n: query_service(n)["state"] for n in ("VyonixPostgreSQL", "VyonixCore", "VyonixWorker")}
+        assert all(v == "Running" for v in states.values()), states
+        return f"parado: {[(c['id'], c['status']) for c in down['checks'] if c['status'] != 'ok'][:6]}; depois: {states}"
+
     @check("2.3", "Serviços com conta virtual, início automático, dependências e recuperação após falha")
     def _():
         out = []
@@ -376,7 +460,14 @@ $ap = $r | Get-NetFirewallApplicationFilter
     def _():
         sm = Path(os.environ["ProgramData"]) / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "VYONIX"
         names = sorted(p.name for p in sm.iterdir())
-        assert len(names) == 4, names
+        need = {"VYONIX.lnk", "VYONIX Administração.url", "VYONIX Diagnóstico.lnk", "VYONIX Relatórios Técnicos.lnk",
+                "VYONIX - Assistente de instalacao.lnk", "VYONIX - Verificar funcionamento.lnk"}
+        assert need <= set(names) and "VYONIX.url" not in names, names
+        args = powershell("(New-Object -ComObject WScript.Shell).CreateShortcut($A.p).Arguments",
+                          {"p": str(sm / "VYONIX.lnk")})
+        assert args == "abrir --porta 8444", args
+        runas = (sm / "VYONIX Diagnóstico.lnk").read_bytes()[0x15] & 0x20
+        assert runas, "atalho do diagnóstico sem 'executar como administrador'"
         pdf, man = reports_of(state["install_run"])
         m = json.loads(man.read_text(encoding="utf-8"))
         assert any("autoassinado" in x for x in m["future_interventions"]), m["future_interventions"]
@@ -497,6 +588,9 @@ $ap = $r | Get-NetFirewallApplicationFilter
             ids = {r["Name"] if isinstance(r, dict) else r for r in as_list(powershell(
                 "@(Get-NetFirewallRule -Name 'VYONIX-core-https-*' | ForEach-Object { $_.Name })"))}
             assert ids == {f"VYONIX-core-https-{new}"}, ids
+            lan = {r["Name"] if isinstance(r, dict) else r for r in as_list(powershell(
+                "@(Get-NetFirewallRule -Name 'VYONIX-core-lan-*' | ForEach-Object { $_.Name })"))}
+            assert lan == {f"VYONIX-core-lan-{new}"}, lan
             d2 = diagnose()
             assert not d2["problems"], [p["id"] for p in d2["problems"]]
             state["port"] = new
@@ -712,7 +806,7 @@ $ap = $r | Get-NetFirewallApplicationFilter
         time.sleep(5)
         for n in ("VyonixCore", "VyonixWorker", "VyonixPostgreSQL"):
             assert query_service(n) is None, f"{n} ainda registrado"
-        left = as_list(powershell("@(Get-NetFirewallRule -Name 'VYONIX-core-https-*' -ErrorAction SilentlyContinue | "
+        left = as_list(powershell("@(Get-NetFirewallRule -Name 'VYONIX-core-*' -ErrorAction SilentlyContinue | "
                                   "ForEach-Object { $_.Name })"))
         assert not left, left
         assert (PATHS.pg_data / "PG_VERSION").exists() and (PATHS.data_dir / "config.json").exists(), "dados removidos"

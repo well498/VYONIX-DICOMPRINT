@@ -184,7 +184,25 @@ async function progress(job) {
       `<tr><td>${esc(s.title)}</td><td>${esc(STATUS[s.status] || s.status)}</td><td class="sub">${esc(s.verify_msg || s.error || "")}</td></tr>`).join("")}</tbody></table>
     ${j.status !== "running" ? `<div class="actions"><a class="primary" href="/api/report/${esc(j.run_id)}"><button class="primary">Baixar relatório PDF</button></a><button class="ghost" id="back">Início</button></div>` : ""}`;
   if (j.status === "running") setTimeout(() => progress(job), 1500);
-  else $("#back").onclick = home;
+  else {
+    $("#back").onclick = home;
+    if (j.status === "succeeded") access();
+  }
+}
+
+/** Depois de aplicar: confere de verdade se o sistema abre (localhost e IPs da rede) e mostra os endereços. */
+async function access() {
+  const box = document.createElement("section");
+  box.innerHTML = `<h2>Acesso ao VYONIX</h2><p class="sub">Verificando se o sistema responde…</p>`;
+  app.appendChild(box);
+  try {
+    const r = await api("/api/access");
+    const label = { ok: "OK", warn: "Atenção", fail: "Falha", info: "Info" };
+    box.innerHTML = `<h2>Acesso ao VYONIX</h2>
+      ${r.web_ok ? `<div class="notice">Sistema funcionando. Endereços (use <strong>https://</strong>): ${r.urls.map((u) => `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(u)}</a>`).join(" · ")}</div>`
+        : `<div class="notice err">O sistema ainda não responde. Veja abaixo o que falhou.</div>`}
+      <table><tbody>${r.checks.map((c) => `<tr><td>${esc(label[c.status] || c.status)}</td><td><strong>${esc(c.title)}</strong><div class="sub">${esc(c.detail)}${c.fix && c.status !== "ok" ? ` — ${esc(c.fix)}` : ""}</div></td></tr>`).join("")}</tbody></table>`;
+  } catch (e) { box.innerHTML = `<h2>Acesso ao VYONIX</h2><div class="notice err">${esc(String(e.message || e))}</div>`; }
 }
 
 function error(e, replace = true) {

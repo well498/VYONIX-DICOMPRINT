@@ -61,20 +61,30 @@ SetupLogging=yes
 [Languages]
 Name: "ptbr"; MessagesFile: "compiler:Languages\BrazilianPortuguese.isl"
 
+[Messages]
+FinishedHeadingLabel=Arquivos do VYONIX copiados
+FinishedLabel=Falta um passo: o assistente do VYONIX DEPLOY configura o banco, os serviços e o acesso pelo navegador. Deixe marcado "Abrir o assistente" e conclua. Sem aprovar o plano no assistente o sistema não funciona. Depois, use Menu Iniciar → VYONIX → "VYONIX - Verificar funcionamento".
+
 [InstallDelete]
 Type: filesandordirs; Name: "{app}\_internal"
 
 [Files]
 Source: "{#DistDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "common\*"; DestDir: "{app}"; Flags: ignoreversion
 #ifdef Homolog
 Source: "homologacao\*"; DestDir: "{app}"; Flags: ignoreversion
+#endif
 
 [Icons]
+; Disponíveis já antes da configuração: o assistente (administrador) e a verificação de funcionamento (sem
+; administrador), que abre o sistema ou explica o que falhou.
+Name: "{commonprograms}\VYONIX\VYONIX - Assistente de instalacao"; Filename: "{app}\Assistente_Instalacao.cmd"; WorkingDir: "{app}"
+Name: "{commonprograms}\VYONIX\VYONIX - Verificar funcionamento"; Filename: "{app}\vyonix-deploy.exe"; Parameters: "abrir --porta 8444"; WorkingDir: "{app}"
+#ifdef Homolog
 Name: "{commonprograms}\VYONIX\VYONIX Homologacao - Preparar modulos"; Filename: "{app}\Preparar_Homologacao.cmd"; WorkingDir: "{app}"
 Name: "{commonprograms}\VYONIX\VYONIX Homologacao - Enviar exame simulado"; Filename: "{app}\Enviar_Exame_Simulado.cmd"; WorkingDir: "{app}"
 Name: "{commonprograms}\VYONIX\LEIA-ME Homologacao"; Filename: "{app}\LEIA-ME_HOMOLOGACAO.txt"
-Name: "{commonprograms}\VYONIX\VYONIX - Abrir sistema"; Filename: "{app}\Abrir_VYONIX.url"
-Name: "{commonprograms}\VYONIX\VYONIX - Assistente de instalacao"; Filename: "{app}\Assistente_Instalacao.cmd"; WorkingDir: "{app}"
+Name: "{commonprograms}\VYONIX\VYONIX - Abrir sistema"; Filename: "{app}\vyonix-deploy.exe"; Parameters: "abrir --porta 8444"; WorkingDir: "{app}"
 Name: "{commonprograms}\VYONIX\VYONIX - Diagnostico"; Filename: "{app}\Diagnostico.cmd"; WorkingDir: "{app}"
 #endif
 

@@ -154,7 +154,8 @@ class ShortcutsRemovedStep(ShortcutsStep):
         return not self.observe(ctx)["present"]
 
     def apply(self, ctx: Context) -> None:
-        for n in self.items:
+        from vyonix_deploy.steps.shortcuts import LEGACY
+        for n in (*self.items, *LEGACY):
             (self.folder / n).unlink(missing_ok=True)
         try:
             self.folder.rmdir()
@@ -171,6 +172,9 @@ def uninstall_steps(ctx: Context) -> list[Step]:
             RuleRemovedStep("core-https", "Core HTTPS", ctx.cfg.https_port),
             RuleRemovedStep("pacs-dicom", "PACS DICOM", pacs.DICOM_PORT),
             RuleRemovedStep("pacs-qr", "PACS consulta DICOM", pacs.QR_PORT),
+            RuleRemovedStep("core-lan", "Core HTTPS (rede local, perfil Público)", ctx.cfg.https_port),
+            RuleRemovedStep("pacs-dicom-lan", "PACS DICOM (rede local, perfil Público)", pacs.DICOM_PORT),
+            RuleRemovedStep("pacs-qr-lan", "PACS consulta DICOM (rede local, perfil Público)", pacs.QR_PORT),
             ShortcutsRemovedStep(ctx.cfg.https_port, p.install_dir / "vyonix-deploy.exe", p.reports)]
 
 

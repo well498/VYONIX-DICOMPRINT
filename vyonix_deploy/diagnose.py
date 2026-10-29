@@ -60,7 +60,7 @@ def diagnose(ctx: Context) -> dict[str, Any]:
         problems.append(Problem(f"port.{ctx.cfg.https_port}", "erro", f"Porta {ctx.cfg.https_port} ocupada",
                                 f"Em uso por {own.get('process')} (PID {own.get('pid')}); o VYONIX Core não consegue "
                                 "atender.", f"Mudar o HTTPS do VYONIX para a porta livre {new} (firewall, configuração "
-                                "e atalhos acompanham).", ["firewall.core-https", "core.database",
+                                "e atalhos acompanham).", ["firewall.core-https", "firewall.core-lan", "core.database",
                                                            "running.VyonixCore", "shortcuts"],
                                 config_change={"https_port": new}))
     # certificado

@@ -149,6 +149,11 @@ def cmd_serve(a) -> int:
     bind = a.bind or cfg.bind
     if a.insecure_http and bind not in ("127.0.0.1", "localhost"):
         raise SystemExit("HTTP sem TLS só é permitido em 127.0.0.1 (testes).")
+    if kw:
+        from vyonix.api.https_server import make_server
+        make_server(app, host=bind, port=a.port or cfg.port, certfile=kw["ssl_certfile"], keyfile=kw["ssl_keyfile"],
+                    log_level="info", proxy_headers=False, server_header=False).run()
+        return 0
     uvicorn.run(app, host=bind, port=a.port or cfg.port, log_level="info", proxy_headers=False,
                 server_header=False, **kw)
     return 0

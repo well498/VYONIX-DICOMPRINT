@@ -110,6 +110,10 @@ def serve(d, *, port: int = 0, open_browser: bool = True, start: str | None = No
                 return self._send(200, (HERE / "index.html").read_bytes(), "text/html; charset=utf-8")
             if u.path == "/app.js":
                 return self._send(200, (HERE / "app.js").read_bytes(), "text/javascript; charset=utf-8")
+            if u.path == "/api/access":
+                from vyonix_deploy import startup
+                cfg = st.d.saved_config() or DeployConfig()
+                return self._send(200, startup.run_checks(cfg.https_port, pg_port=cfg.pg_port).as_dict())
             if u.path == "/api/state":
                 cfg = st.d.saved_config()
                 return self._send(200, {"version": __version__, "installed": cfg is not None,

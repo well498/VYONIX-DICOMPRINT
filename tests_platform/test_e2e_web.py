@@ -44,7 +44,8 @@ def free_port() -> int:
 class WebE2E(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        import uvicorn
+        import uvicorn  # noqa: F401
+        from vyonix.api.https_server import make_server
         from tests.licensing_support import Computer, make_manager
         from tests_platform.test_licensing import Base
         from vyonix.api.app import create_app
@@ -66,8 +67,8 @@ class WebE2E(unittest.TestCase):
         cls.plat = plat
         cert, key = ensure_tls(cfg)
         cls.port = free_port()
-        cls.server = uvicorn.Server(uvicorn.Config(create_app(plat, web_dist=DIST), host="127.0.0.1", port=cls.port,
-                                                   ssl_certfile=cert, ssl_keyfile=key, log_level="warning"))
+        cls.server = make_server(create_app(plat, web_dist=DIST), host="127.0.0.1", port=cls.port,
+                                 certfile=cert, keyfile=key, log_level="warning")
         cls.thread = threading.Thread(target=cls.server.run, daemon=True)
         cls.thread.start()
         for _ in range(100):
@@ -107,6 +108,19 @@ class WebE2E(unittest.TestCase):
         pg.get_by_label("Usuário").fill(user)
         pg.get_by_label("Senha").fill(pw)
         pg.get_by_role("button", name="Entrar").click()
+
+    def test_0_http_on_https_port_redirects(self):
+        """Quem digita http:// na porta do VYONIX vai para https:// (relato da homologação de 28/10/2026)."""
+        import http.client
+        from playwright.sync_api import expect
+        h = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)
+        h.request("GET", "/api/v1/health?x=1", headers={"Host": f"192.168.0.10:{self.port}"})
+        r = h.getresponse()
+        self.assertEqual((r.status, r.getheader("Location")), (301, f"https://192.168.0.10:{self.port}/api/v1/health?x=1"))
+        pg = self.page()
+        pg.goto(f"http://127.0.0.1:{self.port}/")
+        self.assertTrue(pg.url.startswith(f"https://127.0.0.1:{self.port}/"), pg.url)
+        expect(pg.get_by_label("Usuário")).to_be_visible()
 
     def test_1_admin_flow(self):
         from playwright.sync_api import expect

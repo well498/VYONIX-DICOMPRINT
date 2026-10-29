@@ -27,7 +27,8 @@ def setUpModule():
 class CloudE2E(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        import uvicorn
+        import uvicorn  # noqa: F401
+        from vyonix.api.https_server import make_server
         from tests.licensing_support import Computer
         from tests_platform.test_licensing import Base
         from vyonix.api.app import create_app
@@ -47,8 +48,8 @@ class CloudE2E(unittest.TestCase):
         plat = build(cfg, licensing=h.licensing(Computer()), db=db)
         cert, key = ensure_tls(cfg)
         cls.port = free_port()
-        cls.server = uvicorn.Server(uvicorn.Config(create_app(plat, web_dist=DIST), host="127.0.0.1", port=cls.port,
-                                                   ssl_certfile=cert, ssl_keyfile=key, log_level="warning"))
+        cls.server = make_server(create_app(plat, web_dist=DIST), host="127.0.0.1", port=cls.port,
+                                 certfile=cert, keyfile=key, log_level="warning")
         cls.thread = threading.Thread(target=cls.server.run, daemon=True)
         cls.thread.start()
         for _ in range(100):

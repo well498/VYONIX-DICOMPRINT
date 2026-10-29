@@ -35,7 +35,8 @@ def setUpModule():
 class Roteiro(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        import uvicorn
+        import uvicorn  # noqa: F401
+        from vyonix.api.https_server import make_server
         from pynetdicom import AE, AllStoragePresentationContexts, evt
         from tests.licensing_support import Computer
         from tests_platform.test_licensing import Base
@@ -80,8 +81,8 @@ class Roteiro(unittest.TestCase):
         cls.scp = ae.start_server(("127.0.0.1", cls.dicom_port), block=False, evt_handlers=[(evt.EVT_C_STORE, store)])
         cert, key = ensure_tls(cfg)
         cls.port = free_port()
-        cls.server = uvicorn.Server(uvicorn.Config(create_app(plat, web_dist=DIST), host="127.0.0.1", port=cls.port,
-                                                   ssl_certfile=cert, ssl_keyfile=key, log_level="warning"))
+        cls.server = make_server(create_app(plat, web_dist=DIST), host="127.0.0.1", port=cls.port,
+                                 certfile=cert, keyfile=key, log_level="warning")
         cls.thread = threading.Thread(target=cls.server.run, daemon=True)
         cls.thread.start()
         for _ in range(100):

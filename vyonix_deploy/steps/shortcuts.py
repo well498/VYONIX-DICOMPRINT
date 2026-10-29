@@ -1,5 +1,9 @@
 """Atalhos no menu Iniciar (todos os usuários): VYONIX, VYONIX Administração, VYONIX Diagnóstico e
-VYONIX Relatórios Técnicos."""
+VYONIX Relatórios Técnicos.
+
+O atalho **VYONIX** executa ``vyonix-deploy abrir``: confere se o sistema está funcionando e abre o navegador; se não
+estiver, abre o diagnóstico de inicialização com o que falhou e como resolver (antes era um link direto, que só
+mostrava "não foi possível acessar o site")."""
 
 from __future__ import annotations
 
@@ -8,6 +12,9 @@ from pathlib import Path
 
 from vyonix_deploy.engine import Context, Step
 from vyonix_deploy.sysrun import IS_WINDOWS, powershell
+
+
+LEGACY = ("VYONIX.url",)          # atalhos de versões anteriores substituídos
 
 
 def start_menu_dir() -> Path:
@@ -24,9 +31,9 @@ class ShortcutsStep(Step):
         self.folder = folder or start_menu_dir()
         base = f"https://localhost:{https_port}/"
         self.items = {
-            "VYONIX.url": {"url": base},
+            "VYONIX.lnk": {"target": str(deploy_exe), "args": f"abrir --porta {https_port}"},
             "VYONIX Administração.url": {"url": base + "#/configuracoes"},
-            "VYONIX Diagnóstico.lnk": {"target": str(deploy_exe), "args": "wizard --diagnose"},
+            "VYONIX Diagnóstico.lnk": {"target": str(deploy_exe), "args": "wizard --diagnose", "admin": True},
             "VYONIX Relatórios Técnicos.lnk": {"target": str(reports_dir), "args": ""},
         }
 
@@ -52,16 +59,20 @@ class ShortcutsStep(Step):
 
     def apply(self, ctx: Context) -> None:
         self.folder.mkdir(parents=True, exist_ok=True)
+        for old in LEGACY:
+            (self.folder / old).unlink(missing_ok=True)
         lnks = []
         for n, spec in self.items.items():
             p = self.folder / n
             if "url" in spec:
                 p.write_text(f"[InternetShortcut]\r\nURL={spec['url']}\r\n", encoding="utf-8")
             else:
-                lnks.append({"path": str(p), "target": spec["target"], "args": spec["args"]})
+                lnks.append({"path": str(p), "target": spec["target"], "args": spec["args"],
+                             "admin": bool(spec.get("admin"))})
         if lnks and IS_WINDOWS:
             powershell(r"""$sh = New-Object -ComObject WScript.Shell
-foreach ($l in $A.links) { $s = $sh.CreateShortcut($l.path); $s.TargetPath = $l.target; $s.Arguments = $l.args; $s.Save() }""",
+foreach ($l in $A.links) { $s = $sh.CreateShortcut($l.path); $s.TargetPath = $l.target; $s.Arguments = $l.args; $s.Save()
+  if ($l.admin) { $b = [IO.File]::ReadAllBytes($l.path); $b[0x15] = $b[0x15] -bor 0x20; [IO.File]::WriteAllBytes($l.path, $b) } }""",
                        {"links": lnks}, as_json=False)
         elif lnks:
             for spec in lnks:

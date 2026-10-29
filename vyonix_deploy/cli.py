@@ -138,6 +138,35 @@ def cmd_run(d: Deploy, a) -> int:
     return 0 if r["status"] == "succeeded" else 1
 
 
+def cmd_startup(a) -> int:
+    """``abrir``: sistema funcionando → navegador em https://localhost:PORTA; senão relatório HTML com o que falhou.
+    ``verificar``: só o diagnóstico (texto, JSON ou HTML)."""
+    import os
+    import tempfile
+    from vyonix_deploy import startup
+    if a.cmd == "abrir":
+        _print("Verificando o VYONIX…")
+    res = startup.wait_until_ready(a.porta, pg_port=a.porta_banco, timeout=a.esperar or (90 if a.cmd == "abrir" else 0))
+    if a.json:
+        _print(startup.as_json(res))
+    else:
+        _print(startup.to_text(res))
+    html_path = a.html
+    if a.cmd == "abrir" and not res.web_ok and not html_path:
+        html_path = os.path.join(tempfile.gettempdir(), "VYONIX-diagnostico-inicializacao.html")
+    if html_path:
+        with open(html_path, "w", encoding="utf-8") as f:
+            f.write(startup.render_html(res))
+    if a.cmd == "abrir" and not a.sem_navegador:
+        from vyonix_deploy.wizard import open_browser_url
+        if res.web_ok:
+            open_browser_url(f"https://localhost:{a.porta}/")
+        else:
+            import webbrowser
+            webbrowser.open("file:///" + os.path.abspath(html_path).replace("\\", "/"))
+    return 0 if res.web_ok else 1
+
+
 def main(argv: list[str] | None = None) -> int:
     for s in (sys.stdout, sys.stderr):              # saída sempre em UTF-8 (redirecionada por scripts/CI)
         try:
@@ -169,6 +198,15 @@ def main(argv: list[str] | None = None) -> int:
     w.add_argument("--diagnose", action="store_true")
     w.add_argument("--no-browser", action="store_true")
     w.add_argument("--port", type=int, default=0)
+    for name, hlp in (("abrir", "abre o VYONIX no navegador ou, se não estiver funcionando, o diagnóstico"),
+                      ("verificar", "diagnóstico de inicialização (somente leitura, sem administrador)")):
+        v = sub.add_parser(name, help=hlp)
+        v.add_argument("--porta", type=int, default=8444)
+        v.add_argument("--porta-banco", type=int, default=5544)
+        v.add_argument("--esperar", type=int, default=0, help="segundos para aguardar o sistema iniciar")
+        v.add_argument("--json", action="store_true")
+        v.add_argument("--html")
+        v.add_argument("--sem-navegador", action="store_true")
     m = sub.add_parser("activate-module")
     m.add_argument("module")
     m.add_argument("--approve-all", action="store_true")
@@ -189,6 +227,8 @@ def main(argv: list[str] | None = None) -> int:
         else:
             _print(txt)
         return 0
+    if a.cmd in ("abrir", "verificar"):            # sem administrador e sem abrir o banco do DEPLOY
+        return cmd_startup(a)
     d = Deploy(log=_log(silent))
     try:
         if a.cmd in KINDS:

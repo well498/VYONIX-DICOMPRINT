@@ -1,5 +1,7 @@
 """Regras do Firewall do Windows com nome próprio (``VYONIX - <serviço> - <porta>``), por programa e
-porta, nos perfis privado e de domínio e, se informado, só para as origens indicadas.
+porta, nos perfis privado e de domínio e, se informado, só para as origens indicadas. Regras complementares para o
+perfil **Público** valem só para a sub-rede local (``LocalSubnet``): o Windows classifica redes novas — e muitas
+máquinas virtuais — como públicas, o que bloqueava o acesso pela rede local.
 
 Nunca desliga o firewall e nunca altera nem remove regras que não sejam do VYONIX (a regra é
 localizada pelo nome interno, que sempre começa com ``VYONIX-``)."""
@@ -21,7 +23,7 @@ $pf = $r | Get-NetFirewallPortFilter; $af = $r | Get-NetFirewallAddressFilter; $
 PS_SET = r"""
 Get-NetFirewallRule -Name $A.id -ErrorAction SilentlyContinue | Remove-NetFirewallRule
 $p = @{ Name=$A.id; DisplayName=$A.name; Group='VYONIX'; Direction='Inbound'; Action='Allow'; Enabled='True';
-        Profile=@('Domain','Private'); Protocol='TCP'; LocalPort=[string]$A.port; Description=$A.description }
+        Profile=@($A.profiles); Protocol='TCP'; LocalPort=[string]$A.port; Description=$A.description }
 if ($A.program) { $p.Program = $A.program }
 if ($A.remote -and $A.remote.Count -gt 0) { $p.RemoteAddress = @($A.remote) }
 New-NetFirewallRule @p | Out-Null
@@ -31,7 +33,9 @@ New-NetFirewallRule @p | Out-Null
 class FirewallRuleStep(Step):
     category = "firewall"
 
-    def __init__(self, key: str, service: str, port: int, program: str | None, remote: list[str] | None = None) -> None:
+    def __init__(self, key: str, service: str, port: int, program: str | None, remote: list[str] | None = None,
+                 profiles: tuple[str, ...] = ("Domain", "Private")) -> None:
+        self.profiles = tuple(profiles)
         self.rule_id = f"VYONIX-{key}-{port}"
         self.name = f"VYONIX - {service} - {port}"
         self.id = f"firewall.{key}"
@@ -42,7 +46,7 @@ class FirewallRuleStep(Step):
 
     def desired(self, ctx: Context) -> dict:
         return {"id": self.rule_id, "name": self.name, "direction": "Inbound", "action": "Allow", "enabled": "True",
-                "profile": "Domain, Private", "protocol": "TCP", "port": str(self.port),
+                "profile": ", ".join(self.profiles), "protocol": "TCP", "port": str(self.port),
                 "remote": self.remote or ["Any"], "program": self.program or "Any"}
 
     def observe(self, ctx: Context) -> dict:
@@ -56,7 +60,10 @@ class FirewallRuleStep(Step):
 
     def describe(self, ctx: Context) -> dict:
         cur = self.observe(ctx)
-        origin = ", ".join(self.remote) if self.remote else "qualquer origem das redes privada e de domínio"
+        if self.remote == ["LocalSubnet"]:
+            origin = f"a sub-rede local (perfil {', '.join(self.profiles)})"
+        else:
+            origin = ", ".join(self.remote) if self.remote else "qualquer origem das redes privada e de domínio"
         return {"current": cur, "proposed": self.desired(ctx),
                 "impact": f"Libera TCP {self.port} de entrada para {origin}. O firewall continua ligado.",
                 "undo": "Remove a regra (ou restaura a versão anterior dela)."}
@@ -69,7 +76,7 @@ class FirewallRuleStep(Step):
         prog_ok = (cur.get("program") or "Any").lower() == (want["program"] or "Any").lower()
         remote_ok = sorted(x.lower() for x in cur["remote"]) == sorted(x.lower() for x in want["remote"])
         return (cur["enabled"] == "True" and cur["direction"] == "Inbound" and cur["action"] == "Allow"
-                and set(cur["profile"].replace(" ", "").split(",")) == {"Domain", "Private"}
+                and set(cur["profile"].replace(" ", "").split(",")) == set(self.profiles)
                 and cur["protocol"] == "TCP" and cur["port"] == str(self.port) and prog_ok and remote_ok)
 
     def _siblings(self) -> list[dict]:
@@ -93,13 +100,15 @@ class FirewallRuleStep(Step):
         for s in self._siblings():
             powershell("Remove-NetFirewallRule -Name $A.id", {"id": s["id"]}, as_json=False)
         powershell(PS_SET, {"id": self.rule_id, "name": self.name, "port": self.port, "program": self.program,
-                            "remote": self.remote, "description": "Criada pelo VYONIX DEPLOY."}, as_json=False)
+                            "remote": self.remote, "profiles": list(self.profiles),
+                            "description": "Criada pelo VYONIX DEPLOY."}, as_json=False)
 
     def rollback(self, ctx: Context, before: dict) -> None:
         for s in before.get("siblings") or []:
             powershell(PS_SET, {"id": s["id"], "name": s["name"], "port": s["port"],
                                 "program": s["program"] if (s.get("program") or "Any") != "Any" else None,
                                 "remote": [x for x in s.get("remote") or [] if x.lower() != "any"],
+                                "profiles": list(self.profiles),
                                 "description": "Restaurada pelo VYONIX DEPLOY."}, as_json=False)
         if not before.get("exists"):
             powershell("Get-NetFirewallRule -Name $A.id -ErrorAction SilentlyContinue | Remove-NetFirewallRule",
@@ -107,9 +116,10 @@ class FirewallRuleStep(Step):
             return
         remote = [x for x in before.get("remote") or [] if x.lower() != "any"]
         program = before.get("program") if (before.get("program") or "Any") != "Any" else None
+        profiles = [x for x in (before.get("profile") or "").replace(" ", "").split(",") if x] or list(self.profiles)
         powershell(PS_SET, {"id": self.rule_id, "name": before.get("name") or self.name, "port": before.get("port"),
-                            "program": program, "remote": remote, "description": "Restaurada pelo VYONIX DEPLOY."},
-                   as_json=False)
+                            "program": program, "remote": remote, "profiles": profiles,
+                            "description": "Restaurada pelo VYONIX DEPLOY."}, as_json=False)
 
     def how_to_check(self) -> str:
         return f'Get-NetFirewallRule -Name "{self.rule_id}" · wf.msc (grupo VYONIX)'

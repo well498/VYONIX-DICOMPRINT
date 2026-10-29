@@ -31,11 +31,12 @@
    instalado e o endereço 8444 não abre.**
 3. Menu Iniciar → **VYONIX → "VYONIX Homologacao - Preparar modulos"**. Aceite a pergunta do Windows
    (administrador). A janela mostra PACS, RIS e Laudos sendo ativados; termina com "Pronto".
-4. Menu Iniciar → **VYONIX → "VYONIX - Abrir sistema"** (ou o navegador em `https://localhost:8444` ou
-   `https://127.0.0.1:8444`). Na primeira vez, o navegador avisa que o certificado não é confiável (certificado
+4. Menu Iniciar → **VYONIX → "VYONIX - Abrir sistema"** (ou "VYONIX - Verificar funcionamento"): se o sistema
+   responde, o navegador abre; se não, abre o **diagnóstico de inicialização** dizendo o que falhou e como resolver.
+   Endereços: `https://localhost:8444` (ou `http://…`, que redireciona) e, na rede, `https://IP_DO_SERVIDOR:8444`. Na primeira vez, o navegador avisa que o certificado não é confiável (certificado
    autoassinado da instalação): **Avançado → Continuar**.
-5. Se não abrir: `https://127.0.0.1:8444/api/v1/health` deve mostrar `"status": "ok"`; em Serviços do Windows os
-   serviços **Vyonix…** devem estar "Em execução"; Menu Iniciar → **"VYONIX - Diagnostico"** mostra o estado.
+5. Se não abrir: use "VYONIX - Verificar funcionamento" (não precisa de administrador) e envie o relatório que ele
+   abre; "VYONIX - Diagnostico" (administrador) permite o reparo.
 
 ## 3. Credenciais fictícias
 

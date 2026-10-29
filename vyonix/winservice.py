@@ -59,9 +59,11 @@ class Runner:
             from vyonix.api.app import create_app
             from vyonix.cli import ensure_tls
             cert, key = ensure_tls(cfg)
-            self.server = uvicorn.Server(uvicorn.Config(create_app(plat), host=cfg.bind, port=cfg.port,
-                                                        ssl_certfile=cert, ssl_keyfile=key, log_config=None,
-                                                        server_header=False, proxy_headers=False))
+            from vyonix.api.https_server import make_server
+            # HTTPS; quem digitar http:// na mesma porta é redirecionado para https:// (relato de 28/10/2026)
+            self.server = make_server(create_app(plat), host=cfg.bind, port=cfg.port, certfile=cert, keyfile=key,
+                                      redirect=bool(cfg.extra.get("http_redirect", True)),
+                                      log_config=None, server_header=False, proxy_headers=False)
             self.thread = threading.Thread(target=self.server.run, name="vyonix-core", daemon=True)
             qr_port = cfg.extra.get("pacs_qr_port")
             if qr_port:                                    # consulta/recuperação DICOM do PACS (C-FIND/C-MOVE)

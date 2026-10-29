@@ -54,6 +54,7 @@ def install_steps(ctx: Context) -> list[Step]:
         ServiceRunningStep(pg.SERVICE, "VYONIX PostgreSQL", probe=pg.can_connect),
         core.CoreDatabaseStep(),
         FirewallRuleStep("core-https", "Core HTTPS", cfg.https_port, str(p.core_exe), cfg.firewall_sources),
+        *lan_rules(ctx, "core-lan", "Core HTTPS (rede local, perfil Público)", cfg.https_port, str(p.core_exe)),
         ServiceRunningStep(CORE_SVC, "VYONIX Core", probe=core.health, timeout=120),
         ServiceRunningStep(WORKER_SVC, "VYONIX Worker"),
     ]
@@ -67,6 +68,15 @@ def install_steps(ctx: Context) -> list[Step]:
     if cfg.network.mode == "static":
         steps.append(StaticIpStep(cfg.network))
     return steps
+
+
+def lan_rules(ctx: Context, key: str, service: str, port: int, program: str | None) -> list[Step]:
+    """Regra complementar do perfil Público só para a sub-rede local (rede nova ou máquina virtual classificada como
+    pública pelo Windows). Desligada na configuração ou com origens explícitas: a regra é removida se existir."""
+    if ctx.cfg.firewall_public_lan and not ctx.cfg.firewall_sources:
+        return [FirewallRuleStep(key, service, port, program, ["LocalSubnet"], profiles=("Public",))]
+    from vyonix_deploy.steps.update import RuleRemovedStep
+    return [RuleRemovedStep(key, service, port)]
 
 
 def build(ctx: Context, kind: str) -> list[Step]:

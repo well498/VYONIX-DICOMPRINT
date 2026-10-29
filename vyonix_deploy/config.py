@@ -48,6 +48,7 @@ class DeployConfig:
     https_port: int = 8444
     pg_port: int = 5544
     firewall_sources: list[str] = field(default_factory=list)      # vazio = rede local (perfis privado/domínio)
+    firewall_public_lan: bool = True     # também a sub-rede local quando o Windows classifica a rede como Pública
     tls_pfx: str | None = None                                      # certificado da instituição (.pfx)
     network: NetworkChoice = field(default_factory=NetworkChoice)
     modules: list[str] = field(default_factory=list)                # módulos a habilitar além do core

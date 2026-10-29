@@ -10,7 +10,8 @@ Esta instalacao e SOMENTE para testes internos com dados ficticios.
 Atalhos no Menu Iniciar > VYONIX:
   VYONIX - Assistente de instalacao   configura a instalacao (organizacao, administrador). Use uma vez, primeiro.
   VYONIX Homologacao - Preparar modulos   ativa PACS, RIS e Laudos (uma vez, como administrador)
-  VYONIX - Abrir sistema              abre https://localhost:8444 no navegador
+  VYONIX - Abrir sistema              abre o sistema; se nao estiver funcionando, mostra o diagnostico
+  VYONIX - Verificar funcionamento    diagnostico de inicializacao (nao precisa de administrador)
   VYONIX Homologacao - Enviar exame simulado   envia um estudo sintetico ao PACS local
   VYONIX - Diagnostico                verifica servicos, portas e banco (somente leitura)
 

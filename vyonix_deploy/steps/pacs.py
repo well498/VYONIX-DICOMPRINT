@@ -218,6 +218,7 @@ def engine_steps(ctx: Context) -> list[Step]:
     from vyonix_deploy.plans import WORKER_SVC
     from vyonix_deploy.steps.core import service_binpath
     from vyonix_deploy.steps.files import ADMINS, SYSTEM, AclGrantStep, AclStep, DirectoryStep
+    from vyonix_deploy.plans import lan_rules
     from vyonix_deploy.steps.firewall import FirewallRuleStep
     from vyonix_deploy.steps.services import ServiceRunningStep, ServiceStep
     svc = f"NT SERVICE\\{SERVICE}"
@@ -239,6 +240,8 @@ def engine_steps(ctx: Context) -> list[Step]:
                 [(SYSTEM, "F"), (ADMINS, "F"), (f"NT SERVICE\\{WORKER_SVC}", "M")]),
         FirewallRuleStep("pacs-dicom", "PACS DICOM", DICOM_PORT, str(binary(ctx)), ctx.cfg.firewall_sources),
         FirewallRuleStep("pacs-qr", "PACS consulta DICOM", QR_PORT, str(p.core_exe), ctx.cfg.firewall_sources),
+        *lan_rules(ctx, "pacs-dicom-lan", "PACS DICOM (rede local, perfil Público)", DICOM_PORT, str(binary(ctx))),
+        *lan_rules(ctx, "pacs-qr-lan", "PACS consulta DICOM (rede local, perfil Público)", QR_PORT, str(p.core_exe)),
         ServiceRunningStep(SERVICE, "VYONIX PACS (motor DICOM)", probe=engine_probe, timeout=120),
         CoreSettingsStep(),
     ]
