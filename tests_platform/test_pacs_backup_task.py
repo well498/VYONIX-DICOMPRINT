@@ -131,7 +131,7 @@ class WorkerWiring(unittest.TestCase):
         from pathlib import Path
         plat = build(Config(data_dir=Path(tempfile.mkdtemp(prefix="vyx-w-"))), db=db)
         names = [getattr(fn, "__name__", "") for _i, fn, _l in build_worker(plat).periodic]
-        self.assertEqual(names, ["pacs-sync", "pacs-backup", "pacs-integrity"])
+        self.assertEqual(names, ["pacs-sync", "pacs-backup", "pacs-integrity", "pacs-forward"])
 
 
 if __name__ == "__main__":
