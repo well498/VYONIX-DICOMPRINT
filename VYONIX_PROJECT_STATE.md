@@ -387,3 +387,11 @@ leitura) + `docs/homologacao/Roteiro_Validacao_P0_Instalacao.md`; CI Windows cri
 Permissões novas: `report.templates.own`, `report.phrases.own` (papel Médico), `report.phrases.manage` (modelo Gestor
 de Telelaudos), `report.review` (concedida pelo administrador). O médico mantém `report.templates.manage`.
 Assinaturas: o revisor libera sempre com a própria senha e a própria imagem autorizada; ninguém usa a assinatura de outro.
+
+### Continuação (29/10, 14h30) — aprovação do proprietário para seguir
+
+| Commit | Entrega | Testes |
+|---|---|---|
+| `1913882` | BLK-15 fase simulada: `vyonix/pacs/association.py` (lista de nós autorizados nas modalidades do Orthanc; só entradas `vyx-`) | `test_pacs_association_block.py`: cálculo/plano local OK; recusa real **só no CI** (Orthanc próprio do teste) — não validado até o CI |
+| `06e39e0` | Frases: categorias, busca, favoritas, atalho próprio (`phrase_prefs`), duplicar, campos `{{...}}`/`[[...]]`; versões com autor, revisor (no hash), liberador e resumo de alterações; modelos pessoais: exportação/recuperação com SHA-256, proposta à instituição, resumo sem conteúdo | `test_report_editor.py` 14/14; módulos de laudo + migrações + arquitetura 65/65; e2e web 9/9 |
+| (este) | BLK-01: escopo confirmado (Print e plataforma compartilham lista de chaves e `product_id`) e alternativas; avaliação de privacidade/continuidade dos modelos pessoais | documentação |
