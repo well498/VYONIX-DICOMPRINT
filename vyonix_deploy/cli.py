@@ -81,6 +81,15 @@ def _extra(kind: str, need_admin: bool, silent: bool) -> dict:
 
 def cmd_run(d: Deploy, a) -> int:
     pending = d.db.unfinished()
+    if pending and not a.plan_only and (a.kind == "uninstall" or pending["kind"] != a.kind):
+        # Execução interrompida de outro tipo (ex.: instalação que caiu no meio): retomá-la travaria a desinstalação
+        # ou a atualização para sempre se ela falhar de novo. Fica registrada como abandonada (com o motivo) e o
+        # pedido atual segue com o estado real do computador (cada passo confere o que já existe).
+        d.db.set_run(pending["id"], status="abandoned",
+                     message=f"Abandonada: interrompida; o pedido seguinte ({a.kind}) seguiu com o estado real.")
+        _print(f"Execução interrompida {pending['id']} ({pending['kind']}) registrada como abandonada; seguindo com "
+               f"{a.kind}.")
+        pending = None
     if pending and not a.plan_only:
         _print(f"Há uma execução interrompida ({pending['id']}, {pending['kind']}): retomando antes de qualquer outra.")
         r = d.resume_pending(extra=env_secrets())

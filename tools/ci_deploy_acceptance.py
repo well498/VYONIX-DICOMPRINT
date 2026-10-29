@@ -477,7 +477,8 @@ $ap = $r | Get-NetFirewallApplicationFilter
         sm = Path(os.environ["ProgramData"]) / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "VYONIX"
         names = sorted(p.name for p in sm.iterdir())
         need = {"VYONIX.lnk", "VYONIX Administração.url", "VYONIX Diagnóstico.lnk", "VYONIX Relatórios Técnicos.lnk",
-                "VYONIX - Assistente de instalacao.lnk", "VYONIX - Verificar funcionamento.lnk"}
+                "VYONIX - Assistente de instalacao.lnk", "VYONIX - Verificar funcionamento.lnk",
+                "VYONIX - Reparar instalacao.lnk", "VYONIX - Validar instalacao.lnk"}
         assert need <= set(names) and "VYONIX.url" not in names, names
         args = powershell("(New-Object -ComObject WScript.Shell).CreateShortcut($A.p).Arguments",
                           {"p": str(sm / "VYONIX.lnk")})
@@ -814,12 +815,51 @@ $ap = $r | Get-NetFirewallApplicationFilter
         assert "alterado" in p2.stdout, p2.stdout
         return f"{n} manifestos encadeados; alteração manual no primeiro detectada: {p2.stdout.strip()[:200]}"
 
-    # ---------------------------------------------------------------- desinstalação
+    # ---------------------------------------------------------------- desinstalação em condições reais (2.12)
+    def app_processes() -> list[str]:
+        return as_list(powershell(
+            "$d = [IO.Path]::GetFullPath($A.d).TrimEnd([char]92) + [char]92; @(Get-CimInstance Win32_Process | "
+            "Where-Object { $_.ExecutablePath -and $_.ExecutablePath.StartsWith($d, [StringComparison]::OrdinalIgnoreCase) } "
+            "| ForEach-Object { $_.Name + ' ' + $_.ProcessId })", {"d": str(INSTALL)}))
+
+    @check("2.12", "Desinstalação com o assistente aberto e uma execução interrompida: nada fica preso")
+    def _():
+        import sqlite3
+        wiz = subprocess.Popen([str(INSTALL / "vyonix-deploy.exe"), "wizard", "--no-browser"],
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)          # prende arquivos do programa
+        time.sleep(8)
+        assert wiz.poll() is None, "o assistente não ficou aberto"
+        c = sqlite3.connect(str(PATHS.db_file))                  # execução que "caiu no meio" (processo encerrado)
+        rid = c.execute("SELECT id FROM runs ORDER BY created_at DESC LIMIT 1").fetchone()[0]
+        c.execute("UPDATE runs SET status='running' WHERE id=?", (rid,))
+        c.commit()
+        c.close()
+        state["stale_run"] = rid
+        before = app_processes()
+        un = INSTALL / "unins000.exe"
+        sh([un, "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", f"/LOG={OUT / 'uninstall.log'}"], timeout=900)
+        time.sleep(5)
+        for n in ("VyonixPacsEngine", "VyonixCore", "VyonixWorker", "VyonixPostgreSQL"):
+            assert query_service(n) is None, f"{n} ainda registrado"
+        left = app_processes()
+        assert not left, f"processos da pasta do programa ainda em execução: {left}"
+        assert wiz.poll() is not None, "o assistente continuou aberto"
+        files = [str(x) for x in INSTALL.rglob("*") if x.is_file()] if INSTALL.exists() else []
+        assert not files, f"arquivos do programa não removidos: {files[:5]}"
+        c = sqlite3.connect(str(PATHS.db_file))
+        st = c.execute("SELECT status FROM runs WHERE id=?", (state["stale_run"],)).fetchone()[0]
+        c.close()
+        assert st == "abandoned", f"execução interrompida ficou {st}"
+        log = Path(os.environ.get("ProgramData", r"C:\ProgramData")) / "VYONIX" / "Logs" / "instalador.log"
+        txt = log.read_text(encoding="utf-8", errors="replace")
+        assert "desinstalação concluída" in txt, txt[-800:]
+        shutil.copy2(log, OUT / "instalador.log")
+        return (f"antes: {len(before)} processo(s) na pasta do programa (assistente e serviços); depois: nenhum; "
+                "4 serviços removidos; pasta do programa vazia; execução interrompida registrada como abandonada; "
+                "registro em ProgramData\\VYONIX\\Logs\\instalador.log")
+
     @check("2.8", "Desinstalação: serviços, regra e atalhos removidos; dados e DICOM Print preservados")
     def _():
-        un = INSTALL / "unins000.exe"
-        sh([un, "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"], timeout=900)
-        time.sleep(5)
         for n in ("VyonixCore", "VyonixWorker", "VyonixPostgreSQL"):
             assert query_service(n) is None, f"{n} ainda registrado"
         left = as_list(powershell("@(Get-NetFirewallRule -Name 'VYONIX-core-*' -ErrorAction SilentlyContinue | "
@@ -833,6 +873,70 @@ $ap = $r | Get-NetFirewallApplicationFilter
             assert query_service("VyonixDicomPrint")["state"] == "Running"
             extra = "; DICOM Print em execução"
         return "serviços e regra removidos; cluster PostgreSQL, configuração e relatórios preservados" + extra
+
+    def reinstall(name: str) -> str:
+        sh([setup, "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/DEPLOYUPDATE=1", f"/LOG={OUT / name}"],
+           timeout=1800)
+        run, _steps = last_run_steps()
+        assert run["kind"] == "update" and run["status"] == "succeeded", f"{run['kind']} {run['status']}: {run['message']}"
+        port = state.get("port", 8444)
+        health(port)
+        api = Api(port)
+        api.login()
+        names = {x["name"] for x in api.call("GET", "/patients?q=Paciente")}
+        assert "Paciente Persistencia CI" in names, names
+        for n in ("VyonixCore", "VyonixWorker", "VyonixPostgreSQL"):
+            q = query_service(n)
+            assert q and q["state"] == "Running" and q["start"] == "Auto", f"{n}: {q}"
+            assert (q.get("recovery") or {}).get("actions"), f"{n} sem recuperação automática"
+        return f"atualização {run['id']} concluída; serviços automáticos com recuperação; dados preservados"
+
+    @check("2.12", "Reinstalar depois de desinstalar: reconhece os dados e atualiza (sem perda)")
+    def _():
+        return reinstall("setup-reinstall.log")
+
+    @check("2.12", "Atualizar por cima da versão instalada (sem desinstalar), com o assistente aberto")
+    def _():
+        wiz = subprocess.Popen([str(INSTALL / "vyonix-deploy.exe"), "wizard", "--no-browser"],
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        time.sleep(8)
+        out = reinstall("setup-upgrade.log")
+        assert wiz.poll() is not None, "o assistente antigo continuou aberto prendendo arquivos"
+        return out
+
+    @check("2.12", "Reparar instalação: serviço removido por fora é detectado e recriado")
+    def _():
+        sh(["sc.exe", "stop", "VyonixWorker"], ok=None)
+        time.sleep(5)
+        sh(["sc.exe", "delete", "VyonixWorker"], ok=None)
+        time.sleep(3)
+        assert query_service("VyonixWorker") is None
+        deploy("repair", "--approve-all", "--silent")
+        q = query_service("VyonixWorker")
+        assert q and q["state"] == "Running", q
+        health(state.get("port", 8444))
+        return "serviço do Worker apagado por fora; reparo recriou e iniciou; sistema respondendo"
+
+    @check("2.12", "Ferramenta de recuperação: diagnóstico sem alterar; aplicar libera a reinstalação; dados intactos")
+    def _():
+        ps = ROOT / "installer" / "recuperacao" / "Recuperar_VYONIX.ps1"
+        sh(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", ps, "-Saida", OUT, "-SemAbrir"],
+           timeout=600)
+        assert query_service("VyonixCore") is not None, "o diagnóstico alterou o sistema"
+        html = sorted(OUT.glob("VYONIX_Recuperacao_*.html"))[-1].read_text(encoding="utf-8-sig")
+        assert "somente diagnostico" in html and "Servico VyonixCore" in html, html[:400]
+        sh(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", ps, "-Aplicar", "-SemConfirmar",
+            "-Saida", OUT, "-SemAbrir"], timeout=900)
+        for n in ("VyonixPacsEngine", "VyonixCore", "VyonixWorker", "VyonixPostgreSQL"):
+            assert query_service(n) is None, f"{n} ainda registrado depois da recuperação"
+        assert not INSTALL.exists(), "pasta do programa não foi renomeada"
+        old = list(INSTALL.parent.glob("Platform.anterior-*"))
+        assert old, "pasta renomeada não encontrada"
+        assert (PATHS.pg_data / "PG_VERSION").exists() and (PATHS.data_dir / "config.json").exists(), "dados alterados"
+        if query_service("VyonixDicomPrint"):
+            assert query_service("VyonixDicomPrint")["state"] == "Running", "DICOM Print afetado"
+        out = reinstall("setup-after-recovery.log")
+        return f"diagnóstico só leitura; aplicar: serviços removidos, pasta renomeada ({old[0].name}); {out}"
 
     # ---------------------------------------------------------------- 2.1 (ao final, para não afetar os demais)
     @check("2.1", "Impeditivo detectado: espaço em disco insuficiente (cenário montado com arquivo de preenchimento)")

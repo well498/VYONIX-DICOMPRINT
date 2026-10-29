@@ -191,8 +191,9 @@ class PacsModuleTest(unittest.TestCase):
         self.assertEqual(un[0], "remove.service.VyonixPacsEngine")
         self.assertIn("remove.firewall.pacs-dicom", un)
         iss = (P(__file__).resolve().parents[1] / "installer" / "VyonixPlatform.iss").read_text(encoding="utf-8")
-        self.assertIn("'VyonixPacsEngine'", iss.split("function PrepareToInstall", 1)[1])
-        self.assertIn("SetArrayLength(Names, 4)", iss)
+        self.assertIn("Services[0] := 'VyonixPacsEngine'", iss)          # parado na atualização e na desinstalação
+        self.assertIn("NSERV = 4", iss)
+        self.assertIn("Neutralize(Services[I]", iss.split("function PrepareToInstall", 1)[1])
 
     def test_engine_service_refuses_plugins(self):
         from vyonix.pacs.engine_host import EngineProcess

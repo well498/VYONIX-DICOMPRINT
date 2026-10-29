@@ -5,3 +5,5 @@ installer/homologacao/*.url text eol=crlf
 installer/common/*.cmd text eol=crlf
 installer/validacao/*.cmd text eol=crlf
 installer/validacao/*.ps1 -text
+installer/recuperacao/*.cmd text eol=crlf
+installer/recuperacao/*.ps1 -text

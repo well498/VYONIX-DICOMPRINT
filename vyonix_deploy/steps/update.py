@@ -6,6 +6,7 @@ import hashlib
 import os
 import json
 import shutil
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -119,11 +120,15 @@ class ServiceRemovedStep(Step):
                 "undo": "Reinstale o VYONIX para registrar o serviço de novo."}
 
     def check(self, ctx: Context) -> bool:
-        return not self.observe(ctx)["exists"]
+        o = self.observe(ctx)
+        if not o["exists"]:
+            return True
+        from vyonix_deploy.steps.services import marked_for_delete
+        return marked_for_delete(self.name)               # já excluído; o Windows libera ao reiniciar
 
     def apply(self, ctx: Context) -> None:
-        stop_service(self.name)
-        run([SC, "delete", self.name], check=True)
+        from vyonix_deploy.steps.services import remove_service
+        self.result = remove_service(self.name)
 
 
 class RuleRemovedStep(FirewallRuleStep):
@@ -163,6 +168,44 @@ class ShortcutsRemovedStep(ShortcutsStep):
             pass
 
 
+class InstallProcessesStoppedStep(Step):
+    """Nenhum processo executando arquivos da pasta do programa (o desinstalador precisa apagá-los)."""
+    id = "remove.processes"
+    title = "Encerrar processos do VYONIX que ainda usam a pasta do programa"
+    category = "servico"
+    reversible = False
+
+    def _list(self, ctx: Context) -> list[dict]:
+        if not IS_WINDOWS:
+            return []
+        from vyonix_deploy.steps.services import list_install_processes
+        return list_install_processes(str(ctx.paths.install_dir), exclude=tuple(_self_pids()))
+
+    def observe(self, ctx: Context) -> dict:
+        return {"processes": self._list(ctx)}
+
+    def desired(self, ctx: Context) -> dict:
+        return {"processes": []}
+
+    def describe(self, ctx: Context) -> dict:
+        return {"current": self.observe(ctx), "proposed": self.desired(ctx),
+                "impact": "Fecha o assistente ou programas do VYONIX esquecidos abertos (e o Orthanc/PostgreSQL órfãos)."
+                          " Não afeta outros programas nem o DICOM Print.", "undo": "—"}
+
+    def check(self, ctx: Context) -> bool:
+        return not self._list(ctx)
+
+    def apply(self, ctx: Context) -> None:
+        from vyonix_deploy.steps.services import kill_install_processes
+        kill_install_processes(str(ctx.paths.install_dir), exclude=tuple(_self_pids()))
+        time.sleep(2)
+
+
+def _self_pids() -> list[int]:
+    import os
+    return [os.getpid(), os.getppid()]
+
+
 def uninstall_steps(ctx: Context) -> list[Step]:
     from vyonix_deploy.plans import CORE_SVC, WORKER_SVC
     p = ctx.paths
@@ -175,7 +218,8 @@ def uninstall_steps(ctx: Context) -> list[Step]:
             RuleRemovedStep("core-lan", "Core HTTPS (rede local, perfil Público)", ctx.cfg.https_port),
             RuleRemovedStep("pacs-dicom-lan", "PACS DICOM (rede local, perfil Público)", pacs.DICOM_PORT),
             RuleRemovedStep("pacs-qr-lan", "PACS consulta DICOM (rede local, perfil Público)", pacs.QR_PORT),
-            ShortcutsRemovedStep(ctx.cfg.https_port, p.install_dir / "vyonix-deploy.exe", p.reports)]
+            ShortcutsRemovedStep(ctx.cfg.https_port, p.install_dir / "vyonix-deploy.exe", p.reports),
+            InstallProcessesStoppedStep()]
 
 
 class ServiceStoppedStep(Step):
