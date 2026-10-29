@@ -7,6 +7,11 @@
 1. Conferir o CI do lote (platform com Orthanc real inclui `test_reception_only_from_registered_equipment`).
 2. Corrigir o que falhar e reenviar sem cancelar execuções em andamento.
 
+## Auditoria geral (29/10/2026)
+Ver `VYONIX_RESUMO_EXECUTIVO.md`, `VYONIX_AUDITORIA_GERAL.md`, `VYONIX_INVENTARIO_FUNCIONAL.md`,
+`VYONIX_PENDENCIAS_PRIORIZADAS.md` e `VYONIX_PLANO_CONCLUSAO.md`. Próxima ação: Fase P0 do plano (confirmação
+prática da instalação) — aguarda o proprietário; sem novas funcionalidades até lá.
+
 ## Feito em 29/10
 * Correção definitiva da inicialização e do acesso web (`docs/homologacao/Correcao_Inicializacao_Acesso_Web.md`),
   validação no Windows do CI (critérios 2.10) e novo instalador de homologação.
