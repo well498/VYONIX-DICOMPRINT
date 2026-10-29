@@ -183,7 +183,7 @@ $dir = [IO.Path]::GetFullPath($A.dir).TrimEnd('\') + '\'
 $out = @()
 foreach ($p in Get-CimInstance Win32_Process) {
   if ($p.ExecutablePath -and $p.ExecutablePath.StartsWith($dir, [StringComparison]::OrdinalIgnoreCase) -and
-      -not ($A.ex -contains [int]$p.ProcessId)) {
+      -not ($A.ex -contains [int]$p.ProcessId) -and $p.Name -notlike 'unins*') {   # nunca o desinstalador
     $out += [pscustomobject]@{ pid=[int]$p.ProcessId; name=$p.Name; path=$p.ExecutablePath }
     if ($A.kill) { Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue }
   }

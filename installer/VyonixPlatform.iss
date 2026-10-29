@@ -194,6 +194,7 @@ end;
 
 { Encerra processos que executam arquivos da pasta do programa (assistente esquecido aberto, Orthanc ou
   PostgreSQL órfãos). Só desta pasta: nunca o DICOM Print nem outros programas. }
+{ Nunca o próprio desinstalador (unins000.exe espera a cópia temporária terminar: encerrá-lo devolveria -1). }
 procedure KillAppProcesses(const Dir: String);
 var
   Code: Integer;
@@ -203,7 +204,7 @@ begin
   SaveStringToFile(Ps,
     '$d = [IO.Path]::GetFullPath(''' + Dir + ''').TrimEnd([char]92) + [char]92' + #13#10 +
     'Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -and $_.ExecutablePath.StartsWith($d, ' +
-    '[StringComparison]::OrdinalIgnoreCase) } | ForEach-Object { "encerrado " + $_.ProcessId + " " + $_.ExecutablePath; ' +
+    '[StringComparison]::OrdinalIgnoreCase) -and $_.Name -notlike ''unins*'' } | ForEach-Object { "encerrado " + $_.ProcessId + " " + $_.ExecutablePath; ' +
     'Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }' + #13#10, False);
   Exec(ExpandConstant('{cmd}'), '/C powershell -NoProfile -ExecutionPolicy Bypass -File "' + Ps + '" >> "' +
        LogFile() + '" 2>&1', '', SW_HIDE, ewWaitUntilTerminated, Code);

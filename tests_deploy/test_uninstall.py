@@ -127,6 +127,11 @@ class Installer(unittest.TestCase):
         self.assertLess(neut.index("failure"), neut.index("stop"))     # recuperação desligada antes de parar
         self.assertNotIn("{commonappdata}\\VYONIX'", code.split("DelTree", 1)[1].split(";", 1)[0])   # nunca os dados
 
+    def test_uninstaller_itself_is_never_killed(self):
+        from vyonix_deploy.steps import services
+        self.assertIn("-notlike 'unins*'", services._PROCS)
+        self.assertIn("$_.Name -notlike ''unins*''", self.iss)
+
     def test_upgrade_in_place_repair_and_logs(self):
         self.assertIn("Atualizar_VYONIX.cmd", self.iss)
         self.assertIn("Check: IsUpgrade", self.iss)

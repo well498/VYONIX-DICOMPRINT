@@ -46,7 +46,6 @@ def step(name):
             STEPS.append({"step": name, "result": "Aprovado", "detail": str(detail or "")[:600],
                           "seconds": round(time.monotonic() - t0, 1)})
             print(f"[OK] {name}: {detail}")
-            print(f"::notice title=Homologação — {name}::{str(detail or '')[:300]}")
         except Exception as exc:  # noqa: BLE001
             STEPS.append({"step": name, "result": "Reprovado", "detail": f"{type(exc).__name__}: {exc}"[:900],
                           "seconds": round(time.monotonic() - t0, 1)})
@@ -352,6 +351,19 @@ def main() -> int:
              "| Passo | Resultado | Detalhe | s |", "|---|---|---|---|"]
     lines += [f"| {x['step']} | {x['result']} | {x['detail'].replace('|', '/')} | {x['seconds']} |" for x in STEPS]
     (OUT / "homologacao.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    # O GitHub mostra só 10 avisos por etapa: um resumo único (em blocos) com todos os passos.
+    chunk, chunks = "", []
+    for x in STEPS:
+        line = f"[{x['result']}] {x['step']}: {x['detail'][:240]}\n"
+        if len(chunk) + len(line) > 3800:
+            chunks.append(chunk)
+            chunk = ""
+        chunk += line
+    if chunk:
+        chunks.append(chunk)
+    for i, c in enumerate(chunks[:8], 1):
+        txt = c.replace("%", "%25").replace("\r", "").replace("\n", "%0A")
+        print(f"::notice title=Homologação — resumo ({i}/{len(chunks)})::{txt}", flush=True)
     print(f"\nResultado: {'APROVADO' if ok else 'REPROVADO'} ({sum(x['result'] == 'Aprovado' for x in STEPS)}/{len(STEPS)})")
     return 0 if ok else 1
 
