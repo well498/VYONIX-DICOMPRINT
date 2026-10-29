@@ -113,3 +113,34 @@ def study_timeline(s: Session, study_id: uuid.UUID) -> dict[str, Any]:
     return {"study_id": str(st.id), "current": current, "current_name": STAGE_NAMES[current],
             "stages": [{"code": c, "name": STAGE_NAMES[c], "done": c in reached} for c in STAGES],
             "events": [{**e, "at": e["at"].isoformat(), "stage_name": STAGE_NAMES[e["stage"]]} for e in ev]}
+
+
+def priors(s: Session, study_id: uuid.UUID, *, limit: int = 30) -> dict[str, Any]:
+    """Exames anteriores do mesmo paciente na instituição (mais recentes primeiro; mesma modalidade destacada), com
+    situação do laudo e se as imagens estão no PACS — para comparação no laudo e na preparação. Índice local: não
+    busca em PACS remotos."""
+    from vyonix.clinical.models import Study
+    from vyonix.pacs.models import PacsStudy
+    from vyonix.report.models import Report
+    st = s.get(Study, study_id)
+    if st is None:
+        raise NotFound("Estudo não encontrado.")
+    if st.patient_id is None:
+        return {"patient_linked": False, "items": []}
+    rows = list(s.execute(select(Study).where(Study.patient_id == st.patient_id, Study.id != st.id)
+                          .order_by(Study.study_date.desc().nulls_last(), Study.created_at.desc()).limit(limit)).scalars())
+    uids = [r.study_instance_uid for r in rows]
+    in_pacs = set(s.execute(select(PacsStudy.study_uid).where(PacsStudy.study_uid.in_(uids))).scalars()) if uids else set()
+    reps = {r.study_id: r for r in s.execute(select(Report).where(Report.study_id.in_([x.id for x in rows]))).scalars()} \
+        if rows else {}
+    items = []
+    for r in rows:
+        rep = reps.get(r.id)
+        items.append({"study_id": str(r.id), "study_date": r.study_date.isoformat() if r.study_date else None,
+                      "modality": r.modality, "description": r.description, "accession": r.accession,
+                      "same_modality": bool(r.modality and r.modality == st.modality),
+                      "study_instance_uid": r.study_instance_uid if r.study_instance_uid in in_pacs else None,
+                      "report": None if rep is None else {"id": str(rep.id), "status": rep.status,
+                                                         "finalized_at": rep.finalized_at.isoformat()
+                                                         if rep.finalized_at else None}})
+    return {"patient_linked": True, "items": items}

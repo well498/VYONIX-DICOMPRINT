@@ -216,6 +216,24 @@ def study_timeline(study_id: uuid.UUID, c: Ctx = Depends(ctx_any)):
         return timeline.study_timeline(s, study_id)
 
 
+@router.get("/studies/{study_id}/priors")
+def study_priors(study_id: uuid.UUID, c: Ctx = Depends(ctx_any)):
+    """Exames anteriores do mesmo paciente (comparação), com as mesmas regras de acesso da preparação."""
+    from vyonix.report import queue
+    from vyonix.ris import timeline
+    _prep_reader(c)
+    with c.session() as s:
+        _prep_scope(c, s, study_id)
+        out = timeline.priors(s, study_id)
+        sc = queue.scope(s, c.p.user_id, can_assign=c.p.has("report.assign"))
+        from vyonix.clinical.models import Study
+        for it in out["items"]:                     # anterior de unidade sem vínculo: aparece sem acesso ao conteúdo
+            ok = queue.allowed(sc, s.get(Study, uuid.UUID(it["study_id"])).site_id)
+            if not ok:
+                it.update(study_instance_uid=None, report=None, restricted=True)
+        return out
+
+
 @router.get("/prep/{study_id}")
 def prep_detail(study_id: uuid.UUID, c: Ctx = Depends(ctx_any)):
     from vyonix.ris import prep

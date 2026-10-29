@@ -8,7 +8,9 @@ Somente leitura. Cada componente informa o estado e, quando há problema, o moti
 * **PACS**: módulo, motor DICOM (versão ou erro), índice, e a última sincronização de C-STORE (modo edge);
 * **consulta DICOM**: porta configurada e se está aceitando conexões;
 * **licença**: módulos licenciados e situação;
-* **backup do PACS** (quando configurado): resultado e idade do último backup automático.
+* **backup do PACS** (quando configurado): resultado e idade do último backup automático;
+* **espaço em disco**: pasta de dados da plataforma, armazenamento das imagens (motor DICOM) e pasta de backup —
+  atenção abaixo de 10% livre ou 10 GB, falha abaixo de 5% livre ou 2 GB.
 
 Não expõe dados de pacientes nem segredos.
 """
@@ -24,6 +26,8 @@ from sqlalchemy.orm import Session
 
 from vyonix.db.base import utcnow
 
+DISK_WARN_PCT, DISK_WARN_GB = 10.0, 10.0
+DISK_FAIL_PCT, DISK_FAIL_GB = 5.0, 2.0
 EVENTS_STALE_S = 300            # evento pendente há mais de 5 min: worker provavelmente parado
 SYNC_STALE_S = 600
 
@@ -130,6 +134,67 @@ def _integrity(plat) -> dict[str, Any]:
     return out
 
 
+def _disk_paths(plat) -> dict[str, str]:
+    """Pastas a vigiar: dados da plataforma, imagens do motor (configuração do Orthanc do DEPLOY) e backup."""
+    import json
+    from pathlib import Path
+    paths = {"Dados da plataforma": str(plat.cfg.data_dir)}
+    try:
+        from vyonix.pacs.engine_host import CONFIG_NAME
+        f = Path(plat.cfg.data_dir) / "pacs" / CONFIG_NAME
+        if f.exists():
+            paths["Imagens do PACS"] = json.loads(f.read_text(encoding="utf-8"))["StorageDirectory"]
+    except Exception:  # noqa: BLE001 - sem motor local configurado
+        pass
+    if plat.cfg.extra.get("pacs_storage_dir"):
+        paths["Imagens do PACS"] = str(plat.cfg.extra["pacs_storage_dir"])
+    if plat.cfg.extra.get("pacs_backup_dir"):
+        paths["Backup do PACS"] = str(plat.cfg.extra["pacs_backup_dir"])
+    return paths
+
+
+def disk_check(paths: dict[str, str], usage=None, exists=None) -> dict[str, Any]:
+    """Espaço livre por pasta (agrupado por disco). ``usage`` permite testar sem depender do disco real."""
+    import os
+    import shutil
+    usage = usage or shutil.disk_usage
+    exists = exists or os.path.exists
+    out: dict[str, Any] = {"volumes": [], "problems": [], "critical": False}
+    seen: dict[tuple, dict] = {}
+    for label, path in paths.items():
+        p = path
+        while p and not exists(p) and os.path.dirname(p) != p:
+            p = os.path.dirname(p)                   # pasta ainda não criada: mede o disco onde ficará
+        try:
+            u = usage(p)
+        except OSError:
+            out["problems"].append(f"Não foi possível medir o espaço de “{label}” ({path}).")
+            continue
+        key = (u.total, u.free)
+        if key in seen:
+            seen[key]["labels"].append(label)
+            continue
+        free_gb, pct = u.free / 1024**3, (u.free / u.total * 100 if u.total else 0.0)
+        vol = {"labels": [label], "path": path, "total_gb": round(u.total / 1024**3, 1), "free_gb": round(free_gb, 1),
+               "free_pct": round(pct, 1), "level": "ok"}
+        if pct < DISK_FAIL_PCT or free_gb < DISK_FAIL_GB:
+            vol["level"] = "critical"
+            out["critical"] = True
+        elif pct < DISK_WARN_PCT or free_gb < DISK_WARN_GB:
+            vol["level"] = "warn"
+        seen[key] = vol
+        out["volumes"].append(vol)
+    for v in out["volumes"]:
+        if v["level"] != "ok":
+            what = " e ".join(v["labels"])
+            out["problems"].append(
+                f"{'Espaço crítico' if v['level'] == 'critical' else 'Pouco espaço'} em disco para {what}: "
+                f"{v['free_gb']} GB livres ({v['free_pct']}%). "
+                + ("A recepção de imagens e o banco podem parar; libere espaço ou amplie o disco agora."
+                   if v["level"] == "critical" else "Planeje a ampliação do armazenamento."))
+    return out
+
+
 def _license(plat, s: Session) -> dict[str, Any]:
     st = plat.licensing.status(s)
     mods = {code: {"licensed": v.licensed, "state": v.state} for code, v in st.items() if v.licensed or code == "core"}
@@ -147,7 +212,7 @@ def health_detail(plat, s: Session) -> dict[str, Any]:
         return {"status": "falha", "components": comps, "problems": comps["database"]["problems"]}
     for name, fn in (("events", lambda: _events(s)), ("pacs", lambda: _pacs(plat, s)), ("dicom_qr", lambda: _qr(plat)),
                      ("pacs_backup", lambda: _backup(plat)), ("pacs_integrity", lambda: _integrity(plat)),
-                     ("license", lambda: _license(plat, s))):
+                     ("license", lambda: _license(plat, s)), ("disk", lambda: disk_check(_disk_paths(plat)))):
         try:
             comps[name] = fn()
         except Exception as exc:  # noqa: BLE001 - um componente com erro não esconde os demais
@@ -155,6 +220,7 @@ def health_detail(plat, s: Session) -> dict[str, Any]:
     problems = [p for c in comps.values() for p in c.get("problems", [])]
     fail = (comps.get("pacs", {}).get("engine", {}).get("reachable") is False
             or not comps.get("license", {}).get("modules", {}).get("core", {}).get("licensed", True)
-            or bool(comps.get("pacs_integrity", {}).get("failures")))
+            or bool(comps.get("pacs_integrity", {}).get("failures"))
+            or bool(comps.get("disk", {}).get("critical")))
     status = "falha" if fail else ("atenção" if problems else "ok")
     return {"status": status, "checked_at": utcnow().isoformat(), "components": comps, "problems": problems}

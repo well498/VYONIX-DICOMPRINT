@@ -72,6 +72,23 @@ class Timeline(_prep.Prep):
         r = self.tec.get("/api/v1/ris/studies/00000000-0000-0000-0000-000000000000/timeline")
         self.assertIn(r.status_code, (403, 404))
 
+    def test_priors_of_same_patient(self):
+        old, new = self.study(1), self.study(2)                     # mesmo paciente (dados sintéticos)
+        ana = self.docs["ana"][0]
+        rep = ana.post("/api/v1/report/reports", json={"study_id": old}).json()
+        rep = ana.put(f"/api/v1/report/reports/{rep['id']}", json={"body": "Achados: sintético.",
+                                                                   "row_version": rep["row_version"]}).json()
+        r = ana.post(f"/api/v1/report/reports/{rep['id']}/finalize", json={"password": _prep.NEW,
+                                                                          "row_version": rep["row_version"]})
+        self.assertEqual(r.status_code, 200, r.text)
+        d = ana.get(f"/api/v1/ris/studies/{new}/priors").json()
+        self.assertTrue(d["patient_linked"])
+        self.assertEqual([x["study_id"] for x in d["items"]], [old])
+        it = d["items"][0]
+        self.assertEqual((it["modality"], it["same_modality"], it["report"]["status"]), ("CT", True, "final"))
+        self.assertEqual(it["study_instance_uid"], _prep.uid(71))                # imagens no PACS: abre no Viewer
+        self.assertEqual(self.tec.get(f"/api/v1/ris/studies/{old}/priors").json()["items"][0]["study_id"], new)
+
 
 if __name__ == "__main__":
     unittest.main()

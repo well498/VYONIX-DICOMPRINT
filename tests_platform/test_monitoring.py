@@ -25,6 +25,36 @@ class HealthDetail(ApiBase):
     def setUp(self):
         super().setUp()
         self.c = self.login()
+        from unittest import mock
+        p = mock.patch("vyonix.monitoring._disk_paths", return_value={})   # o disco do CI varia; testado abaixo
+        p.start()
+        self.addCleanup(p.stop)
+
+    def test_disk_space_levels_grouped_by_volume(self):
+        from collections import namedtuple
+        from vyonix import monitoring
+        U = namedtuple("U", "total used free")
+        gb = 1024 ** 3
+        disks = {"/dados": U(500 * gb, 0, 200 * gb), "/imagens": U(1000 * gb, 0, 80 * gb),
+                 "/backup": U(100 * gb, 0, 1 * gb)}
+        out = monitoring.disk_check({"Dados da plataforma": "/dados", "Imagens do PACS": "/imagens",
+                                     "Backup do PACS": "/backup/pasta-ainda-nao-criada"},
+                                    usage=lambda p: disks[p], exists=lambda p: p in disks)
+        levels = {v["labels"][0]: v["level"] for v in out["volumes"]}
+        self.assertEqual(levels, {"Dados da plataforma": "ok", "Imagens do PACS": "warn", "Backup do PACS": "critical"})
+        self.assertTrue(out["critical"])
+        self.assertEqual(len(out["problems"]), 2)
+        self.assertIn("Espaço crítico em disco para Backup do PACS", out["problems"][1])
+        same = monitoring.disk_check({"A": "/dados", "B": "/dados"}, usage=lambda p: disks["/dados"],
+                                     exists=lambda p: True)
+        self.assertEqual(same["volumes"][0]["labels"], ["A", "B"])           # mesmo disco aparece uma vez
+        # no painel: disco crítico deixa o estado em falha
+        from unittest import mock
+        with mock.patch("vyonix.monitoring._disk_paths", return_value={"Imagens do PACS": "/"}), \
+                mock.patch("shutil.disk_usage", return_value=disks["/backup"]):
+            h = self.c.get(self.URL).json()
+        self.assertEqual(h["status"], "falha")
+        self.assertTrue(any("Espaço crítico" in p for p in h["problems"]))
 
     def test_healthy_then_engine_down(self):
         self.license_and_enable()

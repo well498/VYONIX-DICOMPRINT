@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { fmtDate, get, post, put, upload, type Me } from "../api";
+import { Priors } from "./prep";
 import { Field, Notice, Page, useAction, useLoad } from "../ui";
 import { BrandingPanel } from "./branding";
 import { MySignaturePanel, PhysiciansPanel } from "./physicians";
@@ -227,6 +228,7 @@ function Editor({ me, row, initial, onClose }: { me: Me; row: Row; initial: Repo
     <section className="panel" aria-label="Laudo">
       <div className="row-actions"><h2>{title}</h2><button type="button" className="link" onClick={onClose}>Fechar</button></div>
       {act.view}
+      <details className="prior-box"><summary>Exames anteriores do paciente</summary><Priors studyId={row.study_id} /></details>
       {!report && (can("report.write") ? (
         <div className="grid2">
           <Field label="Modelo" hint="Opcional: o texto do modelo vira o rascunho">

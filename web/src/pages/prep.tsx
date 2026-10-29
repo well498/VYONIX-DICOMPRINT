@@ -38,6 +38,7 @@ const ICON: Record<string, string> = {
   flag: "M12 3l10 18H2zM12 10v5M12 18v.5",
   cancel: "M5 7h14M10 7V4h4v3M7 7l1 14h8l1-14",
   timeline: "M6 4v16M6 7h4M6 12h8M6 17h6M18 7a1 1 0 100 .1",
+  priors: "M4 6h10v13H4zM8 3h12v13",
 };
 
 function Icon({ name }: { name: string }) {
@@ -112,11 +113,13 @@ export function PrepSheet({ studyId, onClose, onChanged }: { studyId: string; on
                 badge={openFlags.length ? <span className="count count-warn">{openFlags.length}</span> : undefined} />}
               {x.can.return && x.stage === "forwarded" || x.can.return && x.stage === "assigned"
                 ? <Row icon="cancel" label="Devolver para correção" tone="warn" onClick={() => setTool("return")} /> : null}
+              <Row icon="priors" label="Exames anteriores" onClick={() => setTool("priors")} />
               <Row icon="timeline" label="Linha do tempo do exame" onClick={() => setTool("timeline")} />
               {x.can.cancel && !closed && <Row icon="cancel" label="Cancelar exame" tone="danger" onClick={() => setTool("cancel")} />}
             </nav>)}
           {tool !== null && <button type="button" className="link back" onClick={() => setTool(null)}>‹ Voltar às ações</button>}
           {tool === "timeline" && <Timeline studyId={studyId} />}
+          {tool === "priors" && <Priors studyId={studyId} />}
           {tool === "audio" && <AudioTool studyId={studyId} onSaved={() => run(async () => undefined, "Áudio anexado ao estudo.")} />}
           {tool === "photo" && <FileTool studyId={studyId} kind="photo" capture onSaved={() => run(async () => undefined, "Foto anexada.")} />}
           {tool === "attach" && <Attachments d={x} studyId={studyId} onSaved={() => run(async () => undefined, "Anexo incluído.", false)} />}
@@ -137,6 +140,35 @@ export function PrepSheet({ studyId, onClose, onChanged }: { studyId: string; on
         </>}
       </section>
     </div>
+  );
+}
+
+type PriorItem = { study_id: string; study_date: string | null; modality: string | null; description: string | null;
+  accession: string | null; same_modality: boolean; study_instance_uid: string | null; restricted?: boolean;
+  report: null | { id: string; status: "draft" | "final"; finalized_at: string | null } };
+
+/** Exames anteriores do mesmo paciente (índice local), para comparação. */
+export function Priors({ studyId, compact = false }: { studyId: string; compact?: boolean }) {
+  const p = useLoad(() => get<{ patient_linked: boolean; items: PriorItem[] }>(`/ris/studies/${studyId}/priors`), [studyId]);
+  const items = p.data?.items ?? [];
+  return (
+    <section aria-label="Exames anteriores" className={compact ? "priors compact" : "priors"}>
+      {compact && <h3 className="h3">Exames anteriores</h3>}
+      <Notice kind="error">{p.error}</Notice>
+      {p.data && !p.data.patient_linked && <p className="empty">Estudo ainda sem paciente identificado: concilie para ver os anteriores.</p>}
+      {p.data?.patient_linked && items.length === 0 && <p className="empty">Nenhum exame anterior deste paciente.</p>}
+      {items.length > 0 && <ul className="prior-list">{items.map((x) => (
+        <li key={x.study_id} className={x.same_modality ? "same" : ""}>
+          <span><strong>{x.modality ?? "—"}</strong> {x.study_date ? x.study_date.split("-").reverse().join("/") : "sem data"}
+            {x.description ? ` · ${x.description}` : ""}{x.same_modality && <span className="pill">mesma modalidade</span>}</span>
+          <span className="prior-acts">
+            {x.restricted ? <span className="sub">unidade sem vínculo</span> : <>
+              {x.study_instance_uid && <a href={`/viewer/viewer?StudyInstanceUIDs=${encodeURIComponent(x.study_instance_uid)}`} target="_blank" rel="noopener">Imagens</a>}
+              {x.report?.status === "final" ? <a href={`/api/v1/report/reports/${x.report.id}/pdf`} target="_blank" rel="noopener">Laudo (PDF)</a>
+                : <span className="sub">{x.report ? "laudo em rascunho" : "sem laudo"}</span>}</>}
+          </span>
+        </li>))}</ul>}
+    </section>
   );
 }
 

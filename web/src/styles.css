@@ -311,3 +311,13 @@ fieldset.plain legend { font-weight: 600; margin-bottom: .3rem; }
 .flow-on strong, .flow-always strong { color: var(--ink); }
 .flow-off strong, .flow-na strong { color: var(--ink-2); text-decoration: none; font-weight: 500; }
 @media (max-width: 640px) { .flow li { grid-template-columns: 1.6rem 1fr; } .flow li span { grid-column: 2; } }
+
+/* Exames anteriores */
+.prior-list { list-style: none; margin: .4rem 0 0; padding: 0; display: grid; gap: .35rem; }
+.prior-list li { display: flex; justify-content: space-between; gap: .75rem; flex-wrap: wrap; padding: .45rem .6rem;
+  border: 1px solid var(--line); border-radius: var(--radius-m); background: var(--panel); }
+.prior-list li.same { border-color: var(--agent); }
+.prior-list .pill { margin-left: .4rem; }
+.prior-acts { display: flex; gap: .75rem; align-items: center; }
+.prior-box { margin: .25rem 0 1rem; }
+.prior-box summary { cursor: pointer; font-weight: 600; }
