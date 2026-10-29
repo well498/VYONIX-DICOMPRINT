@@ -116,7 +116,7 @@ class Sanitizer(unittest.TestCase):
         self.assertEqual(len(richtext.to_flowables("a\nb", "text", {"b": st["Normal"]}, width=400)), 1)
 
 
-class Editor(ApiBase):
+class EditorBase(ApiBase):
     license_report = tr.Api.license_report
     user = tr.Api.user
 
@@ -144,6 +144,9 @@ class Editor(ApiBase):
         self.assertEqual(r.status_code, 201, r.text)
         return r.json()
 
+
+
+class Editor(EditorBase):
     def test_rich_draft_pdf_history_and_interop(self):
         rep = self.open(self.med)
         self.assertEqual(rep["body_format"], "text")
@@ -172,7 +175,8 @@ class Editor(ApiBase):
         r = self.med.post(f"/api/v1/report/reports/{rep['id']}/finalize", json={"password": PW})
         self.assertEqual(r.status_code, 200, r.text)
         v = r.json()["versions"][0]
-        self.assertEqual((v["body_format"], v["author"]), ("html", None))
+        self.assertEqual((v["body_format"], v["author"], v["reviewer"]), ("html", "Dra. Medica Teste", None))
+        self.assertEqual((v["changes"]["revisions"], v["changes"]["editors"]), (2, ["medica"]))
         self.assertTrue(self.med.get(f"/api/v1/report/reports/{rep['id']}/verify").json()["valid"])
         from pypdf import PdfReader
         pdf = self.med.get(f"/api/v1/report/reports/{rep['id']}/pdf")
@@ -331,8 +335,30 @@ class Editor(ApiBase):
         v = d["versions"][0]
         self.assertEqual(v["signed_by"], "Dr. Segundo Teste — CRM 65432/PB")
         self.assertEqual(v["author"], "Dra. Medica Teste")                         # quem redigiu e pediu revisão
-        self.assertEqual(v["body"], "<p>Rascunho com baço revisado.</p>")
+        self.assertEqual(v["reviewer"], "Dr. Segundo Teste — CRM 65432/PB")         # quem revisou (e liberou)
         self.assertTrue(self.med.get(f"/api/v1/report/reports/{rid}/verify").json()["valid"])
+        ch = v["changes"]
+        self.assertEqual((ch["review_rounds"], ch["returns"], ch["reviewer_edited"]), (2, 1, True))
+        self.assertEqual((ch["reviewer_added_lines"], ch["reviewer_removed_lines"]), (1, 1))
+        self.assertEqual(ch["editors"], ["medica", "medico2"])
+        from pypdf import PdfReader
+        pdf = self.med.get(f"/api/v1/report/reports/{rid}/pdf")
+        txt = " ".join(pg.extract_text() for pg in PdfReader(io.BytesIO(pdf.content)).pages).replace("\n", " ")
+        self.assertIn("Redigido por Dra. Medica Teste. Revisado e liberado por Dr. Segundo Teste", txt)
+        self.assertIn("Não é assinatura digital ICP-Brasil", txt)
+        # integridade: alterar o revisor registrado é detectado pela verificação
+        from sqlalchemy import create_engine, text as sql
+        from tests_platform.support import urls
+        eng = create_engine(urls().owner.replace("postgresql://", "postgresql+psycopg://", 1))
+        try:
+            with eng.begin() as cx:
+                cx.execute(sql("SELECT set_config('vyonix.tenant_id', :t, true)"), {"t": str(self.t)})
+                cx.execute(sql("UPDATE report.report_versions SET reviewer = 'Outra Pessoa' WHERE report_id = :r"),
+                           {"r": rid})
+        finally:
+            eng.dispose()
+        self.assertFalse(self.med.get(f"/api/v1/report/reports/{rid}/verify").json()["valid"])
+        self.assertEqual(v["body"], "<p>Rascunho com baço revisado.</p>")
         events = [x["event"] for x in self.med.get(f"/api/v1/report/reports/{rid}/revisions").json()["items"]]
         self.assertEqual(events, ["save", "review_request", "return", "save", "review_request", "save"])
         from vyonix.audit import service as audit
@@ -358,6 +384,116 @@ class Editor(ApiBase):
         self.assertEqual(self.med.get(f"/api/v1/report/reports/{rid}").json()["status"], "review")
         wl = self.med.get("/api/v1/report/worklist", params={"status": "review"}).json()["items"]
         self.assertEqual([x["report_id"] for x in wl], [rid])
+
+
+class PhrasesMore(EditorBase):
+    def test_duplicate_category_search_favorites_and_own_shortcuts(self):
+        inst = self.admin.post("/api/v1/report/phrases", json={
+            "title": "Fígado normal", "shortcut": "figado", "category": "Abdome", "personal": False,
+            "body": "<p>Fígado de <strong>dimensões normais</strong>, medindo [[medida em cm]] cm, em {{paciente.nome}}.</p>"})
+        self.assertEqual(inst.status_code, 201, inst.text)
+        inst = inst.json()
+        self.assertEqual(inst["variables"], ["medida em cm"])
+        self.assertEqual(self.admin.post("/api/v1/report/phrases", json={"title": "X", "body": "{{paciente.cpf}}",
+                                                                         "personal": False}).status_code, 422)
+        mine = self.med.post("/api/v1/report/phrases", json={"title": "Baço", "category": "Abdome",
+                                                             "body": "Baço homogêneo."}).json()
+        self.med.post("/api/v1/report/phrases", json={"title": "Pulmões", "category": "Tórax", "body": "Pulmões livres."})
+        # duplicar a da instituição vira pessoal e editável
+        dup = self.med.post(f"/api/v1/report/phrases/{inst['id']}/duplicate")
+        self.assertEqual(dup.status_code, 201, dup.text)
+        dup = dup.json()
+        self.assertEqual((dup["title"], dup["personal"], dup["category"], dup["shortcut"]),
+                         ("Fígado normal (cópia)", True, "Abdome", None))
+        self.assertIn("<strong>dimensões normais</strong>", dup["body"])
+        r = self.med.put(f"/api/v1/report/phrases/{dup['id']}", json={"title": "Fígado (meu)", "body": "Fígado ok.",
+                                                                     "category": "Abdome"})
+        self.assertEqual(r.status_code, 200, r.text)
+        # favorita e atalho próprio para a frase da instituição (só para mim)
+        r = self.med.put(f"/api/v1/report/phrases/{inst['id']}/prefs", json={"favorite": True, "shortcut": "fig"})
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual((r.json()["shortcut"], r.json()["phrase_shortcut"], r.json()["favorite"]),
+                         ("/fig", "/figado", True))
+        self.assertEqual(self.med.put(f"/api/v1/report/phrases/{mine['id']}/prefs",
+                                      json={"shortcut": "/figado"}).status_code, 409)   # atalho de frase da instituição
+        items = self.med.get("/api/v1/report/phrases").json()
+        self.assertEqual(items["items"][0]["title"], "Fígado normal")                 # favoritas primeiro
+        self.assertEqual(items["categories"], ["Abdome", "Tórax"])
+        other = {x["title"]: x for x in self.med2.get("/api/v1/report/phrases").json()["items"]}
+        self.assertEqual((other["Fígado normal"]["shortcut"], other["Fígado normal"]["favorite"]), ("/figado", False))
+        self.assertEqual(list(other), ["Fígado normal"])                              # pessoais dos outros não aparecem
+        q = lambda **p: [x["title"] for x in self.med.get("/api/v1/report/phrases", params=p).json()["items"]]
+        self.assertEqual(q(q="homogêneo"), ["Baço"])
+        self.assertEqual(q(category="tórax"), ["Pulmões"])
+        self.assertEqual(q(favorites=True), ["Fígado normal"])
+        self.assertEqual(q(scope="own"), ["Baço", "Fígado (meu)", "Pulmões"])
+        # sem report.phrases.own não duplica; favoritar exige report.write
+        with db.session(self.t) as s:
+            from vyonix.auth import service as auth
+            auth.save_role(s, code="leitor", name="Leitor", permissions=["report.read"], actor="t")
+        leitor = self.user(self.admin, "leitor1", "leitor")
+        self.assertEqual(leitor.post(f"/api/v1/report/phrases/{inst['id']}/duplicate").status_code, 403)
+        self.assertEqual(leitor.put(f"/api/v1/report/phrases/{inst['id']}/prefs", json={"favorite": True}).status_code, 403)
+        self.assertEqual(self.med2.put(f"/api/v1/report/phrases/{mine['id']}/prefs",
+                                       json={"favorite": True}).status_code, 404)        # pessoal de outro
+        # excluir a da instituição remove as preferências; a cópia pessoal continua
+        self.assertEqual(self.admin.delete(f"/api/v1/report/phrases/{inst['id']}").status_code, 204)
+        self.assertEqual(q(favorites=True), [])
+        self.assertIn("Fígado (meu)", q())
+        # campos do laudo para inserir frases
+        rep = self.open(self.med)
+        f = self.med.get(f"/api/v1/report/reports/{rep['id']}/fields").json()["fields"]
+        self.assertEqual(f["paciente.nome"], "Laudo Sintetico Teste")
+        self.assertEqual(self.med2.get(f"/api/v1/report/reports/{rep['id']}/fields").status_code, 200)
+
+    def test_other_institution_never_sees_phrases(self):
+        from tests_platform.support import new_org
+        from vyonix.report import phrases
+        self.admin.post("/api/v1/report/phrases", json={"title": "Só desta clínica", "body": "x", "personal": False})
+        other = new_org(db)
+        with db.session(other) as s:
+            self.assertEqual(phrases.listing(s, user_id=None), [])
+
+
+class PersonalTemplates(EditorBase):
+    def test_export_import_propose_and_admin_summary(self):
+        r = self.med.post("/api/v1/report/templates", json={"name": "Meu TC", "personal": True, "content_format": "html",
+                                                            "findings": "<p><em>Achado</em> pessoal</p>"})
+        self.assertEqual(r.status_code, 201, r.text)
+        tid = r.json()["id"]
+        exp = self.med.get("/api/v1/report/templates/mine/export")
+        self.assertEqual(exp.status_code, 200, exp.text)
+        self.assertIn("attachment", exp.headers["content-disposition"])
+        data = exp.json()
+        self.assertEqual([t["name"] for t in data["templates"]], ["Meu TC"])
+        self.assertEqual(self.med2.get("/api/v1/report/templates/mine/export").json()["templates"], [])  # só os próprios
+        # adulterado: recusado
+        bad = json.loads(json.dumps(data))
+        bad["templates"][0]["findings"] = "<p>alterado</p>"
+        self.assertEqual(self.med2.post("/api/v1/report/templates/mine/import", content=json.dumps(bad)).status_code, 422)
+        # recuperação (ex.: nova conta do mesmo médico): rascunhos pessoais, formatação preservada
+        r = self.med2.post("/api/v1/report/templates/mine/import", content=json.dumps(data))
+        self.assertEqual(r.status_code, 201, r.text)
+        new = r.json()["created"][0]
+        self.assertEqual(new["name"], "Meu TC (importado)")
+        items = {x["name"]: x for x in self.med2.get("/api/v1/report/templates").json()["items"]}
+        self.assertTrue(items["Meu TC (importado)"]["personal"])
+        self.assertEqual(items["Meu TC (importado)"]["draft"]["findings"], "<p><em>Achado</em> pessoal</p>")
+        self.assertNotIn("Meu TC", items)                                             # o original segue privado
+        # proposta à instituição: cópia inativa em rascunho; o original continua pessoal
+        r = self.med.post(f"/api/v1/report/templates/{tid}/propose")
+        self.assertEqual(r.status_code, 201, r.text)
+        self.assertEqual((r.json()["name"], r.json()["active"], r.json()["status"]), ("Meu TC (proposta)", False, "draft"))
+        self.assertEqual(self.med2.post(f"/api/v1/report/templates/{tid}/propose").status_code, 404)
+        adm = {x["name"]: x for x in self.admin.get("/api/v1/report/templates",
+                                                    params={"include_inactive": True}).json()["items"]}
+        self.assertIn("Meu TC (proposta)", adm)
+        self.assertNotIn("Meu TC", adm)
+        self.assertFalse(adm["Meu TC (proposta)"]["personal"])
+        # resumo do administrador: só quantidades
+        summ = self.admin.get("/api/v1/report/templates/personal-summary").json()["items"]
+        self.assertEqual(sorted((x["username"], x["count"]) for x in summ), [("medica", 1), ("medico2", 1)])
+        self.assertNotIn("Meu TC", json.dumps(summ))
 
 
 if __name__ == "__main__":

@@ -639,6 +639,17 @@ class WebE2E(unittest.TestCase):
         row = pg.get_by_role("row", name="Helena Laudo Sintetica")
         expect(row.get_by_role("cell", name="Sem laudo")).to_be_visible()
         expect(pg.get_by_role("row", name="Carlos Agenda Sintetico")).to_have_count(0)        # não atribuído a ela
+        # frase rápida pessoal com campo editável [[...]]
+        pg.get_by_role("button", name="Frases rápidas").click()
+        fp = pg.get_by_role("form", name="Editar frase")
+        fp.get_by_label("Título da frase").fill("Menisco")
+        fp.get_by_label("Atalho").fill("menisco")
+        fp.get_by_label("Categoria").fill("Joelho")
+        fp.get_by_role("textbox", name="Texto da frase", exact=True).fill("Menisco medial com [[medida]] mm.")
+        fp.get_by_role("button", name="Salvar frase").click()
+        expect(pg.get_by_text("Frase salva.")).to_be_visible()
+        expect(pg.get_by_role("list", name="Lista de frases").get_by_text("Menisco", exact=True)).to_be_visible()
+        pg.get_by_role("button", name="Fechar frases").click()
         row.get_by_role("button", name="Laudar").click()
         editor = pg.get_by_role("region", name="Laudo")
         expect(editor.get_by_text("Modelo selecionado: RM normal (regra: organização + modalidade).")).to_be_visible()
@@ -651,6 +662,14 @@ class WebE2E(unittest.TestCase):
         editor.get_by_role("button", name="Lista com marcadores").click()
         text.press_sequentially("Conclusão: exame normal.")
         expect(text.locator("li")).to_have_text("Conclusão: exame normal.")
+        text.press("Enter")
+        text.press("Enter")                                                      # sai da lista
+        text.press_sequentially("/menisco")
+        text.press("Space")                                                      # atalho → pede o campo
+        campos = editor.get_by_role("group", name="Campos da frase")
+        campos.get_by_label("medida").fill("4")
+        campos.get_by_role("button", name="Inserir frase").click()
+        expect(text).to_contain_text("Menisco medial com 4 mm.")
         self.shot(pg, "12a-editor-texto-rico")
         editor.get_by_role("button", name="Salvar rascunho").click()
         expect(editor.get_by_text("Rascunho salvo.")).to_be_visible()
@@ -670,7 +689,8 @@ class WebE2E(unittest.TestCase):
         expect(editor.get_by_text("Laudo liberado.")).to_be_visible()
         v1 = editor.get_by_role("article", name="Versão 1")
         expect(v1.get_by_text("Conclusão: exame normal.")).to_be_visible()
-        expect(v1.get_by_text("Marta Médica — CRM 12345/CE — RQE 6789")).to_be_visible()
+        expect(v1.get_by_text("Marta Médica — CRM 12345/CE — RQE 6789").first).to_be_visible()
+        expect(v1.get_by_text("Redigido e liberado por Marta Médica")).to_be_visible()
         expect(editor.get_by_role("textbox", name="Texto do laudo", exact=True)).to_have_count(0)   # não editável
         expect(v1.locator("li")).to_have_text("Conclusão: exame normal.")                # lista preservada
         add = editor.get_by_role("form", name="Registrar adendo")

@@ -74,19 +74,32 @@ export function RichView({ html, format, label }: { html: string; format?: strin
   return <div className="rich-view" aria-label={label} dangerouslySetInnerHTML={{ __html: sanitizeHtml(html) }} />;
 }
 
-export type Phrase = { id: string; title: string; shortcut: string | null; body: string; personal: boolean };
+export type Phrase = { id: string; title: string; shortcut: string | null; body: string; personal: boolean;
+  favorite?: boolean; category?: string | null; variables?: string[] };
 
 type Props = { label: string; value: string; onChange: (html: string) => void; readOnly?: boolean; rows?: number;
-  phrases?: Phrase[]; hint?: string };
+  phrases?: Phrase[]; hint?: string; fields?: Record<string, string | null> };
+
+const FIELD = /\{\{\s*([a-z_.]+)\s*\}\}/g;
+const VAR = /\[\[([^\[\]<>]{1,40})\]\]/g;
+
+/** Preenche os campos do exame ({{...}}) e os editáveis ([[...]]) com valores escapados. */
+export function fillPhrase(body: string, fields: Record<string, string | null> | undefined, values: Record<string, string>): string {
+  let h = body.replace(FIELD, (m, k: string) => (fields && k in fields ? esc(fields[k] || "[não informado]") : m));
+  h = h.replace(VAR, (m, k: string) => (values[k.trim()] ? esc(values[k.trim()]) : m));
+  return h;
+}
 
 /**
  * Editor com barra de formatação. Colar do Word mantém negrito, itálico, sublinhado, listas e tabelas e descarta o
  * resto. Frases rápidas: escolher na lista ou digitar o atalho (ex.: /normal) seguido de espaço.
  */
-export function RichEditor({ label, value, onChange, readOnly, rows = 8, phrases, hint }: Props) {
+export function RichEditor({ label, value, onChange, readOnly, rows = 8, phrases, hint, fields }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const last = useRef<string>("");
+  const saved = useRef<Range | null>(null);
   const [pick, setPick] = useState("");
+  const [pending, setPending] = useState<{ phrase: Phrase; values: Record<string, string> } | null>(null);
 
   useEffect(() => {                                  // valor vindo de fora (abrir laudo, trocar modelo)
     if (ref.current && value !== last.current) {
@@ -106,6 +119,24 @@ export function RichEditor({ label, value, onChange, readOnly, rows = 8, phrases
     ref.current?.focus();
     document.execCommand(name, false, arg);
     emit();
+  }
+  function applyPhrase(p: Phrase) {
+    const vars = p.variables ?? [];
+    if (vars.length === 0) { insertHtml(fillPhrase(p.body, fields, {})); return; }
+    const sel = window.getSelection();                // guarda o cursor enquanto o médico preenche os campos
+    saved.current = sel && sel.rangeCount && ref.current?.contains(sel.anchorNode) ? sel.getRangeAt(0).cloneRange() : null;
+    setPending({ phrase: p, values: Object.fromEntries(vars.map((v) => [v, ""])) });
+  }
+  function confirmPending() {
+    if (!pending) return;
+    const h = fillPhrase(pending.phrase.body, fields, pending.values);
+    setPending(null);
+    if (saved.current && ref.current) {
+      ref.current.focus();
+      const sel = window.getSelection();
+      sel?.removeAllRanges(); sel?.addRange(saved.current);
+    }
+    insertHtml(h);
   }
   function insertHtml(h: string) {
     if (readOnly || !ref.current) return;
@@ -143,7 +174,7 @@ export function RichEditor({ label, value, onChange, readOnly, rows = 8, phrases
     r.setEnd(node, sel.anchorOffset);
     sel.removeAllRanges(); sel.addRange(r);
     document.execCommand("delete");
-    insertHtml(ph.body);
+    applyPhrase(ph);
   }
 
   return (
@@ -163,12 +194,24 @@ export function RichEditor({ label, value, onChange, readOnly, rows = 8, phrases
           {phrases && phrases.length > 0 && (
             <select aria-label="Inserir frase rápida" value={pick} onChange={(e) => {
               const p = phrases.find((x) => x.id === e.target.value);
-              if (p) insertHtml(p.body);
+              if (p) applyPhrase(p);
               setPick("");
             }}>
               <option value="">Inserir frase…</option>
-              {phrases.map((p) => <option key={p.id} value={p.id}>{p.title}{p.shortcut ? ` (${p.shortcut})` : ""}{p.personal ? " · minha" : ""}</option>)}
+              {phrases.map((p) => <option key={p.id} value={p.id}>{p.favorite ? "★ " : ""}{p.category ? `${p.category} › ` : ""}{p.title}{p.shortcut ? ` (${p.shortcut})` : ""}{p.personal ? " · minha" : ""}</option>)}
             </select>)}
+        </div>)}
+      {pending && (
+        <div className="panel-inset" role="group" aria-label="Campos da frase">
+          <strong>{pending.phrase.title}</strong>: preencha os campos (vazios ficam marcados para completar depois).
+          <div className="filters">
+            {Object.keys(pending.values).map((k, i) => (
+              <input key={k} aria-label={k} placeholder={k} maxLength={200} autoFocus={i === 0} value={pending.values[k]}
+                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); confirmPending(); } }}
+                onChange={(e) => setPending({ ...pending, values: { ...pending.values, [k]: e.target.value } })} />))}
+            <button type="button" className="primary" onClick={confirmPending}>Inserir frase</button>
+            <button type="button" className="link" onClick={() => setPending(null)}>Cancelar</button>
+          </div>
         </div>)}
       <div ref={ref} className="rich-area" role="textbox" aria-multiline="true" aria-label={label}
         aria-readonly={readOnly ? "true" : undefined} contentEditable={!readOnly} suppressContentEditableWarning

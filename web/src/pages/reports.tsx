@@ -12,7 +12,9 @@ type Row = { study_id: string; study_instance_uid: string; accession: string | n
   assignment: null | { physician: string; priority: string; due_at: string; overdue: boolean } };
 type Version = { version: number; kind: "final" | "addendum"; body: string; critical: boolean; signed_by: string;
   signed_at: string; sha256: string; signature_mode?: "password" | "handwritten_image"; body_format?: string;
-  author?: string | null };
+  author?: string | null; reviewer?: string | null;
+  changes?: null | { revisions: number; editors: string[]; review_rounds: number; returns: number;
+    reviewer_edited?: boolean; reviewer_added_lines?: number; reviewer_removed_lines?: number } };
 type Review = { requested_by: string | null; note: string | null; requested_at: string | null; reviewer_id: string | null };
 type Report = { id: string; study_id: string; study_instance_uid: string | null; status: "draft" | "review" | "final";
   body: string; body_format?: string; critical: boolean; critical_note: string | null; author: string; version: number;
@@ -190,6 +192,8 @@ function Editor({ me, row, initial, onClose }: { me: Me; row: Row; initial: Repo
     ? (await get<{ items: Phrase[] }>(`/report/phrases?${new URLSearchParams(row.modality ? { modality: row.modality } : {})}`)).items : []), []);
   const reviewers = useLoad(async () => (report?.status === "draft" && can("report.write")
     ? (await get<{ items: { id: string; name: string }[] }>("/report/reviewers")).items : []), [report?.status]);
+  const fields = useLoad(async () => (report && report.status !== "final" && can("report.write")
+    ? (await get<{ fields: Record<string, string | null> }>(`/report/reports/${report.id}/fields`)).fields : {}), [report?.id]);
   const revs = useLoad(async () => (showRevs && report ? (await get<{ items: Revision[] }>(`/report/reports/${report.id}/revisions`)).items : []),
     [showRevs, report?.row_version]);
   const editable = report?.status === "draft" ? can("report.write") : report?.status === "review" && can("report.review");
@@ -286,7 +290,7 @@ function Editor({ me, row, initial, onClose }: { me: Me; row: Row; initial: Repo
             {report.review?.note ? `. Observação: ${report.review.note}` : ""}. {editable ? "Você pode ajustar o texto, devolver ao autor ou liberar." : "O texto fica bloqueado até a devolução ou a liberação pelo revisor."}</Notice>}
           {report.status === "draft" && report.review?.note && <Notice kind="warn">Devolvido pelo revisor: {report.review.note}</Notice>}
           <RichEditor label="Texto do laudo" value={draft.body} readOnly={!editable} rows={14}
-            phrases={phrases.data ?? []} onChange={(h) => setDraft((d) => ({ ...d, body: h }))}
+            phrases={phrases.data ?? []} fields={fields.data ?? {}} onChange={(h) => setDraft((d) => ({ ...d, body: h }))}
             hint="Negrito, itálico, sublinhado, listas e tabelas aparecem iguais no PDF. Frases: escolha na lista ou digite o atalho (ex.: /normal) e espaço." />
           <label className="check"><input type="checkbox" checked={draft.critical} disabled={!editable}
             onChange={(e) => setDraft({ ...draft, critical: e.target.checked })} /> Achado crítico</label>
@@ -349,7 +353,15 @@ function Editor({ me, row, initial, onClose }: { me: Me; row: Row; initial: Repo
                 {v.critical && <span className="tag tag-warn">Achado crítico</span>}</span>
               {v.signature_mode && <span className="field-hint">{MODE[v.signature_mode]}</span>}
               <RichView html={v.body} format={v.body_format} />
-              {v.author && <span className="field-hint">Redigido por {v.author}; revisado e liberado por {v.signed_by}.</span>}
+              <span className="field-hint">{v.reviewer
+                ? <>Redigido por {v.author ?? "—"} · revisado e liberado por {v.reviewer}</>
+                : <>Redigido e liberado por {v.signed_by}</>}
+                {v.changes && <> · {v.changes.revisions} gravação(ões) do rascunho{v.changes.editors.length ? ` (${v.changes.editors.join(", ")})` : ""}
+                  {v.changes.review_rounds > 0 && `; ${v.changes.review_rounds} envio(s) para revisão, ${v.changes.returns} devolução(ões)`}
+                  {v.changes.reviewer_edited !== undefined && (v.changes.reviewer_edited
+                    ? `; o revisor alterou o texto (+${v.changes.reviewer_added_lines}/−${v.changes.reviewer_removed_lines} linhas)`
+                    : "; o revisor não alterou o texto")}</>}
+                . Liberação por senha{v.signature_mode === "handwritten_image" ? " + imagem da assinatura manuscrita" : ""}; não é assinatura digital ICP-Brasil.</span>
               <span className="field-hint" title={v.sha256}>SHA-256 {v.sha256.slice(0, 16)}…</span>
             </article>
           ))}
@@ -417,6 +429,21 @@ function Templates({ me }: { me: Me }) {
       "Modelo publicado. Novos laudos passam a usar esta versão.");
   }
   const current = list.data?.items.find((t) => t.id === form.id);
+  async function importMine(f: File | undefined) {
+    if (!f) return;
+    await act.run(async () => {
+      const r = await upload<{ created: { name: string }[] }>("/report/templates/mine/import", f);
+      await list.reload();
+      act.setMsg({ kind: "ok", text: `${r.created.length} modelo(s) recuperado(s) como rascunhos pessoais: ${r.created.map((x) => x.name).join(", ")}.` });
+    });
+  }
+  async function propose() {
+    await act.run(async () => {
+      const r = await post<{ name: string }>(`/report/templates/${form.id}/propose`, {});
+      await list.reload();
+      act.setMsg({ kind: "ok", text: `Cópia oferecida à instituição como “${r.name}” (inativa, em rascunho). Quem gerencia os modelos confere e publica; seu modelo continua pessoal.` });
+    });
+  }
   async function importDocx(f: File | undefined) {
     if (!f) return;
     await act.run(async () => {
@@ -438,6 +465,14 @@ function Templates({ me }: { me: Me }) {
           {t.personal && <span className="tag">pessoal</span>}
           {" — "}{t.published_version ? `publicada v${t.published_version}` : "sem versão publicada"}{t.draft ? ` · rascunho v${t.draft.version}` : ""}{t.active ? "" : " — inativo"}</li>))}
       </ul>
+      {can("report.templates.own") && (
+        <div className="filters" role="group" aria-label="Meus modelos pessoais">
+          <a className="button" href="/api/v1/report/templates/mine/export">Exportar meus modelos pessoais</a>
+          <label className="field"><span className="field-label">Recuperar de uma exportação</span>
+            <input type="file" accept=".json,application/json" aria-label="Arquivo de exportação de modelos"
+              onChange={(e) => void importMine(e.target.files?.[0])} /></label>
+          <span className="field-hint">A exportação é sua cópia de segurança (com verificação de integridade). Ninguém mais exporta ou lê seus modelos pessoais.</span>
+        </div>)}
       <div className="filters" role="group" aria-label="Importar DOCX">
         <label className="field"><span className="field-label">Importar modelo do Word (DOCX)</span>
           <input type="file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -495,6 +530,7 @@ function Templates({ me }: { me: Me }) {
         <div className="row-actions">
           <button className="primary" disabled={act.busy}>Salvar rascunho</button>
           {form.id && <button type="button" className="link" onClick={() => { setForm(empty); setReviewed(false); }}>Novo modelo</button>}
+          {form.id && current?.personal && <button type="button" className="link" disabled={act.busy} onClick={() => void propose()}>Oferecer cópia à instituição</button>}
         </div>
       </form>
       {form.id && current?.draft && (
@@ -508,39 +544,88 @@ function Templates({ me }: { me: Me }) {
   );
 }
 
-type PhraseItem = Phrase & { modality: string | null; active: boolean; text: string };
+type PhraseItem = Phrase & { modality: string | null; active: boolean; text: string; phrase_shortcut: string | null;
+  my_shortcut: string | null };
 
-/** Frases rápidas: as pessoais do médico e (com permissão) as da instituição. */
+/** Frases rápidas: as pessoais do médico e (com permissão) as da instituição; busca, categorias, favoritas,
+ * duplicar e atalho próprio. Campos: {{paciente.nome}} (dados do exame) e [[rótulo]] (preenchido ao inserir). */
 function Phrases({ me }: { me: Me }) {
   const can = (p: string) => me.permissions.includes(p);
-  const list = useLoad(async () => (await get<{ items: PhraseItem[] }>("/report/phrases?include_inactive=true")).items, []);
-  const empty = { id: "", title: "", shortcut: "", modality: "", body: "", active: true, personal: can("report.phrases.own") };
+  const [filter, setFilter] = useState({ q: "", category: "", favorites: false });
+  const list = useLoad(async () => {
+    const q = new URLSearchParams({ include_inactive: "true" });
+    if (filter.q) q.set("q", filter.q);
+    if (filter.category) q.set("category", filter.category);
+    if (filter.favorites) q.set("favorites", "true");
+    return await get<{ items: PhraseItem[]; categories: string[] }>(`/report/phrases?${q}`);
+  }, [filter]);
+  const empty = { id: "", title: "", shortcut: "", modality: "", category: "", body: "", active: true, personal: can("report.phrases.own") };
   const [form, setForm] = useState(empty);
+  const [mine, setMine] = useState<{ id: string; shortcut: string } | null>(null);
   const act = useAction();
   const editable = (p: PhraseItem) => (p.personal ? can("report.phrases.own") : can("report.phrases.manage"));
   async function save(e: FormEvent) {
     e.preventDefault();
     await act.run(async () => {
-      const body = { title: form.title, shortcut: form.shortcut || null, modality: form.modality || null, body: form.body,
-        active: form.active, personal: form.personal };
+      const body = { title: form.title, shortcut: form.shortcut || null, modality: form.modality || null, category: form.category || null,
+        body: form.body, active: form.active, personal: form.personal };
       if (form.id) await put(`/report/phrases/${form.id}`, body); else await post("/report/phrases", body);
       setForm(empty); await list.reload();
     }, "Frase salva.");
   }
   async function remove(id: string) {
-    await act.run(async () => { await del(`/report/phrases/${id}`); setForm(empty); await list.reload(); }, "Frase removida.");
+    await act.run(async () => { await del(`/report/phrases/${id}`); setForm(empty); await list.reload(); }, "Frase excluída.");
   }
+  async function duplicate(p: PhraseItem) {
+    await act.run(async () => {
+      const d = await post<PhraseItem>(`/report/phrases/${p.id}/duplicate`, {});
+      await list.reload();
+      setForm({ id: d.id, title: d.title, shortcut: "", modality: d.modality ?? "", category: d.category ?? "", body: d.body, active: true, personal: true });
+    }, "Cópia pessoal criada: personalize e salve.");
+  }
+  async function pref(p: PhraseItem, body: Record<string, unknown>, ok: string) {
+    await act.run(async () => { await put(`/report/phrases/${p.id}/prefs`, body); setMine(null); await list.reload(); }, ok);
+  }
+  const items = list.data?.items ?? [];
   return (
     <section className="panel" aria-label="Frases rápidas">
       <h2>Frases rápidas</h2>
-      <p className="field-hint">Use no editor do laudo pela lista “Inserir frase…” ou digitando o atalho seguido de espaço. Frases pessoais só você vê.</p>
+      <p className="field-hint">No editor do laudo: lista “Inserir frase…” ou atalho seguido de espaço. Use {"{{paciente.nome}}"} e outros campos do exame
+        (preenchidos ao inserir) e [[rótulo]] para campos que você completa na hora (ex.: [[medida em mm]]). Frases pessoais só você vê.</p>
       {act.view}
-      <ul className="history">{(list.data ?? []).map((p) => (
-        <li key={p.id}>{editable(p) ? <button className="link" onClick={() => setForm({ id: p.id, title: p.title, shortcut: p.shortcut ?? "",
-          modality: p.modality ?? "", body: p.body, active: p.active, personal: p.personal })}>{p.title}</button> : p.title}
-          {p.shortcut && <code> {p.shortcut}</code>}{p.modality ? ` (${p.modality})` : ""}
-          <span className="tag">{p.personal ? "minha" : "instituição"}</span>{p.active ? "" : " — inativa"}</li>))}
+      <form className="filters" role="search" aria-label="Buscar frases" onSubmit={(e) => e.preventDefault()}>
+        <input aria-label="Buscar frase" placeholder="Buscar por título, atalho ou texto" value={filter.q}
+          onChange={(e) => setFilter({ ...filter, q: e.target.value })} />
+        <select aria-label="Categoria" value={filter.category} onChange={(e) => setFilter({ ...filter, category: e.target.value })}>
+          <option value="">Todas as categorias</option>
+          {(list.data?.categories ?? []).map((c) => <option key={c} value={c}>{c}</option>)}</select>
+        <label className="check"><input type="checkbox" checked={filter.favorites}
+          onChange={(e) => setFilter({ ...filter, favorites: e.target.checked })} /> Só favoritas</label>
+      </form>
+      <ul className="history" aria-label="Lista de frases">{items.map((p) => (
+        <li key={p.id}>
+          <button type="button" className="link" aria-label={`${p.favorite ? "Desmarcar" : "Marcar"} favorita: ${p.title}`}
+            onClick={() => void pref(p, { favorite: !p.favorite }, p.favorite ? "Removida das favoritas." : "Marcada como favorita.")}>{p.favorite ? "★" : "☆"}</button>
+          {" "}{p.category ? `${p.category} › ` : ""}<strong>{p.title}</strong>
+          {p.shortcut && <code> {p.shortcut}</code>}{p.my_shortcut && <span className="field-hint"> (meu atalho)</span>}
+          {p.modality ? ` (${p.modality})` : ""}<span className="tag">{p.personal ? "minha" : "instituição"}</span>{p.active ? "" : " — inativa"}
+          <span className="row-actions">
+            {editable(p) && <button type="button" className="link" onClick={() => setForm({ id: p.id, title: p.title, shortcut: p.phrase_shortcut ?? "",
+              modality: p.modality ?? "", category: p.category ?? "", body: p.body, active: p.active, personal: p.personal })}>Editar</button>}
+            {can("report.phrases.own") && <button type="button" className="link" onClick={() => void duplicate(p)}>Duplicar</button>}
+            {!p.personal && <button type="button" className="link" onClick={() => setMine({ id: p.id, shortcut: p.my_shortcut ?? "" })}>Meu atalho</button>}
+            {editable(p) && <button type="button" className="link" onClick={() => void remove(p.id)}>Excluir</button>}
+          </span>
+          {mine?.id === p.id && (
+            <span className="filters" role="group" aria-label={`Meu atalho para ${p.title}`}>
+              <input aria-label="Meu atalho" placeholder="/atalho" maxLength={31} value={mine.shortcut}
+                onChange={(e) => setMine({ ...mine, shortcut: e.target.value.toLowerCase() })} />
+              <button type="button" onClick={() => void pref(p, mine.shortcut ? { shortcut: mine.shortcut } : { clear_shortcut: true }, "Atalho pessoal salvo.")}>Salvar atalho</button>
+              <button type="button" className="link" onClick={() => setMine(null)}>Cancelar</button>
+            </span>)}
+        </li>))}
       </ul>
+      {!list.loading && items.length === 0 && <p className="empty">Nenhuma frase encontrada.</p>}
       <form onSubmit={save} aria-label="Editar frase">
         {!form.id && can("report.phrases.own") && can("report.phrases.manage") && (
           <label className="check"><input type="checkbox" checked={!form.personal} onChange={(e) => setForm({ ...form, personal: !e.target.checked })} />
@@ -548,14 +633,16 @@ function Phrases({ me }: { me: Me }) {
         <div className="grid2">
           <Field label="Título da frase"><input required maxLength={120} value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} /></Field>
           <Field label="Atalho" hint="Ex.: /normal"><input maxLength={31} value={form.shortcut} onChange={(e) => setForm({ ...form, shortcut: e.target.value.toLowerCase() })} /></Field>
+          <Field label="Categoria" hint="Ex.: Abdome, Tórax"><input maxLength={60} list="phrase-categories" value={form.category}
+            onChange={(e) => setForm({ ...form, category: e.target.value })} /></Field>
           <Field label="Modalidade da frase" hint="Vazio = todas"><input maxLength={16} value={form.modality} onChange={(e) => setForm({ ...form, modality: e.target.value.toUpperCase() })} /></Field>
         </div>
+        <datalist id="phrase-categories">{(list.data?.categories ?? []).map((c) => <option key={c} value={c} />)}</datalist>
         <RichEditor label="Texto da frase" rows={4} value={form.body} onChange={(h) => setForm((f) => ({ ...f, body: h }))} />
         <label className="check"><input type="checkbox" checked={form.active} onChange={(e) => setForm({ ...form, active: e.target.checked })} /> Ativa</label>
         <div className="row-actions">
           <button className="primary" disabled={act.busy}>Salvar frase</button>
-          {form.id && <><button type="button" className="link" onClick={() => setForm(empty)}>Nova frase</button>
-            <button type="button" className="link" onClick={() => void remove(form.id)}>Remover frase</button></>}
+          {form.id && <button type="button" className="link" onClick={() => setForm(empty)}>Nova frase</button>}
         </div>
       </form>
     </section>

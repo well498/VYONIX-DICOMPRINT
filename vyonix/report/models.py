@@ -103,6 +103,8 @@ class ReportVersion(TenantMixin, Base):
     signature_image_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)          # imagem aplicada (autorizada)
     body_format: Mapped[str] = mapped_column(String(8), nullable=False, default="text", server_default="text")
     author: Mapped[str | None] = mapped_column(String(120))                    # quem redigiu (revisão: ≠ quem liberou)
+    reviewer: Mapped[str | None] = mapped_column(String(160))                  # revisor (identificação profissional)
+    changes: Mapped[dict | None] = mapped_column(JSON)       # resumo das alterações do rascunho (fora do hash)
 
 
 class Physician(TenantMixin, Base):
@@ -206,9 +208,21 @@ class Phrase(TenantMixin, Base):
     title: Mapped[str] = mapped_column(String(120), nullable=False)
     shortcut: Mapped[str | None] = mapped_column(String(30))
     modality: Mapped[str | None] = mapped_column(String(16))
+    category: Mapped[str | None] = mapped_column(String(60))
     body: Mapped[str] = mapped_column(Text, nullable=False)                 # HTML seguro (richtext)
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_by: Mapped[str] = mapped_column(String(120), nullable=False)
+
+
+class PhrasePref(TenantMixin, Base):
+    """Preferência do usuário por frase visível a ele: favorita e atalho próprio (vale só para ele)."""
+    __tablename__ = "phrase_prefs"
+    __table_args__ = (Index("uq_report_phrase_prefs", "tenant_id", "user_id", "phrase_id", unique=True), SCHEMA)
+    user_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+    phrase_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("report.phrases.id", ondelete="CASCADE"),
+                                                 nullable=False)
+    favorite: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    shortcut: Mapped[str | None] = mapped_column(String(30))
 
 
 class DraftRevision(TenantMixin, Base):

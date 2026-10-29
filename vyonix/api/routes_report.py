@@ -79,8 +79,15 @@ class PhraseIn(BaseModel):
     body: str = Field(min_length=1, max_length=20000)
     shortcut: str | None = Field(None, max_length=31)
     modality: str | None = Field(None, max_length=16)
+    category: str | None = Field(None, max_length=60)
     active: bool = True
     personal: bool = True
+
+
+class PhrasePrefIn(BaseModel):
+    favorite: bool | None = None
+    shortcut: str | None = Field(None, max_length=31)
+    clear_shortcut: bool = False
 
 
 class SignIn(BaseModel):
@@ -211,7 +218,7 @@ def request_review(rid: uuid.UUID, body: ReviewRequestIn, c: Ctx = Depends(needs
         _require(c, s)
         _in_scope(c, s, report_id=rid)
         rep.request_review(s, rid, reviewer_id=body.reviewer_id, note=body.note, expected_version=body.row_version,
-                           actor=c.p.display_name or c.p.username, actor_id=c.p.user_id, ip=c.ip)
+                           **c.actor)
         return rep.get(s, rid)
 
 
@@ -222,8 +229,7 @@ def return_review(rid: uuid.UUID, body: ReviewReturnIn, c: Ctx = Depends(needs("
         _in_scope(c, s, report_id=rid)
         if not _is_reviewer(c, s, rid):
             raise Forbidden("Só o revisor deste laudo pode devolvê-lo.", code="not_reviewer")
-        rep.return_review(s, rid, note=body.note, actor=c.p.display_name or c.p.username, actor_id=c.p.user_id,
-                          ip=c.ip)
+        rep.return_review(s, rid, note=body.note, **c.actor)
         return rep.get(s, rid)
 
 
@@ -406,6 +412,47 @@ def update_template(tid: uuid.UUID, body: TemplateIn, c: Ctx = Depends(needs("re
         return {"id": str(t.id), "version": v.version, "status": v.status, "personal": t.owner_user_id is not None}
 
 
+@router.get("/templates/mine/export")
+def export_personal_templates(c: Ctx = Depends(needs("report.templates.own"))):
+    """Cópia de segurança dos **meus** modelos pessoais (arquivo JSON com SHA-256)."""
+    from fastapi.responses import JSONResponse
+    with c.session() as s:
+        data = tpl.export_personal(s, user_id=c.p.user_id, **c.actor)
+    return JSONResponse(data, headers={"Content-Disposition": 'attachment; filename="meus-modelos-vyonix.json"',
+                                       "Cache-Control": "no-store"})
+
+
+@router.post("/templates/mine/import", status_code=201)
+async def import_personal_templates(request: Request, c: Ctx = Depends(needs("report.templates.own"))):
+    """Recupera modelos de uma exportação como rascunhos pessoais do usuário."""
+    import json as _json
+    from vyonix.errors import ValidationFailed
+    raw = await request.body()
+    if len(raw) > 5 * 1024 * 1024:
+        raise ValidationFailed("Arquivo acima de 5 MB.")
+    try:
+        data = _json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError):
+        raise ValidationFailed("Arquivo não é JSON válido.") from None
+    with c.session() as s:
+        return tpl.import_personal(s, data, user_id=c.p.user_id, **c.actor)
+
+
+@router.post("/templates/{tid}/propose", status_code=201)
+def propose_template(tid: uuid.UUID, c: Ctx = Depends(needs("report.templates.own"))):
+    """Oferece uma cópia do meu modelo à instituição (inativa, em rascunho; quem gerencia confere e publica)."""
+    with c.session() as s:
+        t, v = tpl.propose(s, tid, user_id=c.p.user_id, **c.actor)
+        return {"id": str(t.id), "name": t.name, "version": v.version, "status": v.status, "active": t.active}
+
+
+@router.get("/templates/personal-summary")
+def personal_templates_summary(c: Ctx = Depends(needs("report.templates.manage"))):
+    """Quantidade de modelos pessoais por usuário (sem nomes nem conteúdo)."""
+    with c.session() as s:
+        return {"items": tpl.personal_summary(s)}
+
+
 @router.post("/templates/import-docx", status_code=201)
 async def import_docx(request: Request, name: str | None = None, modality: str | None = None, personal: bool = False,
                       c: Ctx = Depends(needs("report.read"))):
@@ -482,12 +529,46 @@ def _phrase_owner(c: Ctx, personal: bool):
 
 @router.get("/phrases")
 def list_phrases(modality: str | None = None, scope: str = "all", include_inactive: bool = False,
+                 q: str | None = None, category: str | None = None, favorites: bool = False,
                  c: Ctx = Depends(needs("report.read"))):
     from vyonix.report import phrases
     with c.session() as s:
         return {"items": phrases.listing(s, user_id=c.p.user_id, modality=modality, scope=scope,
-                                         include_inactive=include_inactive),
+                                         include_inactive=include_inactive, q=q, category=category,
+                                         favorites=favorites),
+                "categories": phrases.categories(s, user_id=c.p.user_id),
                 "can_own": c.p.has("report.phrases.own"), "can_manage": c.p.has("report.phrases.manage")}
+
+
+@router.post("/phrases/{pid}/duplicate", status_code=201)
+def duplicate_phrase(pid: uuid.UUID, c: Ctx = Depends(needs("report.phrases.own"))):
+    """Cópia pessoal (para personalizar uma frase da instituição ou variar uma própria)."""
+    from vyonix.report import phrases
+    with c.session() as s:
+        p = phrases.duplicate(s, pid, user_id=c.p.user_id, **c.actor)
+        return phrases._out(p)
+
+
+@router.put("/phrases/{pid}/prefs")
+def phrase_prefs(pid: uuid.UUID, body: PhrasePrefIn, c: Ctx = Depends(needs("report.write"))):
+    """Favorita e atalho próprio (só para este usuário)."""
+    from vyonix.report import phrases
+    with c.session() as s:
+        return phrases.set_pref(s, pid, user_id=c.p.user_id, favorite=body.favorite, shortcut=body.shortcut,
+                                clear_shortcut=body.clear_shortcut)
+
+
+@router.get("/reports/{rid}/fields")
+def report_fields(rid: uuid.UUID, c: Ctx = Depends(needs("report.write"))):
+    """Valores dos campos ``{{...}}`` para inserir frases neste laudo (dados administrativos do exame)."""
+    from vyonix.errors import NotFound
+    from vyonix.report.models import Report
+    with c.session() as s:
+        _in_scope(c, s, report_id=rid)
+        r = s.get(Report, rid)
+        if r is None:
+            raise NotFound("Laudo não encontrado.")
+        return {"fields": {k: v for k, v in tpl.context(s, r.study_id).items()}}
 
 
 @router.post("/phrases", status_code=201)
@@ -496,7 +577,7 @@ def create_phrase(body: PhraseIn, c: Ctx = Depends(needs("report.read"))):
     owner = _phrase_owner(c, body.personal)
     with c.session() as s:
         p = phrases.save(s, title=body.title, body=body.body, shortcut=body.shortcut, modality=body.modality,
-                         active=body.active, owner_user_id=owner, user_id=c.p.user_id, **c.actor)
+                         category=body.category, active=body.active, owner_user_id=owner, user_id=c.p.user_id, **c.actor)
         return phrases._out(p)
 
 
@@ -507,7 +588,7 @@ def update_phrase(pid: uuid.UUID, body: PhraseIn, c: Ctx = Depends(needs("report
         cur = phrases.get(s, pid, user_id=c.p.user_id)
         owner = _phrase_owner(c, cur.owner_user_id is not None)
         p = phrases.save(s, title=body.title, body=body.body, shortcut=body.shortcut, modality=body.modality,
-                         active=body.active, owner_user_id=owner, phrase_id=pid, user_id=c.p.user_id, **c.actor)
+                         category=body.category, active=body.active, owner_user_id=owner, phrase_id=pid, user_id=c.p.user_id, **c.actor)
         return phrases._out(p)
 
 

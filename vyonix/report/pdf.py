@@ -225,6 +225,8 @@ def render(report: dict[str, Any], *, patient: dict[str, Any], study: dict[str, 
                   Spacer(1, 2 * mm)]
         if draft:
             continue
+        if v.get("reviewer"):
+            story.append(para(f"Redigido por {v.get('author') or '—'}. Revisado e liberado por {v['reviewer']}.", "s"))
         items = signer_block(v)
         if blk["position"] == "footer" and v["kind"] == "final":
             footer_items = items

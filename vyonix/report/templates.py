@@ -329,3 +329,105 @@ def select_for(s: Session, study_id: uuid.UUID) -> dict[str, Any]:
         return {"status": "selected", "level": name, "template_id": str(t.id), "name": t.name,
                 "version": published(s, t).version}
     return {"status": "none", "level": None, "message": "Nenhum modelo publicado para este exame: rascunho em branco."}
+
+
+# ------------------------------------------------------------------ modelos pessoais: exportação e continuidade
+EXPORT_FORMAT = "vyonix-modelos-pessoais"
+
+
+def _export_digest(items: list[dict[str, Any]]) -> str:
+    import hashlib
+    import json
+    return hashlib.sha256(json.dumps(items, ensure_ascii=False, sort_keys=True,
+                                     separators=(",", ":")).encode("utf-8")).hexdigest()
+
+
+def export_personal(s: Session, *, user_id: uuid.UUID, actor: str, actor_id=None, ip=None) -> dict[str, Any]:
+    """Arquivo com os modelos pessoais **do próprio usuário** (último conteúdo: rascunho ou publicada), com SHA-256
+    para conferir a integridade na recuperação. Nenhum dado de paciente (só o texto do modelo)."""
+    items = []
+    for t in s.execute(select(ReportTemplate).where(ReportTemplate.owner_user_id == user_id)
+                       .order_by(ReportTemplate.name)).scalars():
+        vs = _versions(s, t.id)
+        if not vs:
+            continue
+        v = vs[-1]
+        items.append({"name": t.name, "modality": t.modality, "active": t.active, "content_format": fmt_of(v),
+                      "technique": v.technique, "findings": v.findings, "conclusion": v.conclusion,
+                      "signature_block": v.signature_block, "status": v.status})
+    audit.record(s, actor=actor, actor_id=actor_id, ip=ip, action="report.template.export_personal",
+                 target_type="user", target_id=user_id, details={"templates": len(items)})
+    return {"format": EXPORT_FORMAT, "version": 1, "exported_at": utcnow().isoformat(), "exported_by": actor[:120],
+            "templates": items, "sha256": _export_digest(items)}
+
+
+def import_personal(s: Session, data: dict[str, Any], *, user_id: uuid.UUID, actor: str, actor_id=None,
+                    ip=None) -> dict[str, Any]:
+    """Recupera modelos de um arquivo exportado como **rascunhos pessoais** do usuário (publicar continua exigindo a
+    conferência). Arquivo alterado (SHA-256 diferente) é recusado; nomes repetidos ganham sufixo."""
+    if not isinstance(data, dict) or data.get("format") != EXPORT_FORMAT or data.get("version") != 1:
+        raise ValidationFailed("Arquivo não é uma exportação de modelos pessoais do VYONIX.")
+    items = data.get("templates")
+    if not isinstance(items, list) or len(items) > 500:
+        raise ValidationFailed("Arquivo de modelos inválido.")
+    if _export_digest(items) != data.get("sha256"):
+        raise ValidationFailed("O arquivo foi alterado depois da exportação (SHA-256 não confere).")
+    created = []
+    for it in items:
+        if not isinstance(it, dict):
+            raise ValidationFailed("Arquivo de modelos inválido.")
+        base = str(it.get("name") or "Modelo")[:100].strip() or "Modelo"
+        name, n = base, 1
+        while s.execute(select(ReportTemplate.id).where(func.lower(ReportTemplate.name) == name.lower())).first():
+            n += 1
+            name = f"{base} (importado{'' if n == 2 else f' {n - 1}'})"[:120]
+        t, v = save(s, name=name, modality=it.get("modality"), technique=str(it.get("technique") or ""),
+                    findings=str(it.get("findings") or ""), conclusion=str(it.get("conclusion") or ""),
+                    content_format=it.get("content_format") if it.get("content_format") in ("text", "html") else "text",
+                    signature_block=it.get("signature_block") if isinstance(it.get("signature_block"), dict) else None,
+                    owner_user_id=user_id, actor=actor, actor_id=actor_id, ip=ip)
+        created.append({"id": str(t.id), "name": t.name})
+    audit.record(s, actor=actor, actor_id=actor_id, ip=ip, action="report.template.import_personal",
+                 target_type="user", target_id=user_id, details={"templates": len(created)})
+    return {"created": created}
+
+
+def propose(s: Session, template_id: uuid.UUID, *, user_id: uuid.UUID, actor: str, actor_id=None,
+            ip=None) -> tuple[ReportTemplate, TemplateVersion]:
+    """O médico oferece **uma cópia** do próprio modelo à instituição (continuidade): vira um modelo da instituição
+    **inativo, em rascunho**; usar exige que quem gerencia modelos confira, ative e publique. O original continua
+    pessoal e privado."""
+    t = s.get(ReportTemplate, template_id)
+    if t is None or t.owner_user_id != user_id:
+        raise NotFound("Modelo não encontrado.")
+    vs = _versions(s, t.id)
+    if not vs:
+        raise ValidationFailed("Modelo sem conteúdo.")
+    v = vs[-1]
+    base = f"{t.name} (proposta)"[:120]
+    name, n = base, 2
+    while s.execute(select(ReportTemplate.id).where(func.lower(ReportTemplate.name) == name.lower())).first():
+        name, n = f"{t.name} (proposta {n})"[:120], n + 1
+    nt, nv = save(s, name=name, modality=t.modality, technique=v.technique, findings=v.findings,
+                  conclusion=v.conclusion, content_format=fmt_of(v), signature_block=v.signature_block, active=False,
+                  owner_user_id=None, actor=actor, actor_id=actor_id, ip=ip)
+    audit.record(s, actor=actor, actor_id=actor_id, ip=ip, action="report.template.propose",
+                 target_type="report_template", target_id=nt.id, details={"from_personal": str(t.id)})
+    return nt, nv
+
+
+def personal_summary(s: Session) -> list[dict[str, Any]]:
+    """Para quem administra: **quantos** modelos pessoais cada usuário tem e quando mudaram — sem nomes nem texto."""
+    from vyonix.auth.models import User
+    rows: dict[uuid.UUID, dict[str, Any]] = {}
+    for t in s.execute(select(ReportTemplate).where(ReportTemplate.owner_user_id.is_not(None))).scalars():
+        d = rows.setdefault(t.owner_user_id, {"count": 0, "updated_at": None})
+        d["count"] += 1
+        ts = t.updated_at.isoformat() if t.updated_at else None
+        d["updated_at"] = max(filter(None, [d["updated_at"], ts]), default=None)
+    out = []
+    for uid, d in rows.items():
+        u = s.get(User, uid)
+        out.append({"user_id": str(uid), "username": u.username if u else None,
+                    "active_user": bool(u and u.active), **d})
+    return sorted(out, key=lambda x: x["username"] or "")

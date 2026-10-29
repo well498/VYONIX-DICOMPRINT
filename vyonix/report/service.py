@@ -60,7 +60,8 @@ def _out(r: Report, s: Session, *, versions: bool = False) -> dict[str, Any]:
     if versions:
         d["versions"] = [{"version": v.version, "kind": v.kind, "body": v.body, "critical": v.critical,
                           "signed_by": v.signed_by, "signed_at": v.signed_at.isoformat(), "sha256": v.sha256,
-                          "body_format": v.body_format or "text", "author": v.author,
+                          "body_format": v.body_format or "text", "author": v.author, "reviewer": v.reviewer,
+                          "changes": v.changes,
                           "signature_mode": "handwritten_image" if v.signature_image_id else "password"}
                          for v in s.execute(select(ReportVersion).where(ReportVersion.report_id == r.id)
                                             .order_by(ReportVersion.version)).scalars()]
@@ -148,6 +149,28 @@ def update_draft(s: Session, report_id: uuid.UUID, *, body: str, critical: bool 
     return r
 
 
+def _changes(s: Session, r: Report, *, reviewed: bool) -> dict[str, Any]:
+    """Resumo das alterações do rascunho até a liberação (registrado na versão; fora do hash): quantas gravações,
+    quem editou e — na revisão — quantas linhas o revisor acrescentou/removeu em relação ao texto enviado."""
+    import difflib
+    from vyonix.report import richtext
+    from vyonix.report.models import DraftRevision
+    revs = list(s.execute(select(DraftRevision).where(DraftRevision.report_id == r.id)
+                          .order_by(DraftRevision.revision)).scalars())
+    out: dict[str, Any] = {"revisions": len(revs), "editors": list(dict.fromkeys(x.author for x in revs)),
+                           "review_rounds": sum(1 for x in revs if x.event == "review_request"),
+                           "returns": sum(1 for x in revs if x.event == "return")}
+    if reviewed:
+        sent = next((x for x in reversed(revs) if x.event == "review_request"), None)
+        before = richtext.to_text(sent.body, sent.body_format).splitlines() if sent else []
+        after = richtext.to_text(r.body or "", r.body_format or "text").splitlines()
+        diff = [d for d in difflib.ndiff(before, after) if d[:2] in ("+ ", "- ")]
+        out["reviewer_added_lines"] = sum(1 for d in diff if d.startswith("+ "))
+        out["reviewer_removed_lines"] = sum(1 for d in diff if d.startswith("- "))
+        out["reviewer_edited"] = bool(diff)
+    return out
+
+
 def request_review(s: Session, report_id: uuid.UUID, *, reviewer_id: uuid.UUID | None = None, note: str | None = None,
                    expected_version: int | None = None, actor: str, actor_id=None, ip=None) -> Report:
     """Envia o rascunho para revisão (segunda leitura). O texto fica bloqueado para o autor até a devolução."""
@@ -213,7 +236,7 @@ def _ts(dt) -> str:
 
 
 def canonical(study_uid: str | None, version: int, kind: str, body: str, critical: bool, signer: str, at: str,
-              body_format: str = "text", author: str | None = None) -> bytes:
+              body_format: str = "text", author: str | None = None, reviewer: str | None = None) -> bytes:
     """Conteúdo canônico assinado por SHA-256. Formato e autor só entram quando diferem do padrão (texto; o próprio
     signatário), para que versões antigas continuem com o mesmo hash."""
     d = {"study_instance_uid": study_uid, "version": version, "kind": kind, "body": body,
@@ -222,21 +245,26 @@ def canonical(study_uid: str | None, version: int, kind: str, body: str, critica
         d["body_format"] = body_format
     if author:
         d["author"] = author
+    if reviewer:
+        d["reviewer"] = reviewer
     return json.dumps(d, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
 
 
 def _new_version(s: Session, r: Report, *, kind: str, body: str, critical: bool, actor: str, actor_id,
                  signature_image_id: uuid.UUID | None = None, body_format: str = "text",
-                 author: str | None = None) -> ReportVersion:
+                 author: str | None = None, reviewer: str | None = None,
+                 changes: dict | None = None) -> ReportVersion:
     st = s.get(Study, r.study_id)
     now = utcnow()
     n = r.version + 1
     v = ReportVersion(report_id=r.id, version=n, kind=kind, body=body, critical=critical, signed_by=actor[:120],
                       signed_by_id=actor_id, signed_at=now, signature_image_id=signature_image_id,
                       body_format=body_format, author=(author or None) and author[:120],
+                      reviewer=(reviewer or None) and reviewer[:160], changes=changes,
                       sha256=hashlib.sha256(canonical(st.study_instance_uid if st else None, n, kind, body, critical,
                                                       actor[:120], _ts(now), body_format,
-                                                      (author or None) and author[:120])).hexdigest())
+                                                      (author or None) and author[:120],
+                                                      (reviewer or None) and reviewer[:160])).hexdigest())
     s.add(v)
     r.version = n
     return v
@@ -288,13 +316,17 @@ def finalize(s: Session, report_id: uuid.UUID, *, expected_version: int | None =
     if r.status == "review" and r.reviewer_id and r.reviewer_id != phys.id:
         raise Conflict("Este laudo foi enviado para revisão de outro médico.")
     signer, sig = physicians.identification(phys), signature.for_release(s, phys)
-    author = r.review_requested_by if r.status == "review" else None      # quem redigiu, quando outro libera
+    reviewed = r.status == "review"
+    author = r.review_requested_by if reviewed else phys.full_name        # quem redigiu
+    reviewer = signer if reviewed else None                              # revisor = quem libera a partir da revisão
+    changes = _changes(s, r, reviewed=reviewed)
     from vyonix.report import branding
     st_ = s.get(Study, r.study_id)
     eff = branding.effective(s, st_.site_id if st_ else None)            # identidade vigente fica registrada
     r.branding_org_version, r.branding_site_version = eff["org_version"], eff["site_version"]
     v = _new_version(s, r, kind="final", body=r.body, critical=r.critical, actor=signer, actor_id=actor_id,
-                     signature_image_id=sig, body_format=r.body_format or "text", author=author)
+                     signature_image_id=sig, body_format=r.body_format or "text", author=author, reviewer=reviewer,
+                     changes=changes)
     r.status, r.finalized_by, r.finalized_at = "final", signer[:120], v.signed_at
     from vyonix.report import queue
     queue.close_for_study(s, r.study_id)              # atribuição da fila concluída
@@ -307,7 +339,7 @@ def finalize(s: Session, report_id: uuid.UUID, *, expected_version: int | None =
     audit.record(s, actor=actor, actor_id=actor_id, ip=ip, action="report.finalize", target_type="report",
                  target_id=r.id, details={"version": v.version, "sha256": v.sha256, "critical": r.critical,
                                           **({"batch": batch} if batch else {}),
-                                          **({"reviewed_from": author} if author else {})})
+                                          **({"reviewed_from": author} if reviewed else {})})
     _applied(s, r, v, phys, actor=actor, actor_id=actor_id, ip=ip)
     publish(s, "report.finalized.v1", {"report_id": str(r.id), "study_id": str(r.study_id), "version": v.version},
             source="report", subject_kind="report", subject_id=r.id)
@@ -333,7 +365,7 @@ def addendum(s: Session, report_id: uuid.UUID, text: str, *, critical: bool = Fa
     from vyonix.report import physicians, signature
     phys = _signer(s, r, actor_id)
     v = _new_version(s, r, kind="addendum", body=text, critical=bool(critical), actor=physicians.identification(phys),
-                     actor_id=actor_id, signature_image_id=signature.for_release(s, phys))
+                     actor_id=actor_id, signature_image_id=signature.for_release(s, phys), author=phys.full_name)
     if critical:
         r.critical = True
     s.flush()
@@ -484,7 +516,8 @@ def verify(s: Session, report_id: uuid.UUID) -> dict[str, Any]:
                         .order_by(ReportVersion.version)).scalars())
     for v in vs:
         h = hashlib.sha256(canonical(st.study_instance_uid if st else None, v.version, v.kind, v.body, v.critical,
-                                     v.signed_by, _ts(v.signed_at), v.body_format or "text", v.author)).hexdigest()
+                                     v.signed_by, _ts(v.signed_at), v.body_format or "text", v.author,
+                                     v.reviewer)).hexdigest()
         if h != v.sha256:
             bad.append(v.version)
     seq_ok = [v.version for v in vs] == list(range(1, len(vs) + 1)) and r.version == len(vs)
