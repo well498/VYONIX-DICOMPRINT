@@ -106,6 +106,35 @@ class Orthanc(unittest.TestCase):
         o = self.b.origin(bid)
         self.assertEqual((o["origin"], o["called_aet"], o["remote_aet"]), ("DicomProtocol", aet, "VYXMODTEST"))
 
+    def test_reception_only_from_registered_equipment(self):
+        """Política "só equipamentos cadastrados" com o C-STORE real: o AE desconhecido fica retido (sem índice, sem
+        exclusão); o administrador autoriza e o estudo entra no PACS."""
+        import io
+        from pydicom import dcmread
+        from pynetdicom import AE
+        from vyonix.pacs import nodes
+        from vyonix.pacs import service as pacs
+        from vyonix.settings import service as settings
+        host, port, aet = os.environ["VYONIX_TEST_ORTHANC_DICOM"].split(":")
+        with db.session(self.t) as s:
+            settings.put(s, "pacs", "reception", {"store_policy": "registered"}, actor="teste")
+            pacs.sync(s, self.b)                            # alinha (o que já estava no motor fica retido)
+        data = make_dicom(study=uid(self.n, 5), series=uid(self.n, 5, 1), sop=uid(self.n, 5, 1, 1), modality="DX")
+        ae = AE(ae_title="VYXINTRUSO")
+        ae.add_requested_context("1.2.840.10008.5.1.4.1.1.2", "1.2.840.10008.1.2.1")
+        assoc = ae.associate(host, int(port), ae_title=aet)
+        self.assertTrue(assoc.is_established)
+        self.assertEqual(assoc.send_c_store(dcmread(io.BytesIO(data))).Status, 0x0000)
+        assoc.release()
+        with db.session(self.t) as s:
+            self.assertGreaterEqual(pacs.sync(s, self.b)["held"], 1)
+            self.assertEqual(pacs.search_studies(s, {"StudyInstanceUID": uid(self.n, 5)}), [])
+            g = [x for x in nodes.holds(s)["groups"] if x["remote_aet"] == "VYXINTRUSO"]
+            self.assertEqual((g[0]["reason"], g[0]["instances"]), ("AE Title não cadastrado", 1))
+            r = nodes.decide_holds(s, self.b, remote_aet="VYXINTRUSO", decision="release", actor="teste")
+            self.assertEqual(r["indexed"], 1)
+            self.assertEqual(len(pacs.search_studies(s, {"StudyInstanceUID": uid(self.n, 5)})), 1)
+
     def test_origin_of_rest_upload(self):
         ref = self.b.store(make_dicom(study=uid(self.n, 4), series=uid(self.n, 4, 1), sop=uid(self.n, 4, 1, 1)))
         o = self.b.origin(ref.backend_id)

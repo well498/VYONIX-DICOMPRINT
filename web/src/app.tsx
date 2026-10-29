@@ -16,10 +16,11 @@ import { SettingsPage } from "./pages/settings";
 import { SitesPage } from "./pages/sites";
 import { TechnicianPage } from "./pages/technician";
 import { StationsPage } from "./pages/stations";
+import { ProductionPage } from "./pages/production";
 import { UsersPage } from "./pages/users";
 
 type NavState = "expanded" | "collapsed" | "hidden";
-type Route = { id: string; label: string; perm?: string; operator?: boolean; view: (me: Me) => ReactNode };
+type Route = { id: string; label: string; perm?: string | string[]; operator?: boolean; view: (me: Me) => ReactNode };
 
 const ROUTES: Route[] = [
   { id: "inicio", label: "Início", view: (me) => <Dashboard me={me} /> },
@@ -30,6 +31,8 @@ const ROUTES: Route[] = [
   { id: "tecnico", label: "Painel do técnico", perm: "ris.exam.perform", view: (me) => <TechnicianPage me={me} /> },
   { id: "central", label: "Central de exames", perm: "ris.schedule.read", view: (me) => <ExamCenterPage me={me} /> },
   { id: "laudos", label: "Laudos", perm: "report.read", view: (me) => <ReportsPage me={me} /> },
+  { id: "producao", label: "Minha produção", perm: ["report.production.own", "report.production.all"],
+    view: (me) => <ProductionPage me={me} /> },
   { id: "conciliacao", label: "Conciliação", perm: "clinical.studies.reconcile", view: (me) => <ReconcilePage me={me} /> },
   { id: "imagens", label: "Imagens", perm: "pacs.studies.read", view: (me) => <ImagesPage me={me} /> },
   { id: "estacoes", label: "Nós DICOM", perm: "pacs.admin", view: (me) => <StationsPage me={me} /> },
@@ -77,7 +80,7 @@ export function App() {
   if (me === null) return <>{banner}<Login onDone={(m) => { setCsrf(m.csrf); setMe(m); }} /></>;
   if (me.stage !== "ok") return <>{banner}<AccessGate me={me} onDone={refresh} onLogout={() => setMe(null)} /></>;
 
-  const allowed = ROUTES.filter((r) => (!r.perm || me.permissions.includes(r.perm))
+  const allowed = ROUTES.filter((r) => (!r.perm || (Array.isArray(r.perm) ? r.perm : [r.perm]).some((p) => me.permissions.includes(p)))
     && (!r.operator || me.organization?.kind === "operator"));
   const active = allowed.find((r) => r.id === route) ?? allowed[0];
 

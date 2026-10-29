@@ -225,6 +225,23 @@ class Roteiro(unittest.TestCase):
         mnav.get_by_role("link", name="Laudos").click()
         expect(mp.get_by_role("row", name="Maria Ficticia")).to_be_visible()
         self.shot(mp, "r09-fila-de-laudos-medica")
+        # 8. Laudo liberado (pelo serviço, como a API faz após conferir a senha) e Minha produção da médica
+        from sqlalchemy import select
+        from vyonix.auth.models import User
+        from vyonix.clinical.models import Study
+        from vyonix.report import service as rep
+        with db.session(self.t) as s:
+            uid_med = s.execute(select(User.id).where(User.username == "dra.ficticia")).scalar()
+            sid = s.execute(select(Study.id).where(Study.study_instance_uid == r["study_instance_uid"])).scalar()
+            rp = rep.open_report(s, sid, actor="dra.ficticia", actor_id=uid_med)
+            rp.body = "Achados: estudo sintético de homologação.\nConclusão: teste, sem valor diagnóstico."
+            s.flush()
+            rep.finalize(s, rp.id, actor="dra.ficticia", actor_id=uid_med)
+        mnav.get_by_role("link", name="Minha produção").click()
+        resumo = mp.get_by_role("group", name="Resumo da produção")
+        expect(resumo.get_by_text("Laudos liberados")).to_be_visible()
+        expect(mp.get_by_role("region", name="Por modalidade")).to_contain_text("CT")
+        self.shot(mp, "r10-minha-producao")
 
 
 if __name__ == "__main__":

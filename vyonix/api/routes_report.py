@@ -687,3 +687,58 @@ def send_to_pacs(rid: uuid.UUID, c: Ctx = Depends(needs("report.write"))):
         audit.record(s, action="report.export.dicom", target_type="report", target_id=rid,
                      details={"duplicate": bool(res.duplicate)}, **c.actor)
         return {"sop_instance_uid": res.sop_uid, "series_instance_uid": res.series_uid, "duplicate": bool(res.duplicate)}
+
+
+# ------------------------------------------------------------------ Minha Produção
+def _production_target(c: Ctx, s, physician_id: uuid.UUID | None):
+    from vyonix.errors import NotFound
+    from vyonix.report import production
+    own = production.physician_of_user(s, c.p.user_id)
+    if physician_id is None or (own is not None and own.id == physician_id):
+        c.require("report.production.own")
+        if own is None:
+            raise NotFound("Seu usuário não tem cadastro médico nesta instituição: não há produção a mostrar.")
+        return own.id
+    c.require("report.production.all")          # produção de outro médico: permissão específica
+    return physician_id
+
+
+@router.get("/production")
+def production_report(date_from: date | None = None, date_to: date | None = None, physician_id: uuid.UUID | None = None,
+                      format: str = "json", c: Ctx = Depends(needs("report.read"))):
+    """Produção médica no período (padrão: mês corrente). ``format``: json, csv (Excel) ou pdf."""
+    from fastapi.responses import Response
+    from vyonix.audit import service as audit
+    from vyonix.errors import ValidationFailed
+    from vyonix.report import production
+    from vyonix.settings import service as settings
+    if format not in ("json", "csv", "pdf"):
+        raise ValidationFailed("Formato inválido (json, csv ou pdf).")
+    with c.session() as s:
+        pid = _production_target(c, s, physician_id)
+        data = production.compute(s, pid, date_from=date_from, date_to=date_to,
+                                  financial=c.p.has("report.production.financial"))
+        if format != "json" or physician_id is not None:
+            audit.record(s, action="report.production.view", target_type="physician", target_id=pid,
+                         details={"format": format, **data["period"]}, **c.actor)
+        if format == "json":
+            data["can_see_all"] = c.p.has("report.production.all")
+            return data
+        name = f"producao-{data['period']['from']}-a-{data['period']['to']}"
+        if format == "csv":
+            return Response(production.to_csv(data), media_type="text/csv; charset=utf-8",
+                            headers={"Content-Disposition": f'attachment; filename="{name}.csv"',
+                                     "Cache-Control": "no-store, private"})
+        inst = settings.get(s, "core", "institution").get("display_name") or ""
+        return Response(production.to_pdf(data, institution=inst), media_type="application/pdf",
+                        headers={"Content-Disposition": f'attachment; filename="{name}.pdf"',
+                                 "Cache-Control": "no-store, private"})
+
+
+@router.get("/production/physicians")
+def production_physicians(c: Ctx = Depends(needs("report.production.all"))):
+    from sqlalchemy import select
+    from vyonix.report.models import Physician
+    with c.session() as s:
+        return {"items": [{"id": str(p.id), "name": p.full_name, "crm": f"{p.crm}/{p.crm_uf}", "active": p.active}
+                          for p in s.execute(select(Physician).order_by(Physician.full_name)).scalars()]}

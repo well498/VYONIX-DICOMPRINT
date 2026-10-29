@@ -282,3 +282,13 @@ div.muted, span.muted, p.muted { color: var(--ink-2); font-size: .85rem; }
 fieldset.plain { border: 0; padding: 0; margin: .75rem 0 0; display: grid; gap: .3rem; }
 fieldset.plain legend { font-weight: 600; margin-bottom: .3rem; }
 .sheet.sheet-wide { width: min(780px, 100%); }
+
+/* Minha produção */
+.prod-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1rem; }
+.prod-block h2 { font-size: 1rem; margin: 0 0 .6rem; }
+.bars { list-style: none; margin: 0; padding: 0; display: grid; gap: .4rem; }
+.bars li { display: grid; grid-template-columns: minmax(80px, 34%) 1fr auto; align-items: center; gap: .6rem; }
+.bar-label { overflow-wrap: anywhere; font-size: .9rem; }
+.bar-track { background: #eef2f5; border-radius: 99px; height: .6rem; overflow: hidden; }
+.bar-fill { display: block; height: 100%; background: var(--agent); border-radius: 99px; min-width: 2px; }
+.bar-value { min-width: 2ch; text-align: right; }

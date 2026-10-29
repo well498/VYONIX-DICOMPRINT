@@ -109,6 +109,17 @@ class ExamPreparation(_Strict):
     require_forward: bool = Field(False, description="A fila de laudos mostra só estudos encaminhados pelo técnico")
 
 
+class ProductionValue(_Strict):
+    modality: str = Field(pattern=r"^[A-Z]{2,8}$")
+    value_cents: int = Field(ge=0, le=100_000_000)
+
+
+class Production(_Strict):
+    values: list[ProductionValue] = Field(default_factory=list, max_length=60,
+                                          description="Valor de referência por laudo, por modalidade (em centavos). "
+                                                      "Só aparece para quem tem permissão de ver valores financeiros")
+
+
 class Distribution(_Strict):
     mode: str = Field("manual", pattern=r"^(manual|fixed|balanced)$",
                       description="manual, médico fixo ou equilibrada entre médicos com vínculo")
@@ -199,8 +210,12 @@ REPORT = ModuleManifest(
                  "report.sign": "Liberar laudos e registrar adendos", "report.templates.manage": "Gerenciar modelos",
                  "report.physicians.manage": "Cadastrar médicos e vínculos com unidades",
                  "report.branding.manage": "Configurar a identidade visual dos laudos",
-                 "report.assign": "Distribuir exames na fila de laudos (vê todas as unidades)"},
-    settings=(SettingSpec("distribution", Distribution, "Distribuição dos exames aos médicos"),),
+                 "report.assign": "Distribuir exames na fila de laudos (vê todas as unidades)",
+                 "report.production.own": "Consultar a própria produção (Minha Produção)",
+                 "report.production.all": "Consultar a produção de qualquer médico da instituição",
+                 "report.production.financial": "Ver valores financeiros na produção médica"},
+    settings=(SettingSpec("distribution", Distribution, "Distribuição dos exames aos médicos"),
+              SettingSpec("production", Production, "Valores de referência da produção médica (opcional)")),
     publishes=("report.finalized.v1", "report.amended.v1", "report.critical.v1"),
 )
 
@@ -251,10 +266,12 @@ def all_permissions() -> dict[str, tuple[str, str]]:
 DEFAULT_ROLES: dict[str, tuple[str, list[str]]] = {
     "administrador": ("Administrador", ["*"]),
     "supervisor": ("Supervisor", ["core.users.read", "core.settings.read", "core.audit.read", "core.license.read",
-                                  "clinical.*", "print.*", "pacs.*", "ris.*", "report.read", "report.assign"]),
+                                  "clinical.*", "print.*", "pacs.*", "ris.*", "report.read", "report.assign",
+                                  "report.production.all"]),
     "medico": ("Médico", ["core.license.read", "clinical.patients.read", "clinical.orders.read",
                           "clinical.studies.read", "pacs.studies.read", "ris.schedule.read", "report.read",
-                          "report.write", "report.sign", "report.templates.manage"]),     # sem cadastro de médicos
+                          "report.write", "report.sign", "report.templates.manage",
+                          "report.production.own"]),     # sem cadastro de médicos nem valores financeiros
     "tecnico": ("Técnico", ["core.license.read", "clinical.patients.read", "clinical.orders.read",
                             "clinical.studies.read", "clinical.studies.reconcile", "print.jobs.read",
                             "print.jobs.manage", "pacs.studies.read", "pacs.studies.store", "ris.schedule.read",
