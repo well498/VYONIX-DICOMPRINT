@@ -323,7 +323,7 @@ def restore_steps(ctx: Context, backup: str) -> list[Step]:
     from vyonix_deploy.plans import CORE_SVC, WORKER_SVC
     from vyonix_deploy.steps import core
     from vyonix_deploy.steps.services import ServiceRunningStep
-    return [ServiceRunningStep(pg.SERVICE, "VYONIX PostgreSQL", probe=pg.can_connect),
+    return [ServiceRunningStep(pg.SERVICE, "VYONIX PostgreSQL", probe=pg.can_connect, timeout=330),
             BackupStep("antes-da-restauracao", "antes da restauração"),
             ServiceStoppedStep(CORE_SVC), ServiceStoppedStep(WORKER_SVC), RestoreBackupStep(backup),
             ServiceRunningStep(CORE_SVC, "VYONIX Core", probe=core.health, timeout=120),

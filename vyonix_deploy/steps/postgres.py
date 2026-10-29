@@ -113,4 +113,6 @@ class PgClusterStep(Step):
 
 
 def pg_service_binpath(pg_bin: Path, data: Path) -> str:
-    return f'"{Path(pg_bin) / "pg_ctl.exe"}" runservice -N "{SERVICE}" -D "{data}" -w'
+    # -t 300: depois de uma queda o PostgreSQL faz a recuperação do log (WAL) antes de aceitar conexões; com a espera
+    # padrão (60 s) o pg_ctl desistia e o serviço ficava parado com o banco ainda subindo.
+    return f'"{Path(pg_bin) / "pg_ctl.exe"}" runservice -N "{SERVICE}" -D "{data}" -w -t 300'

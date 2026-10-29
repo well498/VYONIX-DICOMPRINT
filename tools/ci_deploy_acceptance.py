@@ -387,6 +387,35 @@ $pf = $r | Get-NetFirewallPortFilter
         assert [x.lower() for x in as_list(r["remote"])] == ["localsubnet"], r
         return json.dumps(r)
 
+    def pg_diag() -> str:
+        """Diagnóstico para quando o banco não volta (anexado à falha: os artefatos do CI não são legíveis daqui)."""
+        out = []
+        for n in ("VyonixPostgreSQL", "VyonixCore", "VyonixWorker"):
+            q = query_service(n) or {}
+            out.append(f"{n}={q.get('state')} pid={q.get('pid')}")
+        try:
+            out.append("porta 5544: " + json.dumps(powershell(
+                "@(Get-NetTCPConnection -LocalPort 5544 -ErrorAction SilentlyContinue | ForEach-Object { "
+                "$p = Get-Process -Id $_.OwningProcess -ErrorAction SilentlyContinue; "
+                "[pscustomobject]@{ state=[string]$_.State; pid=$_.OwningProcess; vivo=[bool]$p; nome=$(if ($p) { $p.Name } else { '' }) } })"),
+                ensure_ascii=False)[:600])
+            out.append("processos: " + json.dumps(powershell(
+                "@(Get-CimInstance Win32_Process | Where-Object { $_.Name -in @('postgres.exe','pg_ctl.exe') } | "
+                "ForEach-Object { [pscustomobject]@{ pid=$_.ProcessId; pai=$_.ParentProcessId; cmd=([string]$_.CommandLine).Substring(0, [Math]::Min(120, ([string]$_.CommandLine).Length)) } })"),
+                ensure_ascii=False)[:900])
+            logs = sorted((PATHS.pg_data / "log").glob("*"), key=lambda x: x.stat().st_mtime) if (PATHS.pg_data / "log").exists() else []
+            if logs:
+                out.append("log do PostgreSQL: " + " | ".join(logs[-1].read_text(encoding="utf-8", errors="replace")
+                                                             .splitlines()[-25:])[:1800])
+            out.append("SCM: " + json.dumps(powershell(
+                "@(Get-WinEvent -FilterHashtable @{LogName='System'; ProviderName='Service Control Manager'} -MaxEvents 40 "
+                "-ErrorAction SilentlyContinue | Where-Object { $_.Message -like '*VYONIX*' } | Select-Object -First 8 | "
+                "ForEach-Object { $_.TimeCreated.ToString('HH:mm:ss') + ' ' + $_.Message.Substring(0, [Math]::Min(160, $_.Message.Length)) })"),
+                ensure_ascii=False)[:1200])
+        except Exception as exc:  # noqa: BLE001
+            out.append(f"(diagnóstico incompleto: {exc})")
+        return " ;; ".join(out)
+
     @check("2.10", "Banco de dados derrubado (processo encerrado à força): recuperado sozinho e o sistema volta a responder")
     def _():
         before = query_service("VyonixCore")["pid"]
@@ -394,7 +423,10 @@ $pf = $r | Get-NetFirewallPortFilter
         time.sleep(3)
         p = deploy("verificar", "--porta", "8444", "--json", ok=(0, 1))
         during = json.loads(p.stdout)
-        d = health(8444, timeout=180)
+        try:
+            d = health(8444, timeout=300)
+        except AssertionError as exc:
+            raise AssertionError(f"{exc} — DIAGNÓSTICO: {pg_diag()}") from None
         after = deploy("verificar", "--porta", "8444", "--json", ok=(0,))
         assert json.loads(after.stdout)["web_ok"]
         return (f"durante a queda: {[(c['id'], c['status']) for c in during['checks'] if c['status'] != 'ok']}; "

@@ -51,7 +51,7 @@ def install_steps(ctx: Context) -> list[Step]:
         AclStep("backups", p.backups, "backups", [(SYSTEM, "F"), (ADMINS, "F")]),
         AclGrantStep("licensing.core", p.licensing, "licenciamento", vsvc(CORE_SVC), "M"),
         AclGrantStep("licensing.worker", p.licensing, "licenciamento", vsvc(WORKER_SVC), "M"),
-        ServiceRunningStep(pg.SERVICE, "VYONIX PostgreSQL", probe=pg.can_connect),
+        ServiceRunningStep(pg.SERVICE, "VYONIX PostgreSQL", probe=pg.can_connect, timeout=330),
         core.CoreDatabaseStep(),
         FirewallRuleStep("core-https", "Core HTTPS", cfg.https_port, str(p.core_exe), cfg.firewall_sources),
         *lan_rules(ctx, "core-lan", "Core HTTPS (rede local, perfil Público)", cfg.https_port, str(p.core_exe)),
