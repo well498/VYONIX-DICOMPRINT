@@ -83,6 +83,7 @@ class PacsSyncTask:
 
     def _done(self, out: dict) -> dict:
         self._why = None
-        if out["indexed"] or out["rejected"]:
-            log.info("PACS: %(indexed)d instância(s) indexada(s), %(rejected)d recusada(s)", out)
+        if out["indexed"] or out["rejected"] or out.get("held"):
+            log.info("PACS: %d instância(s) indexada(s), %d recusada(s), %d retida(s) (equipamento não autorizado)",
+                     out["indexed"], out["rejected"], out.get("held", 0))
         return out

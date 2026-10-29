@@ -32,7 +32,7 @@ const ROUTES: Route[] = [
   { id: "laudos", label: "Laudos", perm: "report.read", view: (me) => <ReportsPage me={me} /> },
   { id: "conciliacao", label: "Conciliação", perm: "clinical.studies.reconcile", view: (me) => <ReconcilePage me={me} /> },
   { id: "imagens", label: "Imagens", perm: "pacs.studies.read", view: (me) => <ImagesPage me={me} /> },
-  { id: "estacoes", label: "Estações DICOM", perm: "pacs.admin", view: (me) => <StationsPage me={me} /> },
+  { id: "estacoes", label: "Nós DICOM", perm: "pacs.admin", view: (me) => <StationsPage me={me} /> },
   { id: "usuarios", label: "Usuários e papéis", perm: "core.users.read", view: (me) => <UsersPage me={me} /> },
   { id: "unidades", label: "Unidades", perm: "core.settings.read", view: (me) => <SitesPage me={me} /> },
   { id: "configuracoes", label: "Configurações", perm: "core.settings.read", view: (me) => <SettingsPage me={me} /> },

@@ -104,21 +104,46 @@ class QRServer:
         try:
             tid = self._tenant(called)
             if tid is None:
-                assoc.acse.send_reject(0x01, 0x01, 0x07)           # called AE title not recognised
                 log.warning("Q/R: AE chamado desconhecido %s (de %s@%s)", called, calling, address)
+                if self.plat.edge:                                  # edge: a organização é a do servidor
+                    self._record(self._edge_tenant(), "rejected", calling, called, address,
+                                 f"AE Title chamado desconhecido ({called}); o correto é {self.ae_title}")
+                assoc.acse.send_reject(0x01, 0x01, 0x07)           # called AE title not recognised
                 return
             with self.plat.db.session(tid) as s:
                 node = pacs.node_for(s, calling, address=address, query=True)
+                if node is None:
+                    from vyonix.pacs import nodes as dnodes
+                    why = dnodes.refusal_reason(s, calling, address=address, service="query")
             if node is None:
-                assoc.acse.send_reject(0x01, 0x01, 0x03)           # calling AE title not recognised
                 log.warning("Q/R: %s@%s não autorizado a consultar (AE chamado %s)", calling, address, called)
+                self._record(tid, "rejected", calling, called, address, why)
+                assoc.acse.send_reject(0x01, 0x01, 0x03)           # calling AE title not recognised
                 return
+            self._record(tid, "accepted", calling, called, address, None)
             with self._lock:
                 self._ctx[id(assoc)] = {"tenant": tid, "calling": calling.upper(), "address": address,
                                         "can_receive": bool(node.can_receive)}
         except Exception:  # noqa: BLE001 - na dúvida, recusa
             log.exception("Q/R: falha ao avaliar associação; recusando")
             assoc.acse.send_reject(0x02, 0x01, 0x01)
+
+    def _edge_tenant(self):
+        from vyonix.tenancy import service as tenancy
+        return tenancy.resolve(self.plat.db, self.plat.cfg.default_organization)
+
+    def _record(self, tid, outcome: str, calling: str, called: str, address: str | None, detail: str | None,
+                service: str = "association") -> None:
+        """Histórico de conexões da organização (aceitas e recusadas). Falha aqui nunca derruba a associação."""
+        if tid is None:
+            return
+        try:
+            from vyonix.pacs import nodes as dnodes
+            with self.plat.db.session(tid) as s:
+                dnodes.record(s, direction="in", service=service, outcome=outcome, calling_ae=calling,
+                              called_ae=called, address=address, detail=detail)
+        except Exception:  # noqa: BLE001
+            log.exception("Q/R: falha ao registrar o histórico de conexões")
 
     def _on_end(self, event) -> None:
         with self._lock:
@@ -302,6 +327,11 @@ class QRServer:
             if node is None:
                 log.warning("Q/R: destino de C-MOVE %s não cadastrado para receber (pedido de %s)", dest,
                             info["calling"])
+                from vyonix.pacs import nodes as dnodes
+                dnodes.record(s, direction="in", service="move", outcome="rejected", calling_ae=info["calling"],
+                              called_ae=self.ae_title, address=info["address"],
+                              detail=f"Destino {dest}: " + dnodes.refusal_reason(s, dest, address=None,
+                                                                                 service="receive"))
                 yield None, None                                   # 0xA801: destino desconhecido
                 return
             try:

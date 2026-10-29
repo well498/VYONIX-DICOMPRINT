@@ -276,3 +276,9 @@ button.danger { background: var(--red); border-color: var(--red); color: #fff; f
 }
 .homolog-banner { background: #7a1f1f; color: #fff; text-align: center; font-weight: 700; font-size: .85rem; letter-spacing: .03em;
   padding: .35rem .75rem; position: sticky; top: 0; z-index: 25; }
+
+/* Nós DICOM */
+div.muted, span.muted, p.muted { color: var(--ink-2); font-size: .85rem; }
+fieldset.plain { border: 0; padding: 0; margin: .75rem 0 0; display: grid; gap: .3rem; }
+fieldset.plain legend { font-weight: 600; margin-bottom: .3rem; }
+.sheet.sheet-wide { width: min(780px, 100%); }

@@ -151,7 +151,7 @@ class Ingest(unittest.TestCase):
         self.b.receive_cstore(make_dicom(patient_id=""))          # chega ao motor, mas é recusada no índice
         with db.session(self.t) as s:
             out = pacs.sync(s, self.b)
-        self.assertEqual(out, {"indexed": 2, "duplicates": 0, "rejected": 1})
+        self.assertEqual(out, {"indexed": 2, "duplicates": 0, "rejected": 1, "held": 0})
         with db.session(self.t) as s:
             out = pacs.sync(s, self.b)
             self.assertEqual(out["indexed"], 0)                    # continua do último seq

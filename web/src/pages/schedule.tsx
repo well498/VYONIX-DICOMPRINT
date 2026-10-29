@@ -141,7 +141,7 @@ export function SchedulePage({ me }: { me: Me }) {
             <Field label="Descrição"><input value={form.description} maxLength={64}
               onChange={(e) => setForm({ ...form, description: e.target.value })} /></Field>
           </div>
-          {unknownAet && <Notice kind="warn">A estação {form.aet} não está cadastrada no PACS: ela não conseguirá consultar a worklist até ser cadastrada em “Estações DICOM”.</Notice>}
+          {unknownAet && <Notice kind="warn">A estação {form.aet} não está cadastrada no PACS: ela não conseguirá consultar a worklist até ser cadastrada em “Nós DICOM”.</Notice>}
           <div className="row-actions">
             <button className="primary" disabled={act.busy}>Confirmar agendamento</button>
             <button type="button" className="link" onClick={() => setCreating(false)}>Cancelar</button>

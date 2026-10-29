@@ -382,33 +382,50 @@ class WebE2E(unittest.TestCase):
                          f"/viewer/viewer?StudyInstanceUIDs={study_uid}")
 
     def test_6_dicom_stations(self):
-        """Estações DICOM (PACS): cadastro com IP e porta, aparece para a recepção no agendamento, remoção auditada."""
+        """Nós DICOM (PACS): cadastro completo, detalhes do equipamento, aparece para a recepção no
+        agendamento, política de recepção, remoção auditada."""
         from playwright.sync_api import expect
         pg = self.page()
         self.login(pg, "admin", ADMIN_PW)
         nav = pg.get_by_role("navigation", name="Navegação principal")
-        nav.get_by_role("link", name="Estações DICOM").click()
-        expect(pg.get_by_text("Nenhuma estação cadastrada.")).to_be_visible()
-        pg.get_by_role("button", name="Cadastrar estação").click()
-        form = pg.get_by_role("form", name="Cadastrar estação")
+        nav.get_by_role("link", name="Nós DICOM").click()
+        expect(pg.get_by_text("Nenhum equipamento cadastrado.")).to_be_visible()
+        pg.get_by_role("button", name="Cadastrar equipamento").click()
+        form = pg.get_by_role("form", name="Cadastrar equipamento")
+        form.get_by_label("Identificação").fill("Ultrassom sala 4 (simulador)")
         form.get_by_label("AE Title").fill("us_sala4")
-        form.get_by_label("Endereço IP").fill("192.168.10.44")
-        form.get_by_label("Porta").fill("104")
-        form.get_by_label("Descrição").fill("Ultrassom sala 4 (simulador)")
-        form.get_by_label("Pode receber estudos (C-MOVE)").check()
-        form.get_by_role("button", name="Salvar estação").click()
-        expect(pg.get_by_text("Estação cadastrada.")).to_be_visible()
-        row = pg.get_by_role("row", name="US_SALA4")
-        expect(row.get_by_role("cell", name="192.168.10.44")).to_be_visible()
-        self.shot(pg, "11-estacoes")
+        form.get_by_label("Fabricante").fill("Fabricante Fictício")
+        form.get_by_label("Modelo").fill("US-100")
+        form.get_by_label("Modalidade").fill("us")
+        form.get_by_label("Endereço (IP ou nome)").fill("192.168.10.44")
+        form.get_by_label("Porta DICOM").fill("104")
+        form.get_by_label("Recebe estudos do PACS (C-MOVE, C-GET)").check()
+        form.get_by_role("button", name="Salvar equipamento").click()
+        expect(pg.get_by_text("Equipamento cadastrado.")).to_be_visible()
+        row = pg.get_by_role("row", name="Ultrassom sala 4 (simulador)")
+        expect(row.get_by_role("cell", name="192.168.10.44:104")).to_be_visible()
+        expect(row.get_by_text("Sem contato ainda")).to_be_visible()
+        self.shot(pg, "11-nos-dicom")
         r = self.plat_client_get("recep1", "Recepcao-2026", "/api/v1/ris/stations")
         self.assertEqual([x["ae_title"] for x in r["items"]], ["US_SALA4"])
-        row.get_by_role("button", name="Remover").click()
-        expect(pg.get_by_text("Estação US_SALA4 removida.")).to_be_visible()
-        expect(pg.get_by_text("Nenhuma estação cadastrada.")).to_be_visible()
+        # detalhes: teste de conexão (endereço fictício, sem resposta) registra a falha no histórico
+        row.get_by_role("button", name="Detalhes US_SALA4").click()
+        sheet = pg.get_by_role("dialog", name="Equipamento US_SALA4")
+        expect(sheet.get_by_text("Fabricante Fictício · US-100")).to_be_visible()
+        # política de recepção: só equipamentos cadastrados
+        sheet.get_by_role("button", name="Fechar").click()
+        pg.get_by_label("Só de equipamentos cadastrados (os demais ficam retidos para sua decisão; nada é apagado)").click()
+        expect(pg.get_by_text("Agora só equipamentos cadastrados com “Envia imagens” são aceitos.")).to_be_visible()
+        row.get_by_role("button", name="Detalhes US_SALA4").click()
+        sheet.get_by_role("button", name="Remover").click()
+        sheet.get_by_role("button", name="Confirmar remoção de US_SALA4").click()
+        expect(pg.get_by_text("Nenhum equipamento cadastrado.")).to_be_visible()
         from vyonix.audit import service as audit
         with db.session(self.tenant) as s:
             self.assertEqual(len(audit.query(s, action="pacs.node.remove")), 1)
+            from vyonix.settings import service as settings
+            self.assertEqual(settings.get(s, "pacs", "reception")["store_policy"], "registered")
+            settings.put(s, "pacs", "reception", {"store_policy": "any"}, actor="teste")
         # salas do RIS: cadastro e preenchimento automático no agendamento
         nav.get_by_role("link", name="Agenda").click()
         pg.get_by_role("button", name="Salas").click()

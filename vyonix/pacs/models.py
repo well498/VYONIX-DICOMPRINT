@@ -108,3 +108,52 @@ class PacsDicomNode(TenantMixin, Base):
     can_query: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     can_receive: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_by: Mapped[str] = mapped_column(String(120), nullable=False)
+    # cadastro do equipamento (pacs_0006)
+    name: Mapped[str | None] = mapped_column(String(120))
+    manufacturer: Mapped[str | None] = mapped_column(String(80))
+    model: Mapped[str | None] = mapped_column(String(80))
+    modality: Mapped[str | None] = mapped_column(String(16))
+    site_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
+    can_store: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_echo_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_echo_ok: Mapped[bool | None] = mapped_column(Boolean)
+    last_error: Mapped[str | None] = mapped_column(String(300))
+    last_error_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class PacsDicomEvent(TenantMixin, Base):
+    """Histórico de conexões DICOM da organização: associações aceitas e recusadas, C-ECHO, recepções e envios.
+
+    Eventos iguais (mesmo AE, serviço e resultado) em até 10 minutos são agrupados em ``count`` para não crescer a cada
+    imagem. Sem dados de paciente."""
+    __tablename__ = "dicom_events"
+    __table_args__ = (Index("ix_pacs_dicom_events_at", "tenant_id", "last_at"), SCHEMA)
+    node_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
+    direction: Mapped[str] = mapped_column(String(3), nullable=False)          # in | out
+    service: Mapped[str] = mapped_column(String(16), nullable=False)          # association|echo|store|find|move|get|mwl|mpps
+    outcome: Mapped[str] = mapped_column(String(12), nullable=False)          # accepted|rejected|ok|failed|held
+    calling_ae: Mapped[str | None] = mapped_column(String(16))
+    called_ae: Mapped[str | None] = mapped_column(String(16))
+    address: Mapped[str | None] = mapped_column(String(64))
+    detail: Mapped[str | None] = mapped_column(String(300))
+    count: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    last_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
+class PacsStoreHold(TenantMixin, Base):
+    """Instância recebida por C-STORE de um equipamento não autorizado (política "só equipamentos cadastrados"):
+    fica no motor, sem índice e sem acesso, até o administrador autorizar (indexar) ou descartar."""
+    __tablename__ = "store_holds"
+    __table_args__ = (Index("uq_pacs_store_holds", "tenant_id", "backend", "backend_id", unique=True), SCHEMA)
+    backend: Mapped[str] = mapped_column(String(20), nullable=False)
+    backend_id: Mapped[str] = mapped_column(String(80), nullable=False)
+    remote_aet: Mapped[str | None] = mapped_column(String(16))
+    remote_ip: Mapped[str | None] = mapped_column(String(64))
+    called_aet: Mapped[str | None] = mapped_column(String(16))
+    reason: Mapped[str] = mapped_column(String(200), nullable=False)
+    status: Mapped[str] = mapped_column(String(12), nullable=False, default="held")   # held|released|discarded
+    decided_by: Mapped[str | None] = mapped_column(String(120))
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    decision_note: Mapped[str | None] = mapped_column(String(300))

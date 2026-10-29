@@ -209,7 +209,9 @@ def sync(s: Session, backend: PacsBackend, *, limit: int = 100, max_batches: int
         row = PacsSyncState(backend=backend.name, last_seq=0)
         s.add(row)
         s.flush()
-    out = {"indexed": 0, "duplicates": 0, "rejected": 0}
+    from vyonix.pacs import nodes as dnodes
+    policy = dnodes.reception_policy(s)
+    out = {"indexed": 0, "duplicates": 0, "rejected": 0, "held": 0}
     for _ in range(max_batches):
         changes, last, done = backend.changes(row.last_seq, limit)
         for ch in changes:
@@ -219,11 +221,30 @@ def sync(s: Session, backend: PacsBackend, *, limit: int = 100, max_batches: int
                 out["duplicates"] += 1
                 continue
             try:
+                org = backend.origin(ch.backend_id)
+            except FileNotFoundError:
+                continue                       # removida do motor entre o evento e a leitura
+            dimse = org.get("origin") == "DicomProtocol"
+            aet, rip, called = org.get("remote_aet"), org.get("remote_ip"), org.get("called_aet")
+            node = dnodes.find(s, aet, address=rip, service="store") if dimse else None
+            if dimse and policy == "registered" and node is None:
+                # recepção só de equipamentos cadastrados: fica retida no motor, sem índice, até a decisão do admin
+                dnodes.hold(s, backend=backend.name, backend_id=ch.backend_id, remote_aet=aet, remote_ip=rip,
+                            called_aet=called, reason=dnodes.refusal_reason(s, aet, address=rip, service="store"))
+                out["held"] += 1
+                continue
+            try:
                 with s.begin_nested():
                     r = ingest(s, backend, backend.fetch(ch.backend_id), actor="pacs-sync", via="dimse")
                 out["duplicates" if r.duplicate else "indexed"] += 1
-            except InstanceRejected:
+                if dimse:
+                    dnodes.record(s, direction="in", service="store", outcome="accepted", calling_ae=aet,
+                                  called_ae=called, address=rip, node=node)
+            except InstanceRejected as exc:
                 out["rejected"] += 1
+                if dimse:
+                    dnodes.record(s, direction="in", service="store", outcome="rejected", calling_ae=aet,
+                                  called_ae=called, address=rip, detail=str(exc), node=node)
             except FileNotFoundError:
                 continue                       # removida do motor entre o evento e a leitura
         row.last_seq = last
@@ -643,73 +664,32 @@ def cloud_sync(db, backend: PacsBackend, *, allowed=None, limit: int = 100, max_
 # --------------------------------------------------------------------------- nós DICOM (consulta/recuperação)
 
 def _node_out(n) -> dict:
-    return {"id": str(n.id), "ae_title": n.ae_title, "host": n.host, "port": n.port, "description": n.description,
-            "can_query": n.can_query, "can_receive": n.can_receive}
+    from vyonix.pacs import nodes as _nodes
+    return _nodes.out(n)
 
 
 def nodes(s: Session) -> list[dict]:
-    from vyonix.pacs.models import PacsDicomNode
-    return [_node_out(n) for n in s.execute(select(PacsDicomNode).order_by(PacsDicomNode.ae_title)).scalars()]
+    from vyonix.pacs import nodes as _nodes
+    return _nodes.listing(s)
 
 
-def add_node(s: Session, ae_title: str, *, host: str | None = None, port: int | None = None,
-             description: str | None = None, can_query: bool = True, can_receive: bool = False, actor: str,
-             actor_id=None, ip=None) -> dict:
-    """Cadastra uma estação/modalidade da organização. Destino de C-MOVE exige endereço e porta."""
-    import ipaddress
-    from sqlalchemy.exc import IntegrityError
-    from vyonix.pacs.models import PacsDicomNode
-    aet = _aet(ae_title)
-    h = (host or "").strip() or None
-    if h:
-        try:
-            ipaddress.ip_address(h)
-        except ValueError as exc:
-            raise ValidationFailed("Endereço IP inválido (use o IP da estação, sem nome de máquina).") from exc
-    if port is not None and not 1 <= int(port) <= 65535:
-        raise ValidationFailed("Porta inválida (1–65535).")
-    if can_receive and (not h or not port):
-        raise ValidationFailed("Para receber imagens (destino de C-MOVE), informe o IP e a porta da estação.")
-    if not can_query and not can_receive:
-        raise ValidationFailed("Marque ao menos uma permissão: consultar ou receber.")
-    n = PacsDicomNode(ae_title=aet, host=h, port=int(port) if port else None,
-                      description=(description or "").strip()[:200] or None, can_query=bool(can_query),
-                      can_receive=bool(can_receive), created_by=actor[:120])
-    try:
-        with s.begin_nested():
-            s.add(n)
-            s.flush()
-    except IntegrityError as exc:
-        raise Conflict(f"Já existe um nó DICOM com o AE Title {aet} nesta organização.") from exc
-    audit.record(s, actor=actor, actor_id=actor_id, ip=ip, action="pacs.node.add", target_type="dicom_node",
-                 target_id=n.id, details={"ae_title": aet, "host": h, "port": n.port, "can_query": n.can_query,
-                                          "can_receive": n.can_receive})
-    return _node_out(n)
+def add_node(s: Session, ae_title: str, *, actor: str, **kw) -> dict:
+    """Cadastra um nó DICOM (ver ``vyonix.pacs.nodes.add``)."""
+    from vyonix.pacs import nodes as _nodes
+    return _nodes.add(s, ae_title, actor=actor, **kw)
 
 
 def remove_node(s: Session, node_id: uuid.UUID, *, actor: str, actor_id=None, ip=None) -> None:
-    from vyonix.pacs.models import PacsDicomNode
-    n = s.get(PacsDicomNode, node_id)
-    if n is None:
-        raise NotFound("Nó DICOM não encontrado.")
-    aet = n.ae_title
-    s.delete(n)
-    s.flush()
-    audit.record(s, actor=actor, actor_id=actor_id, ip=ip, action="pacs.node.remove", target_type="dicom_node",
-                 target_id=node_id, details={"ae_title": aet})
+    from vyonix.pacs import nodes as _nodes
+    _nodes.remove(s, node_id, actor=actor, actor_id=actor_id, ip=ip)
 
 
 def node_for(s: Session, ae_title: str, *, address: str | None = None, query: bool = False,
-             receive: bool = False):
-    """Nó da organização com o AE Title e a permissão pedida; se o nó tiver IP cadastrado, o endereço precisa conferir."""
-    from vyonix.pacs.models import PacsDicomNode
-    n = s.execute(select(PacsDicomNode).where(PacsDicomNode.ae_title == (ae_title or "").strip().upper())
-                  ).scalar_one_or_none()
-    if n is None or (query and not n.can_query) or (receive and not n.can_receive):
-        return None
-    if query and n.host and address and n.host != address:
-        return None
-    return n
+             receive: bool = False, store: bool = False):
+    """Nó ativo com o AE Title e o serviço pedido; para consulta/envio, o endereço cadastrado precisa conferir."""
+    from vyonix.pacs import nodes as _nodes
+    service = "store" if store else "receive" if receive and not query else "query"
+    return _nodes.find(s, ae_title, address=address, service=service)
 
 
 def instances_for_retrieve(s: Session, level: str, study_uid: str, series_uid: str | None = None,

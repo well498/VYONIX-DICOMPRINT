@@ -272,7 +272,8 @@ class QREdge(QRBase):
         with self.assertRaises(ValidationFailed):
             self.node("DESTINO", can_query=False, can_receive=True)          # destino sem IP/porta
         with self.assertRaises(ValidationFailed):
-            self.node("X", host="estacao.local")                              # nome de máquina, não IP
+            self.node("X", host="estação inválida!")                          # nem IP nem nome de máquina
+        self.assertEqual(self.node("PELO_NOME", host="Estacao-TC.local")["host"], "estacao-tc.local")
         with self.assertRaises(ValidationFailed):
             self.node("X", can_query=False, can_receive=False)
         self.node("DUPLO")

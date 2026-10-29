@@ -78,6 +78,13 @@ class PacsRetention(_Strict):
                                                      "jurídico da clínica")
 
 
+class PacsReception(_Strict):
+    store_policy: str = Field("any", pattern=r"^(any|registered)$",
+                              description="Recepção por C-STORE: any = de qualquer equipamento (padrão); registered = só "
+                                          "de equipamentos cadastrados com \"Enviar estudos\" (os demais ficam retidos "
+                                          "para o administrador autorizar ou descartar)")
+
+
 class ChecklistItem(_Strict):
     code: str = Field(pattern=r"^[a-z][a-z0-9_]{1,29}$")
     label: str = Field(min_length=2, max_length=120)
@@ -161,7 +168,8 @@ PACS = ModuleManifest(
     permissions={"pacs.studies.read": "Pesquisar e abrir estudos de imagem",
                  "pacs.studies.store": "Enviar estudos de imagem (STOW-RS)",
                  "pacs.admin": "Sincronizar e consultar o estado do armazenamento DICOM"},
-    settings=(SettingSpec("retention", PacsRetention, "Retenção de estudos (relatório; nada é excluído)"),),
+    settings=(SettingSpec("retention", PacsRetention, "Retenção de estudos (relatório; nada é excluído)"),
+              SettingSpec("reception", PacsReception, "Recepção DICOM: de qualquer equipamento ou só dos cadastrados")),
     publishes=("pacs.study.received.v1",),
 )
 

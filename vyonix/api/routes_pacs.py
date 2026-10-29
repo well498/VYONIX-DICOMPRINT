@@ -346,22 +346,61 @@ class NodeIn(BaseModel):
     host: str | None = Field(None, max_length=64)
     port: int | None = Field(None, ge=1, le=65535)
     description: str | None = Field(None, max_length=200)
+    name: str | None = Field(None, max_length=120)
+    manufacturer: str | None = Field(None, max_length=80)
+    model: str | None = Field(None, max_length=80)
+    modality: str | None = Field(None, max_length=16)
+    site_id: uuid.UUID | None = None
+    can_store: bool = False
     can_query: bool = True
     can_receive: bool = False
+    enabled: bool = True
+
+
+class NodePatch(BaseModel):
+    ae_title: str | None = Field(None, min_length=1, max_length=16)
+    host: str | None = Field(None, max_length=64)
+    port: int | None = Field(None, ge=1, le=65535)
+    description: str | None = Field(None, max_length=200)
+    name: str | None = Field(None, max_length=120)
+    manufacturer: str | None = Field(None, max_length=80)
+    model: str | None = Field(None, max_length=80)
+    modality: str | None = Field(None, max_length=16)
+    site_id: uuid.UUID | None = None
+    can_store: bool | None = None
+    can_query: bool | None = None
+    can_receive: bool | None = None
+    enabled: bool | None = None
+    row_version: int | None = None
+
+
+def _qr(c: Ctx) -> dict:
+    return {"port": c.plat.cfg.extra.get("pacs_qr_port"), "ae_title": c.plat.cfg.extra.get("pacs_qr_aet", "VYONIX_QR"),
+            "store": {"port": c.plat.cfg.extra.get("pacs_dicom_port", 4242),
+                      "ae_title": c.plat.cfg.extra.get("pacs_dicom_aet", "VYONIX_PACS")}}
 
 
 @router.get("/nodes")
 def list_nodes(c: Ctx = Depends(needs("pacs.admin"))):
+    from vyonix.pacs import nodes as dnodes
     with c.session() as s:
-        return {"nodes": pacs.nodes(s), "qr": {"port": c.plat.cfg.extra.get("pacs_qr_port"),
-                                              "ae_title": c.plat.cfg.extra.get("pacs_qr_aet", "VYONIX_QR")}}
+        return {"nodes": pacs.nodes(s), "qr": _qr(c), "policy": dnodes.reception_policy(s),
+                "held": dnodes.holds(s)["total"]}
 
 
 @router.post("/nodes", status_code=201)
 def add_node(body: NodeIn, c: Ctx = Depends(needs("pacs.admin"))):
     with c.session() as s:
-        return pacs.add_node(s, body.ae_title, host=body.host, port=body.port, description=body.description,
-                             can_query=body.can_query, can_receive=body.can_receive, **c.actor)
+        return pacs.add_node(s, body.ae_title, **body.model_dump(exclude={"ae_title"}), **c.actor)
+
+
+@router.patch("/nodes/{node_id}")
+def update_node(node_id: uuid.UUID, body: NodePatch, c: Ctx = Depends(needs("pacs.admin"))):
+    from vyonix.pacs import nodes as dnodes
+    ch = body.model_dump(exclude_unset=True)
+    rv = ch.pop("row_version", None)
+    with c.session() as s:
+        return dnodes.update(s, node_id, ch, row_version=rv, **c.actor)
 
 
 @router.delete("/nodes/{node_id}", status_code=204)
@@ -369,6 +408,55 @@ def remove_node(node_id: uuid.UUID, c: Ctx = Depends(needs("pacs.admin"))):
     with c.session() as s:
         pacs.remove_node(s, node_id, **c.actor)
     return Response(status_code=204)
+
+
+@router.post("/nodes/{node_id}/echo")
+async def echo_node(node_id: uuid.UUID, c: Ctx = Depends(needs("pacs.admin"))):
+    """Teste de associação DICOM (C-ECHO) do VYONIX para o equipamento."""
+    from vyonix.pacs import nodes as dnodes
+
+    def run():
+        with c.session() as s:
+            return dnodes.echo(s, node_id, calling_ae=_qr(c)["ae_title"], **c.actor)
+    return await run_in_threadpool(run)
+
+
+@router.get("/nodes/{node_id}/events")
+def node_events(node_id: uuid.UUID, c: Ctx = Depends(needs("pacs.admin"))):
+    from vyonix.pacs import nodes as dnodes
+    with c.session() as s:
+        return {"items": dnodes.events(s, node_id=node_id, limit=100)}
+
+
+@router.get("/dicom-events")
+def dicom_events(outcome: str | None = None, limit: int = 100, c: Ctx = Depends(needs("pacs.admin"))):
+    from vyonix.pacs import nodes as dnodes
+    with c.session() as s:
+        return {"items": dnodes.events(s, outcome=outcome, limit=limit)}
+
+
+@router.get("/holds")
+def list_holds(c: Ctx = Depends(needs("pacs.admin"))):
+    from vyonix.pacs import nodes as dnodes
+    with c.session() as s:
+        return dnodes.holds(s)
+
+
+class HoldDecisionIn(BaseModel):
+    remote_aet: str | None = Field(None, max_length=16)
+    decision: str = Field(pattern=r"^(release|discard)$")
+    note: str | None = Field(None, max_length=300)
+
+
+@router.post("/holds/decide")
+def decide_holds(body: HoldDecisionIn, c: Ctx = Depends(needs("pacs.admin"))):
+    from vyonix.pacs import nodes as dnodes
+    b = _backend(c)
+    with c.session() as s:
+        if body.decision == "release":
+            c.plat.licensing.require_module(s, "pacs")
+        return _wrap(lambda: dnodes.decide_holds(s, b, remote_aet=body.remote_aet, decision=body.decision,
+                                                 note=body.note, **c.actor))
 
 
 @router.get("/status")
