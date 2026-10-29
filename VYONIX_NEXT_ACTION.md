@@ -15,6 +15,12 @@
 | P0 | Desinstalador que não removia; atualização direta; Reparar; recuperação da instalação atual; logs | Implementado (`efbae29`), testes locais OK; **CI Windows 2.12 em execução**; depois: versão de teste + kit `VYONIX_Kit_P0_Recuperacao.zip`; **resolvido só após validação no computador do proprietário** e Windows 10/11 (BLK-04) |
 | P0 | Inicialização automática sem login, acesso pelo IP (bc9cf28) | Corrigido e aprovado no CI (2.10/2.11); **aguarda validação presencial** |
 
+## Acompanhamento P0 (aprovado pelo proprietário em 29/10 17:59)
+Planilha oficial: `docs/homologacao/VYONIX_P0_Acompanhamento.xlsx`, gerada por `python tools/p0_planilha.py` a
+partir de `docs/homologacao/P0_acompanhamento.json` (fonte única). A cada resultado de teste: atualizar o JSON
+(situação, evidência, data), regenerar a planilha e esta seção no mesmo commit. Nunca marcar como aprovado o que
+não foi executado.
+
 ## Resultados CI Windows (29/10)
 | Run | Commit | Resultado |
 |---|---|---|

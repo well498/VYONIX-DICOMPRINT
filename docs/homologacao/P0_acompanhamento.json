@@ -1,0 +1,27 @@
+{
+  "atualizado": "2026-10-29 17:59",
+  "commit": "457a6eb",
+  "requisitos": [
+    {"req": "Desinstalador não encerra a si mesmo nem a cópia temporária", "mudou": "Exclui unins* do fechamento de processos; a cópia temporária (_iu*.tmp) fica em %TEMP%, fora da pasta do programa", "local": "Aprovado", "ci": "Não executado", "prop": "Pendente", "evid": "tests_deploy/test_uninstall.py::test_uninstaller_itself_is_never_killed; CI 2.12 (a executar)", "data": ""},
+    {"req": "Remove somente serviços do VYONIX", "mudou": "Instalador e DEPLOY só tocam um serviço se o programa dele está em Program Files\\VYONIX\\Platform; serviço alheio com o mesmo nome nunca é alterado; DICOM Print nunca está na lista", "local": "Aprovado", "ci": "Não executado", "prop": "Pendente", "evid": "tests_deploy/test_uninstall.py::Ownership (3 testes); CI 2.13 serviço alheio (a executar)", "data": ""},
+    {"req": "Sem órfãos; erro quando a remoção não conclui", "mudou": "Verificação final do estado real (serviços, processos, pasta) em C:\\ProgramData\\VYONIX\\Logs\\desinstalacao.json (concluída / reiniciar / incompleta); 'incompleta' registra ERRO e mostra mensagem", "local": "Aprovado", "ci": "Não executado", "prop": "Pendente", "evid": "test_inno_uninstaller_checks_ownership_and_final_state; CI 2.12 e homologação 15 (a executar)", "data": ""},
+    {"req": "Testes sem condição de corrida", "mudou": "Aguardam o fim do desinstalador e da cópia temporária e o arquivo de status; exigem 'concluída'", "local": "Não executado", "ci": "Não executado", "prop": "Pendente", "evid": "tools/ci_deploy_acceptance.py e ci_homolog_acceptance.py: wait_uninstall_finished (só roda no Windows)", "data": ""},
+    {"req": "Integridade além da contagem de registros", "mudou": "Cópia restaurada comparada por resumo MD5 do conteúdo de cada tabela, sequências e estrutura; amcheck nos índices da cópia; arquivos DICOM e configurações inventariados antes e depois", "local": "Aprovado", "ci": "Não executado", "prop": "Pendente", "evid": "test_recovery_backs_up_and_records_state_before_removing; SQL testado no PostgreSQL local (original = cópia; alteração detectada; amcheck)", "data": "2026-10-29"},
+    {"req": "Bancos preexistentes protegidos", "mudou": "Reversão de instalação com falha só remove banco/cluster comprovadamente criado na mesma execução; estado desconhecido nunca é removido", "local": "Aprovado", "ci": "Não executado", "prop": "Pendente", "evid": "tests_deploy/test_faults.py (RollbackNeverDropsExistingDatabase, ClusterRollback); CI 2.13 falha na migração (a executar)", "data": "2026-10-29"},
+    {"req": "Atualização sobre bc9cf28", "mudou": "Homologação confere também migrações aplicadas, serviços e 'Verificar funcionamento'", "local": "Não executado", "ci": "Não executado", "prop": "Pendente", "evid": "Homologação passo 1 (a executar em 457a6eb). Em 28d25ce: passos 0a–9 aprovados (run 40945047712)", "data": ""},
+    {"req": "DICOM Print (testes que dependem de impressora/equipamento)", "mudou": "Registrados à parte como 'não executado', sem contar como falha do instalador do Medical Platform", "local": "Não executado", "ci": "Não executado", "prop": "Pendente", "evid": "CI 2.8 'Impressão de teste no DICOM Print': não executado (exige equipamento autorizado e impressora)", "data": ""}
+  ],
+  "execucoes": [
+    {"run": "40944999029", "versao": "comercial", "commit": "78ce54b", "situacao": "Reprovado", "obs": "34 aprovados, 6 reprovados, 1 não executado; os 6 vêm do desinstalador encerrar o próprio unins000.exe (corrigido em 4bb8b0f)", "evid": "https://github.com/well498/VYONIX-DICOMPRINT/actions/runs/40944999029", "data": "2026-10-29"},
+    {"run": "40945047712", "versao": "homologação", "commit": "28d25ce", "situacao": "Reprovado", "obs": "Passos 0a–9 aprovados (inclui atualização sobre bc9cf28); 10–14 sem resultado visível (limite de avisos do GitHub); 15 reprovado (mesma causa)", "evid": "https://github.com/well498/VYONIX-DICOMPRINT/actions/runs/40945047712", "data": "2026-10-29"},
+    {"run": "40951093428", "versao": "comercial", "commit": "b22bcc4", "situacao": "Em execução", "obs": "Inclui o critério 2.13 (recuperação)", "evid": "https://github.com/well498/VYONIX-DICOMPRINT/actions/runs/40951093428", "data": ""},
+    {"run": "40951161126", "versao": "homologação", "commit": "b22bcc4", "situacao": "Em execução", "obs": "Inclui o resumo único da homologação", "evid": "https://github.com/well498/VYONIX-DICOMPRINT/actions/runs/40951161126", "data": ""},
+    {"run": "(a disparar)", "versao": "comercial + homologação", "commit": "457a6eb", "situacao": "Pendente", "obs": "Necessário porque o instalador mudou; entrega só após 2.12, 2.13 e homologação aprovados", "evid": "", "data": ""}
+  ],
+  "passos": [
+    {"passo": "Relatar cada critério das execuções em b22bcc4", "condicao": "Término de 40951093428 e 40951161126", "feito": "Não"},
+    {"passo": "Executar de novo as duas versões em 457a6eb", "condicao": "Após o término das execuções atuais", "feito": "Não"},
+    {"passo": "Entregar instalador de homologação e kit (versão, commit e limitações conhecidas)", "condicao": "2.12, 2.13 e homologação aprovados em 457a6eb", "feito": "Não"},
+    {"passo": "Validação prática no computador do proprietário (checklist dos 5 pontos)", "condicao": "Kit entregue; o P0 só encerra após esta validação", "feito": "Não"}
+  ]
+}
