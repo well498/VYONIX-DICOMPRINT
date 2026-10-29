@@ -965,10 +965,190 @@ $ap = $r | Get-NetFirewallApplicationFilter
         old = list(INSTALL.parent.glob("Platform.anterior-*"))
         assert old, "pasta renomeada não encontrada"
         assert (PATHS.pg_data / "PG_VERSION").exists() and (PATHS.data_dir / "config.json").exists(), "dados alterados"
+        rec = sorted(PATHS.backups.glob("recuperacao-*"))[-1]
+        bj = json.loads((rec / "backup.json").read_text(encoding="utf-8-sig"))
+        assert bj.get("restauracao_testada") is True and bj["tabelas"] > 0, bj
+        assert (rec / "estado-anterior" / "servicos.json").exists(), "estado anterior não registrado"
+        assert "R0" in html and "O que a recuperacao faria" in html, "relatório sem backups ou sem o plano"
         if query_service("VyonixDicomPrint"):
             assert query_service("VyonixDicomPrint")["state"] == "Running", "DICOM Print afetado"
         out = reinstall("setup-after-recovery.log")
         return f"diagnóstico só leitura; aplicar: serviços removidos, pasta renomeada ({old[0].name}); {out}"
+
+    # ---------------------------------------------------------------- 2.13 recuperação: falhas, reexecução e reversão
+    REC = ROOT / "installer" / "recuperacao"
+
+    def rec_tool(*extra, ok=(0,)):
+        return sh(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", REC / "Recuperar_VYONIX.ps1",
+                   "-Saida", OUT, "-SemAbrir", *extra], timeout=1800, ok=ok)
+
+    def system_snapshot() -> dict:
+        """O que o diagnóstico não pode mudar: serviços, registro, pasta do programa, backups, regras de firewall."""
+        return powershell(
+            "$app = $A.app; $o = [ordered]@{}; "
+            "$o.servicos = @(Get-CimInstance Win32_Service | Where-Object { $_.Name -like 'Vyonix*' } | Sort-Object Name | "
+            "ForEach-Object { $_.Name + '|' + $_.State + '|' + $_.StartMode + '|' + $_.PathName + '|' + $_.StartName }); "
+            "$k = 'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{EE8E242D-1625-4E1B-8317-5BFD8610DD26}_is1'; "
+            "$o.registro = if (Test-Path $k) { (Get-ItemProperty $k | Select-Object DisplayVersion, UninstallString, InstallLocation | ConvertTo-Json -Compress) } else { '' }; "
+            "$o.programa = @(if (Test-Path $app) { Get-ChildItem $app -Recurse -File | Sort-Object FullName | ForEach-Object { $_.FullName + '|' + $_.Length + '|' + $_.LastWriteTimeUtc.Ticks } }); "
+            "$o.backups = @(Get-ChildItem $A.bk -Directory -ErrorAction SilentlyContinue | Sort-Object Name | ForEach-Object { $_.Name }); "
+            "$o.firewall = @(Get-NetFirewallRule -Name 'VYONIX-*' -ErrorAction SilentlyContinue | Sort-Object Name | ForEach-Object { $_.Name + '|' + $_.Enabled }); "
+            "$o", {"app": str(INSTALL), "bk": str(PATHS.backups)})
+
+    def patients() -> set:
+        api = Api(state.get("port", 8444))
+        api.login()
+        return {x["name"] for x in api.call("GET", "/patients?q=Paciente")}
+
+    @check("2.13", "Diagnóstico da recuperação é só leitura (serviços, registro, arquivos, backups e firewall iguais) "
+                   "e identifica o que pertence ao VYONIX")
+    def _():
+        a = system_snapshot()
+        rec_tool()
+        b = system_snapshot()
+        diff = [k for k in a if a[k] != b[k]]
+        assert not diff, f"o diagnóstico alterou: {diff}"
+        html = sorted(OUT.glob("VYONIX_Recuperacao_*.html"))[-1].read_text(encoding="utf-8-sig")
+        for t in ("pertence ao VYONIX Platform", "O que a recuperacao faria (nada foi feito)", "Banco de dados do VYONIX",
+                  "VyonixDicomPrint"):
+            assert t in html, f"relatório sem “{t}”"
+        return (f"antes = depois em {len(a['servicos'])} serviço(s), {len(a['programa'])} arquivo(s) do programa, "
+                f"{len(a['backups'])} pasta(s) de backup, registro e firewall; plano e inventário no relatório")
+
+    @check("2.13", "Recuperação interrompida antes da confirmação: nada alterado")
+    def _():
+        a = system_snapshot()
+        p = rec_tool("-Aplicar", "-Confirmacao", "nao", ok=(3,))
+        b = system_snapshot()
+        assert a == b, [k for k in a if a[k] != b[k]]
+        assert "O QUE A RECUPERACAO VAI FAZER" in p.stdout and "Cancelado" in p.stdout, p.stdout[-500:]
+        return "plano mostrado; resposta diferente de RECUPERAR → código 3, nenhum serviço, arquivo, registro ou backup alterado"
+
+    @check("2.13", "Falha na remoção de serviço (aberto por outro programa), serviço alheio com o mesmo nome e falha "
+                   "ao renomear a pasta (arquivo preso por outro programa): nada apagado, backup testado, aviso claro")
+    def _():
+        holder_svc = subprocess.Popen([sys.executable, "-c", (
+            "import ctypes,sys,time\n"
+            "a=ctypes.windll.advapi32\n"
+            "a.OpenSCManagerW.restype=ctypes.c_void_p; a.OpenServiceW.restype=ctypes.c_void_p\n"
+            "a.OpenServiceW.argtypes=[ctypes.c_void_p, ctypes.c_wchar_p, ctypes.c_uint32]\n"
+            "m=a.OpenSCManagerW(None,None,1); h=a.OpenServiceW(m,'VyonixWorker',4)\n"
+            "print(h, flush=True); time.sleep(3600)")], stdout=subprocess.PIPE, text=True)
+        assert holder_svc.stdout.readline().strip() not in ("", "None", "0"), "sem handle do serviço"
+        holder_file = subprocess.Popen([sys.executable, "-c",
+                                        f"f=open(r'{INSTALL / 'vyonix-deploy.exe'}','rb'); print('ok', flush=True); "
+                                        "import time; time.sleep(3600)"], stdout=subprocess.PIPE, text=True)
+        assert holder_file.stdout.readline().strip() == "ok"
+        pacs = query_service("VyonixPacsEngine")
+        if pacs:                               # o motor PACS volta pela reversão (reparo) / próxima atualização
+            sh(["sc.exe", "stop", "VyonixPacsEngine"], ok=None)
+            time.sleep(5)
+            sh(["sc.exe", "config", "VyonixPacsEngine", "binPath=", r"C:\Windows\System32\svchost.exe -k ci-alheio"])
+        else:
+            sh(["sc.exe", "create", "VyonixPacsEngine", "binPath=", r"C:\Windows\System32\svchost.exe -k ci-alheio",
+                "start=", "demand"])
+        try:
+            p = rec_tool("-Aplicar", "-SemConfirmar", ok=(5,))
+            assert "NAO PERTENCE" in p.stdout, "serviço alheio não identificado"
+            assert query_service("VyonixPacsEngine") is not None, "serviço alheio removido"
+            assert holder_file.poll() is None and holder_svc.poll() is None, "processo de outro programa encerrado"
+            assert INSTALL.exists() and (INSTALL / "vyonix-deploy.exe").exists(), "pasta do programa alterada"
+            w = powershell("(Get-ItemProperty 'HKLM:\\SYSTEM\\CurrentControlSet\\Services\\VyonixWorker' -Name DeleteFlag "
+                           "-ErrorAction SilentlyContinue).DeleteFlag")
+            assert str(w) == "1", f"Worker deveria estar marcado para exclusão: {w}"
+            rec = sorted(PATHS.backups.glob("recuperacao-*"))[-1]
+            bj = json.loads((rec / "backup.json").read_text(encoding="utf-8-sig"))
+            assert bj.get("restauracao_testada") is True, bj
+            meta = json.loads((rec / "recuperacao.json").read_text(encoding="utf-8-sig"))
+            assert meta["concluida"] is False and not meta["pasta_renomeada"], meta
+            assert (PATHS.pg_data / "PG_VERSION").exists() and (PATHS.data_dir / "config.json").exists()
+            out = p.stdout
+            assert "PARCIAL" in out and "NAO renomeada" in out and "marcado para exclusao" in out, out[-900:]
+        finally:
+            holder_svc.kill()
+            holder_file.kill()
+            time.sleep(3)
+        state["rec_parcial"] = rec.name
+        return (f"código 5 (parcial): Worker marcado para exclusão (o Windows remove ao soltar/reiniciar), serviço "
+                f"alheio “VyonixPacsEngine” não tocado, processos alheios não encerrados, pasta não renomeada e não "
+                f"apagada; backup novo restaurado em banco temporário ({bj['tabelas']} tabelas, {bj['linhas']} linhas); "
+                f"dados intactos")
+
+    @check("2.13", "Reexecução segura: depois de soltar os bloqueios, a recuperação conclui (cópia a frio conferida)")
+    def _():
+        sh(["sc.exe", "delete", "VyonixPacsEngine"], ok=None)          # o "serviço alheio" do teste anterior
+        time.sleep(5)
+        assert query_service("VyonixWorker") is None, "Worker deveria ter saído ao soltar o handle"
+        rec_tool("-Aplicar", "-SemConfirmar")
+        for n in ("VyonixPacsEngine", "VyonixCore", "VyonixWorker", "VyonixPostgreSQL"):
+            assert query_service(n) is None, f"{n} ainda registrado"
+        assert not INSTALL.exists(), "pasta do programa não foi renomeada"
+        rec = sorted(PATHS.backups.glob("recuperacao-*"))[-1]
+        meta = json.loads((rec / "recuperacao.json").read_text(encoding="utf-8-sig"))
+        assert meta["concluida"] is True and meta["pasta_renomeada"], meta
+        assert (rec / "copia-fria.json").exists() or (rec / "backup.json").exists(), "sem backup confirmado"
+        assert (PATHS.pg_data / "PG_VERSION").exists() and (PATHS.data_dir / "config.json").exists()
+        if query_service("VyonixDicomPrint"):
+            assert query_service("VyonixDicomPrint")["state"] == "Running", "DICOM Print afetado"
+        tipo = "cópia a frio conferida por SHA-256" if (rec / "copia-fria.json").exists() else "backup lógico testado"
+        state["rec_final"] = rec
+        return f"2ª execução concluída ({tipo}); serviços removidos; pasta renomeada para {Path(meta['pasta_renomeada']).name}"
+
+    @check("2.13", "Reversão da recuperação: pasta, registro e serviços restaurados; sistema e dados de volta")
+    def _():
+        sh(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", REC / "Reverter_VYONIX.ps1",
+            "-Pasta", state["rec_final"], "-SemConfirmar", "-Saida", OUT, "-SemAbrir"], timeout=1800)
+        assert (INSTALL / "vyonix-deploy.exe").exists(), "pasta do programa não restaurada"
+        for n in ("VyonixCore", "VyonixWorker", "VyonixPostgreSQL"):
+            q = query_service(n)
+            assert q and q["state"] == "Running", f"{n}: {q}"
+        health(state.get("port", 8444), 300)
+        assert "Paciente Persistencia CI" in patients()
+        return "Reverter_VYONIX: pasta de volta, serviços recriados pelo reparo oficial, sistema respondendo, paciente preservado"
+
+    @check("2.13", "Falha durante a migração do banco (simulada): para com segurança, registra o erro, backup antes; "
+                   "restauração do backup e nova atualização funcionam")
+    def _():
+        port = state.get("port", 8444)
+        deploy("update", "--approve-all", "--silent", ok=(1,), env={"VYONIX_DEPLOY_FALHA_SIMULADA": "migracao"})
+        run, steps = last_run_steps()
+        assert run["kind"] == "update" and run["status"] in ("rolled_back", "failed"), run
+        bad = [s for s in steps if s["status"] == "failed"]
+        assert bad and bad[0]["step_id"] == "core.database" and "simulada" in (bad[0]["error"] or ""), bad
+        bk = [s for s in steps if s["step_id"] == "backup.before_update"]
+        assert bk and bk[0]["status"] == "done", bk
+        b = sorted(PATHS.backups.glob(f"antes-da-atualizacao-{run['id']}"))
+        assert b and (b[0] / "backup.json").exists(), "backup antes da migração ausente"
+        health(port, 300)
+        assert "Paciente Persistencia CI" in patients(), "dados perdidos após a falha"
+        deploy("restore", "--backup", b[0].name, "--approve-all", "--silent", "--confirm",
+               f"backup.restore=RESTAURAR {b[0].name}")
+        r2, _s = last_run_steps()
+        assert r2["kind"] == "restore" and r2["status"] == "succeeded", r2["message"]
+        health(port, 300)
+        assert "Paciente Persistencia CI" in patients()
+        deploy("update", "--approve-all", "--silent")
+        r3, _s = last_run_steps()
+        assert r3["status"] == "succeeded", r3["message"]
+        return (f"execução {run['id']}: {run['status']} em “core.database” (erro registrado), backup "
+                f"{b[0].name} feito antes; sistema seguiu respondendo; restauração e nova atualização concluídas")
+
+    @check("2.13", "Falha na inicialização após atualização (simulada): erro registrado, nada perdido; nova "
+                   "atualização conclui e o sistema responde")
+    def _():
+        port = state.get("port", 8444)
+        deploy("update", "--approve-all", "--silent", ok=(1,), env={"VYONIX_DEPLOY_FALHA_SIMULADA": "inicializacao"})
+        run, steps = last_run_steps()
+        assert run["status"] in ("rolled_back", "failed"), run
+        bad = [s for s in steps if s["status"] == "failed"]
+        assert bad and bad[0]["step_id"] == "running.VyonixCore" and "simulada" in (bad[0]["error"] or ""), bad
+        deploy("update", "--approve-all", "--silent")
+        r2, _s = last_run_steps()
+        assert r2["status"] == "succeeded", r2["message"]
+        health(port, 300)
+        assert "Paciente Persistencia CI" in patients()
+        p = deploy("verificar", "--esperar", "120")
+        return f"execução {run['id']}: {run['status']} (erro registrado no DEPLOY); nova atualização ok; verificar: código {p.returncode}"
 
     # ---------------------------------------------------------------- 2.1 (ao final, para não afetar os demais)
     @check("2.1", "Impeditivo detectado: espaço em disco insuficiente (cenário montado com arquivo de preenchimento)")

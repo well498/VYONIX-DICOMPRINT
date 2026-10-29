@@ -138,15 +138,90 @@ class Installer(unittest.TestCase):
         self.assertIn("update --approve-all", (ROOT / "installer" / "common" / "Atualizar_VYONIX.cmd").read_text())
         self.assertIn("vyonix-deploy.exe repair", (ROOT / "installer" / "common" / "Reparar_VYONIX.cmd").read_text())
 
-    def test_recovery_tool_is_read_only_by_default_and_never_touches_data(self):
-        ps = (ROOT / "installer" / "recuperacao" / "Recuperar_VYONIX.ps1").read_text(encoding="utf-8-sig")
-        body = ps.split("function Aplicar-Recuperacao", 1)[1].split("\nWrite-Host", 1)[0]
-        self.assertIn('$c -ne "RECUPERAR"', ps)
-        self.assertIn("if ($Aplicar)", ps)
-        self.assertNotIn("Remove-Item $dados", body)
+    @staticmethod
+    def _ps(name: str) -> str:
+        return (ROOT / "installer" / "recuperacao" / name).read_text(encoding="utf-8-sig").replace("\r\n", "\n")
+
+    @staticmethod
+    def _functions(ps: str) -> dict[str, str]:
+        out = {}
+        for chunk in ps.split("\nfunction ")[1:]:
+            name = chunk.split("(", 1)[0].split(" ", 1)[0].split("{", 1)[0].strip()
+            out[name] = chunk.split("\n# ----", 1)[0]
+        return out
+
+    # comandos que alteram algo; nenhum pode aparecer no caminho do diagnóstico
+    MUTATING = ("Stop-Process", "sc.exe", "Rename-Item", "Remove-Item", "Set-Item", "New-Item", "Copy-Item", "reg.exe",
+                "taskkill", "Out-File", "Add-Content", "Export-Csv", '"createdb.exe")', '"dropdb.exe")', '"pg_dump.exe") -h',
+                "Start-Process",
+                "New-Service", "Log ", "Acao ")
+
+    def test_recovery_diagnosis_path_is_strictly_read_only(self):
+        ps = self._ps("Recuperar_VYONIX.ps1")
+        fn = self._functions(ps)
+        for name in ("Servico-Info", "Processos-App", "Ler-Segredo", "Banco-Info", "Verificar-Backups", "Diagnostico",
+                     "Montar-Plano", "Plano-Linhas", "Exe-De", "Sob-App"):
+            for bad in self.MUTATING:
+                self.assertNotIn(bad, fn[name], f"{name} contém {bad}")
+        main = ps.split("# ------------------------------------------------------------------ execucao", 1)[1]
+        before_apply = main.split("if ($Aplicar) {", 1)[0]
+        for bad in self.MUTATING:
+            self.assertNotIn(bad, before_apply)
+        # a única gravação fora do modo aplicar é o relatório HTML na pasta de saída
+        self.assertIn("$html | Out-File -FilePath $arq", main)
+        self.assertIn('$appPrefix = [IO.Path]::GetFullPath($app)', ps)
+
+    def test_recovery_requires_confirmation_and_shows_plan_first(self):
+        ps = self._ps("Recuperar_VYONIX.ps1")
+        main = ps.split("# ------------------------------------------------------------------ execucao", 1)[1]
+        self.assertLess(main.index("O QUE A RECUPERACAO VAI FAZER"), main.index('if ($c -ne "RECUPERAR")'))
+        self.assertLess(main.index('if ($c -ne "RECUPERAR")'), main.index("Aplicar-Recuperacao"))
+        self.assertIn("$codigo = 3", main)
+        plano = self._functions(ps)["Plano-Linhas"]
+        for t in ("Registrar o estado atual", "Backup e verificacao", "remover os servicos", "NAO serao tocados",
+                  "Encerrar somente", "Renomear (nao apagar)", "Dados preservados", "Impacto", "Limitacoes", "Reversao"):
+            self.assertIn(t, plano)
+
+    def test_recovery_only_touches_what_belongs_to_vyonix(self):
+        ps = self._ps("Recuperar_VYONIX.ps1")
+        fn = self._functions(ps)
         self.assertNotIn("VyonixDicomPrint", ps.split("$servicos = ", 1)[1].split("\n", 1)[0])
-        self.assertIn("Rename-Item -Path $app", body)                   # pasta do programa renomeada, não apagada
+        self.assertIn("Pertence=(Sob-App $bin)", fn["Servico-Info"])
+        self.assertIn("-not $i.Pertence", fn["Parar"])                      # serviço alheio nunca é parado
+        self.assertIn("if (-not $i.Pertence)", fn["Aplicar-Recuperacao"])   # nem removido
+        self.assertIn("Sob-App $_.ExecutablePath", fn["Processos-App"])      # só processos da pasta do programa
+        body = fn["Aplicar-Recuperacao"]
+        self.assertNotIn("Remove-Item $dados", body)
         self.assertNotIn("Remove-Item -Path $app", body)
+        self.assertIn("Rename-Item -Path $app", body)
+
+    def test_recovery_backs_up_and_records_state_before_removing(self):
+        ps = self._ps("Recuperar_VYONIX.ps1")
+        fn = self._functions(ps)
+        body = fn["Aplicar-Recuperacao"]
+        first_delete = body.index("sc.exe delete")
+        for step in ("Registrar-Estado", "Backup-Logico", "Copia-Fria", "Copiar-Configuracao", "return 4"):
+            self.assertLess(body.index(step), first_delete, step)
+        self.assertLess(body.index("return 4"), body.index("Rename-Item"))
+        self.assertIn("Religar", body.split("return 4", 1)[0])              # sem backup confirmado: religa e para
+        bl = fn["Backup-Logico"]
+        for t in ("pg_dump.exe", "pg_restore.exe", "createdb.exe", "Contagens", "restauracao_testada", "dropdb.exe"):
+            self.assertIn(t, bl)
+        self.assertIn('$verif.StartsWith("vyonix_verif_")', bl)            # só o banco temporário é removido
+        self.assertIn("Get-FileHash", fn["Copia-Fria"])
+        self.assertIn("shut down", fn["Copia-Fria"])
+        for t in ("servicos.json", "registro-desinstalacao.reg", "firewall.json", "arquivos-programa.csv"):
+            self.assertIn(t, fn["Registrar-Estado"])
+
+    def test_reversal_tool_never_touches_database(self):
+        ps = self._ps("Reverter_VYONIX.ps1")
+        for bad in ("Remove-Item", "pg_restore", "dropdb", "pg_dump", "PostgreSQL\\17\\data", "restore --backup"):
+            self.assertNotIn(bad, ps)
+        self.assertIn('if ($c -ne "REVERTER")', ps)
+        self.assertIn("repair --approve-all", ps)
+        self.assertIn("Platform.descartada-", ps)                            # nunca apaga a pasta existente
+        cmd = (ROOT / "installer" / "recuperacao" / "Reverter_VYONIX.cmd").read_bytes()
+        self.assertIn(b"\r\n", cmd)
 
 
 if __name__ == "__main__":

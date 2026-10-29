@@ -106,18 +106,26 @@ class CoreDatabaseStep(Step):
                         "apagados."}
 
     def check(self, ctx: Context) -> bool:
+        from vyonix_deploy import faults
+        if faults.active("migracao"):
+            return False
         o = self.observe(ctx)
         return bool(o.get("config_current") and o.get("database") and o.get("organization")
                     and o.get("migrations") and o.get("up_to_date"))
 
     def capture(self, ctx: Context) -> dict:
         o = self.observe(ctx)
-        return {"database": bool(o.get("database")), "config_file": o.get("config_file")}
+        # None = não foi possível saber (banco inacessível): a reversão NUNCA apaga um banco cuja ausência não foi
+        # confirmada. Só um banco que comprovadamente não existia antes (instalação nova) é removido.
+        return {"database": o.get("database") if "database" in o else None, "config_file": o.get("config_file")}
 
     def apply(self, ctx: Context) -> None:
         from vyonix.db import migrate, provision
         from vyonix.db.session import Database
         from vyonix.tenancy import service as tenancy
+        from vyonix_deploy import faults
+        if faults.active("migracao"):
+            raise DeployError("Falha simulada na migração do banco (teste de homologação): nenhuma alteração feita.")
         store = _core_store(ctx)
         pw = {r: store.get_or_create_text(f"db_{r}") for r in ROLES}
         urls = provision.provision(pg.admin_url(ctx), DB_NAME, prefix=PREFIX, passwords=pw)
@@ -141,9 +149,9 @@ class CoreDatabaseStep(Step):
 
     def rollback(self, ctx: Context, before: dict) -> None:
         from vyonix.db import provision
-        if not before.get("database"):
+        if before.get("database") is False:            # nunca um banco existente ou de estado desconhecido
             provision.drop(pg.admin_url(ctx), DB_NAME, roles=[f"{PREFIX}_{r}" for r in ROLES])
-        if not before.get("config_file"):
+        if before.get("config_file") is False:
             (ctx.paths.data_dir / "config.json").unlink(missing_ok=True)
 
     def how_to_check(self) -> str:

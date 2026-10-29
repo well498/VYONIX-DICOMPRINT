@@ -40,6 +40,9 @@ class Probes:
     rules: Callable[[], list[dict]]
     port_owner: Callable[[int], dict | None]
     uptime_s: Callable[[], float | None]
+    # falhas de inicialização registradas pelo Windows (últimas 24 h) e cópias de segurança (opcionais nos testes)
+    events: Callable[[], list[dict]] = field(default=lambda: [])
+    backups: Callable[[], dict | None] = field(default=lambda: None)
 
 
 @dataclass
@@ -129,6 +132,7 @@ def run_checks(port: int = 8444, *, pg_port: int = 5544, probes: Probes | None =
         add(Check("port", f"Porta {port}", "ok", "Atendida pelo VYONIX." if owner else "Livre."))
     _web(r, pr, port)
     _firewall(r, pr, port)
+    _history_checks(add, pr)
     return r
 
 
@@ -201,6 +205,29 @@ def _firewall(r: Result, pr: Probes, port: int) -> None:
     else:
         add(Check("firewall", "Firewall do Windows", "ok",
                   f"Regras do VYONIX ativas para a porta {port} ({', '.join(sorted(covered))})."))
+
+
+def _history_checks(add, probes: Probes) -> None:
+    """Falhas de inicialização recentes (log do Windows) e situação das cópias de segurança — só leitura."""
+    ev = probes.events() or []
+    if ev:
+        txt = "; ".join(f"{e.get('at', '')} {e.get('service', '')}: {e.get('text', '')}" for e in ev[:5])
+        add(Check("events", "Falhas de inicialização nas últimas 24 h", "warn", txt,
+                  "Se o sistema está funcionando agora, foi uma falha recuperada automaticamente. Se repetir, use "
+                  "“VYONIX - Reparar instalacao” e envie este relatório."))
+    else:
+        add(Check("events", "Falhas de inicialização nas últimas 24 h", "ok", "Nenhuma registrada pelo Windows."))
+    b = probes.backups()
+    if b is None:
+        return
+    if not b.get("count"):
+        add(Check("backups", "Cópias de segurança do banco", "warn", "Nenhuma cópia encontrada em ProgramData\\VYONIX\\Backups.",
+                  "As atualizações fazem uma cópia antes de migrar; configure também a cópia diária (Administração)."))
+    else:
+        add(Check("backups", "Cópias de segurança do banco", "ok" if b.get("valid", True) else "warn",
+                  f"{b['count']} cópia(s); a mais recente: {b.get('latest')} ({b.get('size_mb')} MB)"
+                  + ("" if b.get("valid", True) else " — o resumo (SHA-256) da mais recente NÃO confere"),
+                  "" if b.get("valid", True) else "Envie este relatório; não apague as cópias."))
 
 
 # --------------------------------------------------------------------------- relatório
@@ -315,9 +342,43 @@ def default_probes() -> Probes:
         except Exception:  # noqa: BLE001
             return None
 
+    def events():
+        if not IS_WINDOWS:
+            return []
+        return as_list(powershell(
+            "$since = (Get-Date).AddHours(-24); @(Get-WinEvent -FilterHashtable @{LogName='System'; "
+            "ProviderName='Service Control Manager'; Id=7000,7009,7011,7023,7024,7031,7034; StartTime=$since} "
+            "-MaxEvents 200 -ErrorAction SilentlyContinue | Where-Object { $_.Message -match 'VYONIX' } | "
+            "Select-Object -First 10 | ForEach-Object { [pscustomobject]@{ at=$_.TimeCreated.ToString('dd/MM HH:mm'); "
+            "service=''; text=($_.Message -split [Environment]::NewLine)[0] } })"))
+
+    def backups():
+        from vyonix_deploy.paths import default_paths
+        root = default_paths().backups
+        if not root.exists():
+            return {"count": 0}
+        items = sorted((p for p in root.iterdir() if p.is_dir() and (p / "backup.json").exists()),
+                       key=lambda p: p.stat().st_mtime)
+        if not items:
+            return {"count": 0}
+        import hashlib
+        import json as _json
+        last = items[-1]
+        meta = _json.loads((last / "backup.json").read_text(encoding="utf-8"))
+        dump = last / meta.get("dump", "")
+        valid = dump.exists()
+        if valid and dump.stat().st_size <= 2 * 1024 ** 3:          # confere o resumo das cópias de até 2 GB
+            h = hashlib.sha256()
+            with open(dump, "rb") as f:
+                for chunk in iter(lambda: f.read(1 << 20), b""):
+                    h.update(chunk)
+            valid = h.hexdigest() == meta.get("sha256")
+        return {"count": len(items), "latest": last.name, "size_mb": round(dump.stat().st_size / 1e6, 1) if dump.exists()
+                else 0, "valid": valid}
+
     return Probes(service=_safe(service, None), tcp=_tcp, https=_https, lan_ips=_safe(lan_ips, []),
                   profiles=_safe(profiles, []), rules=_safe(rules, None), port_owner=_safe(port_owner, None),
-                  uptime_s=_safe(uptime_s, None))
+                  uptime_s=_safe(uptime_s, None), events=_safe(events, []), backups=_safe(backups, None))
 
 
 def wait_until_ready(port: int, *, pg_port: int = 5544, timeout: float = 0, probes: Probes | None = None) -> Result:

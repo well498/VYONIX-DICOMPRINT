@@ -240,8 +240,12 @@ class ServiceRunningStep(Step):
         return {"current": self.observe(ctx), "proposed": self.desired(ctx),
                 "impact": "Inicia o serviço e confere o funcionamento.", "undo": "Para o serviço."}
 
+    def _simulated_failure(self) -> bool:
+        from vyonix_deploy import faults
+        return self.name == "VyonixCore" and faults.active("inicializacao")
+
     def check(self, ctx: Context) -> bool:
-        if not IS_WINDOWS:
+        if not IS_WINDOWS or self._simulated_failure():
             return False
         if self.observe(ctx)["state"] != "Running":
             return False
@@ -262,6 +266,8 @@ class ServiceRunningStep(Step):
             raise DeployError(f"{self.name} não ficou em execução (estado: {st}).")
 
     def verify(self, ctx: Context) -> tuple[bool, str]:
+        if self._simulated_failure():
+            return False, "falha simulada na inicialização (teste de homologação)"
         if self.observe(ctx)["state"] != "Running":
             return False, "serviço não está em execução"
         if self.probe is None:

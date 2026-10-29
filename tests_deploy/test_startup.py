@@ -183,3 +183,24 @@ class Plan(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class HistoryChecks(unittest.TestCase):
+    """“VYONIX - Verificar funcionamento” também mostra falhas de inicialização recentes e a situação dos backups."""
+
+    def test_recent_failures_and_backups(self):
+        from vyonix_deploy import startup
+        r = startup.run_checks(8444, probes=probes(
+            events=lambda: [{"at": "29/10 14:02", "service": "", "text": "O serviço VYONIX Core foi encerrado inesperadamente."}],
+            backups=lambda: {"count": 0}))
+        c = {x.id: x for x in r.checks}
+        self.assertEqual(c["events"].status, "warn")
+        self.assertIn("encerrado inesperadamente", c["events"].detail)
+        self.assertEqual(c["backups"].status, "warn")
+        r = startup.run_checks(8444, probes=probes(
+            backups=lambda: {"count": 2, "latest": "antes-da-atualizacao-20261029", "size_mb": 3.2, "valid": False}))
+        c = {x.id: x for x in r.checks}
+        self.assertEqual((c["events"].status, c["backups"].status), ("ok", "warn"))
+        self.assertIn("NÃO confere", c["backups"].detail)
+        r = startup.run_checks(8444, probes=probes())                          # sem acesso: só o que dá para ler
+        self.assertNotIn("backups", {x.id for x in r.checks})
