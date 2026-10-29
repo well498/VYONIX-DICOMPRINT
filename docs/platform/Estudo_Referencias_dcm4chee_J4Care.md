@@ -60,7 +60,7 @@ Prioridade: **A** = alto valor e baixo risco (fazer já) · **B** = valor alto, 
 | 2 | AE desconhecido | Configurável (aceitar/recusar AEs de origem) | — | **Feito hoje:** Q/R recusa e registra; C-STORE: política por instituição (aceitar todos × só cadastrados, com retenção sem exclusão) | Recusa já na associação do C-STORE (Orthanc `DicomAlwaysAllowStore=false` + modalidades sincronizadas pelo Core) — muda a configuração do motor instalada | B |
 | 3 | Teste de conectividade | C-ECHO pela UI | — | **Feito hoje:** C-ECHO com tempo de resposta, último teste e erro | — | — |
 | 4 | Histórico/erros de associação | Logs e auditoria ATNA | — | **Feito hoje:** histórico por organização (aceitas, recusadas com motivo, C-STORE, C-ECHO, C-MOVE recusado), agrupado | Exportar o histórico; alertas por e-mail | C |
-| 5 | Regras de roteamento/exportação | *Export rules* por AE de origem, modalidade, atributos; fila com novas tentativas | Distribuição automática (VNIN) | Não há encaminhamento automático | **Regras de encaminhamento** (origem/modalidade → nó destino com "recebe estudos"), fila persistente com novas tentativas, auditoria e SHA-256 conferido | B (próximo ciclo) |
+| 5 | Regras de roteamento/exportação | *Export rules* por AE de origem, modalidade, atributos; fila com novas tentativas | Distribuição automática (VNIN) | **Feito hoje:** regras por origem e modalidade, envio manual, fila persistente com novas tentativas, SHA-256 conferido, histórico e auditoria | Encaminhar imagens que chegam depois do envio (complemento do estudo) | A (feito) |
 | 6 | Storage Commitment | SCP e SCU (após exportação), só confirma após releitura com checksum | — | Não há (a integridade é por SHA-256 na entrada) | SCP de *storage commitment* no Core respondendo com base no índice + SHA-256 (sem mudar o motor) | B |
 | 7 | Duplicados / atributos divergentes | Políticas configuráveis (sobrescrever, guardar, ignorar; complementar/substituir atributos) | — | Política fixa e conservadora: idêntico = idempotente; divergente = recusa | Manter (segurança); expor a recusa na tela de qualidade (já existe) | — |
 | 8 | Rejeição/IOCM (KOS) | Notas de rejeição ocultam instâncias com retenção própria | — | Não há | Rejeição lógica de instâncias/séries pelo administrador, auditada, sem exclusão física | C |
@@ -81,11 +81,11 @@ Prioridade: **A** = alto valor e baixo risco (fazer já) · **B** = valor alto, 
 
 ## 5. Oportunidades priorizadas para o VYONIX
 
-**Implementadas neste ciclo (alto valor, baixo risco, compatíveis com o PACS atual):** itens 1–4, 14, 16 (local),
+**Implementadas neste ciclo (alto valor, baixo risco, compatíveis com o PACS atual):** itens 1–5, 14, 16 (local),
 20 e 21 — ver `VYONIX_PROJECT_STATE.md`.
 
 **Próximo ciclo técnico (sem decisão comercial, só desenho e testes):**
-1. Regras de encaminhamento automático (item 5) com fila persistente e novas tentativas.
+1. Complemento do encaminhamento: imagens recebidas depois do envio.
 2. *Storage commitment* SCP no Core (item 6), respondendo pelo índice com SHA-256 — sem alterar o Orthanc.
 3. Receptor HL7 ADT/ORM (item 11) para integrar HIS externo sem digitação dupla.
 4. DICOM TLS opcional no Q/R (item 22).

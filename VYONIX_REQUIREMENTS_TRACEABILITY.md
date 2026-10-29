@@ -110,7 +110,7 @@ As evidências citadas são reproduzíveis: suítes de teste no repositório e e
 | PAC-NOS-02 | Teste de associação (C-ECHO) | Implementado | `nodes.echo` | `test_pacs_nodes.py::Echo` |
 | PAC-NOS-03 | Histórico de conexões e registros de erros; associações recusadas registradas | Implementado | `pacs.dicom_events`, `dimse_qr` | `test_pacs_nodes.py::QRHistory` |
 | PAC-NOS-04 | Bloqueio de AE desconhecido no C-STORE | Parcial (no índice, com retenção; recusa na associação = BLK-15) | `pacs/reception`, `pacs.store_holds` | `test_pacs_nodes.py`, `test_pacs_orthanc.py` |
-| PAC-NOS-05 | Regras de roteamento | Planejado (próximo ciclo) | — | — |
+| PAC-NOS-05 | Regras de roteamento | Implementado (origem/modalidade → nó; envio manual; novas tentativas) | `vyonix/pacs/forward.py`, `pacs_0007` | `test_pacs_forward.py`, e2e |
 | PAC-NOS-06 | Isolamento entre clínicas nos nós | Implementado | RLS, unidade validada na organização | `test_pacs_nodes.py` |
 | RIS-FLUXO-01 | Etapas configuráveis com dependências | Implementado (agendamento, worklist; preparação e distribuição já configuráveis) | `ris/workflow` | `test_ris_workflow.py` |
 | RIS-FLUXO-02 | Estado, responsável, horário e histórico por etapa | Implementado (linha do tempo) | `vyonix/ris/timeline.py` | `test_ris_workflow.py` |

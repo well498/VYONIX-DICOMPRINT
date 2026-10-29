@@ -157,3 +157,34 @@ class PacsStoreHold(TenantMixin, Base):
     decided_by: Mapped[str | None] = mapped_column(String(120))
     decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     decision_note: Mapped[str | None] = mapped_column(String(300))
+
+
+class PacsForwardRule(TenantMixin, Base):
+    """Regra de encaminhamento automático: estudo recebido que combina com a origem e/ou a modalidade é enviado
+    (C-STORE) ao nó de destino da organização com permissão de receber estudos."""
+    __tablename__ = "forward_rules"
+    __table_args__ = (SCHEMA,)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    source: Mapped[str | None] = mapped_column(String(16))          # estação/AE de origem (None = qualquer)
+    modality: Mapped[str | None] = mapped_column(String(16))        # None = qualquer
+    destination_node_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+    created_by: Mapped[str] = mapped_column(String(120), nullable=False)
+
+
+class PacsForwardJob(TenantMixin, Base):
+    """Envio de um estudo a um nó (por regra ou manual), com novas tentativas. SHA-256 conferido em cada imagem."""
+    __tablename__ = "forward_jobs"
+    __table_args__ = (Index("ix_pacs_forward_jobs_due", "tenant_id", "status", "next_attempt_at"), SCHEMA)
+    rule_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
+    study_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)          # pacs.studies.id
+    destination_node_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+    status: Mapped[str] = mapped_column(String(12), nullable=False, default="queued")   # queued|done|failed|cancelled
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    next_attempt_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    instances: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    sent: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    integrity_failures: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_error: Mapped[str | None] = mapped_column(String(300))
+    done_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    requested_by: Mapped[str] = mapped_column(String(120), nullable=False)

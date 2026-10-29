@@ -459,6 +459,62 @@ def decide_holds(body: HoldDecisionIn, c: Ctx = Depends(needs("pacs.admin"))):
                                                  note=body.note, **c.actor))
 
 
+class ForwardRuleIn(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    destination_node_id: uuid.UUID
+    source: str | None = Field(None, max_length=16)
+    modality: str | None = Field(None, max_length=16)
+    enabled: bool = True
+
+
+@router.get("/forward-rules")
+def forward_rules(c: Ctx = Depends(needs("pacs.admin"))):
+    from vyonix.pacs import forward
+    with c.session() as s:
+        return {"items": forward.rules(s), "jobs": forward.jobs(s, limit=50)}
+
+
+@router.post("/forward-rules", status_code=201)
+def add_forward_rule(body: ForwardRuleIn, c: Ctx = Depends(needs("pacs.admin"))):
+    from vyonix.pacs import forward
+    with c.session() as s:
+        return forward.save_rule(s, **body.model_dump(), **c.actor)
+
+
+@router.put("/forward-rules/{rule_id}")
+def update_forward_rule(rule_id: uuid.UUID, body: ForwardRuleIn, c: Ctx = Depends(needs("pacs.admin"))):
+    from vyonix.pacs import forward
+    with c.session() as s:
+        return forward.save_rule(s, rule_id=rule_id, **body.model_dump(), **c.actor)
+
+
+@router.delete("/forward-rules/{rule_id}", status_code=204)
+def remove_forward_rule(rule_id: uuid.UUID, c: Ctx = Depends(needs("pacs.admin"))):
+    from vyonix.pacs import forward
+    with c.session() as s:
+        forward.remove_rule(s, rule_id, **c.actor)
+    return Response(status_code=204)
+
+
+class ForwardIn(BaseModel):
+    destination_node_id: uuid.UUID
+
+
+@router.post("/studies/{study_uid}/forward", status_code=201)
+def forward_study(study_uid: str, body: ForwardIn, c: Ctx = Depends(needs("pacs.admin"))):
+    """Envia o estudo a um nó cadastrado para receber (entra na fila do serviço; SHA-256 conferido)."""
+    from vyonix.pacs import forward
+    with c.session() as s:
+        return forward.request(s, study_uid, body.destination_node_id, **c.actor)
+
+
+@router.post("/forward-jobs/{job_id}/retry")
+def retry_forward(job_id: uuid.UUID, c: Ctx = Depends(needs("pacs.admin"))):
+    from vyonix.pacs import forward
+    with c.session() as s:
+        return forward.retry(s, job_id, **c.actor)
+
+
 @router.get("/status")
 def status(c: Ctx = Depends(needs("pacs.admin"))):
     b = backend_for(c.plat)

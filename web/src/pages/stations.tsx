@@ -195,6 +195,8 @@ export function StationsPage({ me }: { me: Me }) {
         {!list.loading && !list.error && nodes.length === 0 && <p className="empty">Nenhum equipamento cadastrado.</p>}
       </div>
 
+      <ForwardRules nodes={nodes} onChanged={reloadAll} />
+
       {(problems.data?.items.length ?? 0) > 0 && (
         <section className="section" aria-label="Conexões recusadas e falhas">
           <h2>Conexões recusadas e falhas recentes</h2>
@@ -206,6 +208,84 @@ export function StationsPage({ me }: { me: Me }) {
         onEdit={(n) => { setOpen(null); setEditing({ id: n.id, rv: n.row_version, form: toForm(n) }); }}
         onChanged={reloadAll} />}
     </Page>
+  );
+}
+
+type Rule = { id: string; name: string; enabled: boolean; source: string | null; modality: string | null;
+  destination_node_id: string; destination: string | null };
+type Job = { id: string; status: "queued" | "done" | "failed" | "cancelled"; attempts: number; next_attempt_at: string;
+  instances: number; sent: number; integrity_failures: number; last_error: string | null; done_at: string | null;
+  requested_by: string; destination: string | null; accession: string | null; created_at: string };
+const JOB: Record<Job["status"], string> = { queued: "Na fila", done: "Enviado", failed: "Falhou", cancelled: "Cancelado" };
+
+/** Regras de encaminhamento automático (roteamento) e envios recentes. */
+function ForwardRules({ nodes, onChanged }: { nodes: Node[]; onChanged: () => Promise<void> }) {
+  const data = useLoad(() => get<{ items: Rule[]; jobs: Job[] }>("/pacs/forward-rules"), [nodes.length]);
+  const dests = nodes.filter((n) => n.can_receive && n.host && n.port);
+  const [f, setF] = useState<{ name: string; source: string; modality: string; dest: string } | null>(null);
+  const act = useAction();
+  async function save(e: FormEvent) {
+    e.preventDefault();
+    if (!f) return;
+    if (await act.run(async () => {
+      await post("/pacs/forward-rules", { name: f.name, destination_node_id: f.dest, source: f.source || null, modality: f.modality || null });
+      await data.reload();
+    }, "Regra de encaminhamento criada.")) setF(null);
+  }
+  const d = data.data;
+  return (
+    <section className="section" aria-label="Encaminhamento de estudos">
+      <div className="row-actions"><h2>Encaminhamento de estudos</h2>
+        {!f && <button disabled={!dests.length} title={!dests.length ? "Cadastre um nó com “Recebe estudos”, endereço e porta" : undefined}
+          onClick={() => setF({ name: "", source: "", modality: "", dest: dests[0]?.id ?? "" })}>Nova regra</button>}</div>
+      <p className="intro">Envia automaticamente (C-STORE) os estudos recebidos para outro PACS ou estação, depois de terminada a recepção. Falhas são repetidas em 5 min, 15 min, 1 h, 3 h e 12 h.</p>
+      {act.view}
+      <Notice kind="error">{data.error}</Notice>
+      {f && (
+        <form className="panel" aria-label="Nova regra de encaminhamento" onSubmit={save}>
+          <div className="grid2">
+            <Field label="Nome da regra"><input required maxLength={120} value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></Field>
+            <Field label="Destino"><select value={f.dest} onChange={(e) => setF({ ...f, dest: e.target.value })}>
+              {dests.map((n) => <option key={n.id} value={n.id}>{n.name ?? n.ae_title} ({n.ae_title})</option>)}</select></Field>
+            <Field label="Origem (estação ou AE)" hint="Vazio = qualquer origem"><input maxLength={16} value={f.source} onChange={(e) => setF({ ...f, source: e.target.value.toUpperCase() })} /></Field>
+            <Field label="Modalidade do estudo" hint="Vazio = qualquer modalidade"><input maxLength={8} value={f.modality} onChange={(e) => setF({ ...f, modality: e.target.value.toUpperCase() })} /></Field>
+          </div>
+          <div className="row-actions"><button className="primary" disabled={act.busy || !f.dest}>Salvar regra</button>
+            <button type="button" className="link" onClick={() => setF(null)}>Cancelar</button></div>
+        </form>)}
+      {d && d.items.length === 0 && !f && <p className="empty">Nenhuma regra de encaminhamento.</p>}
+      {d && d.items.length > 0 && (
+        <div className="table-wrap"><table>
+          <thead><tr><th>Regra</th><th>Origem</th><th>Modalidade</th><th>Destino</th><th>Situação</th><th>Ações</th></tr></thead>
+          <tbody>{d.items.map((r) => (
+            <tr key={r.id}><td>{r.name}</td><td>{r.source ?? "qualquer"}</td><td>{r.modality ?? "qualquer"}</td><td>{r.destination ?? "—"}</td>
+              <td>{r.enabled ? "Ativa" : "Pausada"}</td>
+              <td className="actions">
+                <button className="link" disabled={act.busy} onClick={() => void act.run(async () => {
+                  await put(`/pacs/forward-rules/${r.id}`, { name: r.name, destination_node_id: r.destination_node_id, source: r.source, modality: r.modality, enabled: !r.enabled });
+                  await data.reload(); await onChanged();
+                }, r.enabled ? "Regra pausada." : "Regra ativada.")}>{r.enabled ? "Pausar" : "Ativar"}</button>
+                <button className="link danger" disabled={act.busy} onClick={() => void act.run(async () => {
+                  await del(`/pacs/forward-rules/${r.id}`); await data.reload();
+                }, "Regra removida.")}>Remover</button></td></tr>))}
+          </tbody>
+        </table></div>)}
+      {d && d.jobs.length > 0 && <>
+        <h3 className="section">Envios recentes</h3>
+        <div className="table-wrap"><table>
+          <thead><tr><th>Criado</th><th>Destino</th><th>Origem do pedido</th><th>Situação</th><th>Imagens</th><th>Detalhe</th><th>Ações</th></tr></thead>
+          <tbody>{d.jobs.map((j) => (
+            <tr key={j.id}><td className="nowrap">{fmtDate(j.created_at)}</td><td>{j.destination ?? "—"}</td><td>{j.requested_by}</td>
+              <td><span className={`pill${j.status === "failed" ? " pill-warn" : ""}`}>{JOB[j.status]}</span>
+                {j.status === "queued" && j.attempts > 0 && <div className="muted">tentativa {j.attempts + 1} às {fmtDate(j.next_attempt_at)}</div>}</td>
+              <td>{j.sent}/{j.instances || "—"}{j.integrity_failures ? ` (${j.integrity_failures} com integridade violada)` : ""}</td>
+              <td>{j.last_error ?? "—"}</td>
+              <td className="actions">{j.status === "failed" && <button className="link" disabled={act.busy} onClick={() => void act.run(async () => {
+                await post(`/pacs/forward-jobs/${j.id}/retry`); await data.reload();
+              }, "Envio reagendado.")}>Reenviar</button>}</td></tr>))}
+          </tbody>
+        </table></div></>}
+    </section>
   );
 }
 

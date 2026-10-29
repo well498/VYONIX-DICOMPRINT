@@ -412,8 +412,19 @@ class WebE2E(unittest.TestCase):
         row.get_by_role("button", name="Detalhes US_SALA4").click()
         sheet = pg.get_by_role("dialog", name="Equipamento US_SALA4")
         expect(sheet.get_by_text("Fabricante Fictício · US-100")).to_be_visible()
-        # política de recepção: só equipamentos cadastrados
         sheet.get_by_role("button", name="Fechar").click()
+        # regra de encaminhamento para o nó que recebe estudos
+        fw = pg.get_by_role("region", name="Encaminhamento de estudos")
+        fw.get_by_role("button", name="Nova regra").click()
+        rf = pg.get_by_role("form", name="Nova regra de encaminhamento")
+        rf.get_by_label("Nome da regra").fill("US para o ultrassom da sala 4")
+        rf.get_by_label("Modalidade do estudo").fill("us")
+        rf.get_by_role("button", name="Salvar regra").click()
+        expect(fw.get_by_text("Regra de encaminhamento criada.")).to_be_visible()
+        expect(fw.get_by_role("row", name="US para o ultrassom da sala 4")).to_contain_text("Ativa")
+        fw.get_by_role("row", name="US para o ultrassom da sala 4").get_by_role("button", name="Remover").click()
+        expect(fw.get_by_text("Nenhuma regra de encaminhamento.")).to_be_visible()
+        # política de recepção: só equipamentos cadastrados
         pg.get_by_label("Só de equipamentos cadastrados (os demais ficam retidos para sua decisão; nada é apagado)").click()
         expect(pg.get_by_text("Agora só equipamentos cadastrados com “Envia imagens” são aceitos.")).to_be_visible()
         row.get_by_role("button", name="Detalhes US_SALA4").click()

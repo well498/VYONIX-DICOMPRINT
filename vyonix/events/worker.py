@@ -119,8 +119,9 @@ class Worker:
 
 def build_worker(plat) -> Worker:
     """Processador de eventos com as tarefas periódicas da plataforma (serviço do Windows e comando ``worker``)."""
-    from vyonix.pacs import backup_task, integrity_task
+    from vyonix.pacs import backup_task, forward, integrity_task
     from vyonix.pacs.sync_task import INTERVAL_S, PacsSyncTask
     return Worker(plat.db, plat.bus, periodic=[(INTERVAL_S, PacsSyncTask(plat)),
                                                (backup_task.INTERVAL_S, backup_task.PacsBackupTask(plat)),
-                                               (integrity_task.INTERVAL_S, integrity_task.PacsIntegrityTask(plat))])
+                                               (integrity_task.INTERVAL_S, integrity_task.PacsIntegrityTask(plat)),
+                                               (forward.INTERVAL_S, forward.ForwardTask(plat))])

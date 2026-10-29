@@ -8,8 +8,7 @@
 2. Corrigir o que falhar e reenviar sem cancelar execuções em andamento.
 
 ## Próximo ciclo (autorizado, sem decisão comercial)
-1. **Regras de encaminhamento automático** (PAC-NOS-05): origem (AE) e/ou modalidade → nó com "recebe estudos";
-   fila persistente no worker com novas tentativas e SHA-256 conferido; histórico de conexões; tela em Nós DICOM.
+1. Encaminhamento: reenviar imagens que chegam depois do envio concluído.
 2. **Storage commitment SCP** no Q/R do Core respondendo pelo índice (sem mudar o Orthanc).
 3. **Receptor HL7 ADT/ORM (MLLP)** para HIS externo.
 4. DICOM TLS opcional no Q/R.

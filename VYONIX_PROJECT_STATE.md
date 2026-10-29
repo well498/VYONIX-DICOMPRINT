@@ -354,6 +354,8 @@ SMooTH (VNA, Viewer, VNEdge, VNIN). Estudo e matriz: `docs/platform/Estudo_Refer
 | `69459b5` | **Fluxo do exame** configurável (`ris/workflow`: agendamento e worklist, com dependência) e **linha do tempo do exame** | `test_ris_workflow.py` |
 | `2fcf974` | Estudo dcm4chee × SMooTH × VYONIX; **exames anteriores** do paciente (preparação e laudo); **alerta de espaço em disco** no monitoramento | `test_ris_workflow.py::test_priors_of_same_patient`; `test_monitoring.py::test_disk_space_levels_grouped_by_volume` |
 
+| (próximo) | **Encaminhamento de estudos**: regras por origem/modalidade, envio manual (Imagens → Enviar…), fila com novas tentativas (5 min a 12 h), SHA-256 conferido; migração `pacs_0007` | `test_pacs_forward.py` 4/4; e2e Nós DICOM |
+
 **Regressão local:** `tests_platform` completo 215 OK antes do último ciclo (2 dependentes do Orthanc só no CI);
 módulos afetados reexecutados depois de cada mudança (PACS, Q/R, RIS, laudos, monitoramento, e2e 18/18).
 

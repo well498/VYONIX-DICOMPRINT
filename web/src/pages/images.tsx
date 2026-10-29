@@ -59,6 +59,9 @@ export function ImagesPage({ me }: { me: { permissions: string[] } }) {
     ? (await get<{ studies: { study_uid: string; issues: string[] }[] }>("/pacs/quality")).studies : [], [onlyIssues]);
   const status = useLoad(async () => isAdmin ? await get<Status>("/pacs/status") : null, [isAdmin]);
   const sync = useAction();
+  const dests = useLoad(async () => isAdmin ? (await get<{ nodes: { id: string; ae_title: string; name: string | null;
+    can_receive: boolean; host: string | null; port: number | null }[] }>("/pacs/nodes")).nodes.filter((n) => n.can_receive && n.host && n.port) : [], [isAdmin]);
+  const [sendFor, setSendFor] = useState<{ uid: string; dest: string } | null>(null);
 
   const issueMap = new Map((issues.data ?? []).map((x) => [x.study_uid, x.issues]));
   const rows = (studies.data ?? []).filter((s) => !onlyIssues || issueMap.has(val(s, "0020000D")));
@@ -140,8 +143,18 @@ export function ImagesPage({ me }: { me: { permissions: string[] } }) {
                     <a className="button" href={`/viewer/viewer?StudyInstanceUIDs=${encodeURIComponent(uid)}`}
                       target="_blank" rel="noopener">Abrir no Viewer</a>
                     <button className="link" aria-expanded={!!q} onClick={() => void toggleQuality(uid)}>Qualidade</button>
+                    {isAdmin && (dests.data ?? []).length > 0 && <button className="link" onClick={() => setSendFor(sendFor?.uid === uid ? null : { uid, dest: dests.data![0].id })}>Enviar…</button>}
                   </div></td>
                 </tr>,
+                sendFor?.uid === uid ? (
+                  <tr key={`${uid}-send`} className="detail-row"><td colSpan={9}>
+                    <form className="filters" aria-label="Enviar estudo" onSubmit={(e) => { e.preventDefault(); void sync.run(async () => {
+                      await post(`/pacs/studies/${encodeURIComponent(uid)}/forward`, { destination_node_id: sendFor.dest }); setSendFor(null);
+                    }, "Envio colocado na fila (acompanhe em Nós DICOM → Envios recentes)."); }}>
+                      <select aria-label="Destino do envio" value={sendFor.dest} onChange={(e) => setSendFor({ uid, dest: e.target.value })}>
+                        {(dests.data ?? []).map((n) => <option key={n.id} value={n.id}>{n.name ?? n.ae_title} ({n.ae_title})</option>)}</select>
+                      <button className="primary" disabled={sync.busy}>Enviar estudo</button>
+                    </form></td></tr>) : null,
                 q ? (
                   <tr key={`${uid}-q`} className="detail-row">
                     <td colSpan={9}>
