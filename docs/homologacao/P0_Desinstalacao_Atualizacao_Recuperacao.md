@@ -36,6 +36,18 @@ quatro mecanismos que, sozinhos ou juntos, produzem exatamente o sintoma relatad
 * **Inicialização automática** (bc9cf28) preservada: serviços automáticos, contas de serviço, recuperação após falha
   reaplicada pela atualização (o CI confere).
 
+## 2.1 Garantias do desinstalador (pedido de 29/10, 17:50)
+
+| Exigência | Implementação | Teste |
+|---|---|---|
+| Não encerra o próprio processo nem os temporários | Fecha só processos da pasta do programa, **exceto `unins*`**; a cópia temporária do desinstalador (`_iu*.tmp`) fica em `%TEMP%`, fora da pasta | `test_uninstaller_itself_is_never_killed`; CI 2.12 (código 0) |
+| Aguarda as etapas de remoção | O DEPLOY (remoção dos serviços, firewall, atalhos) roda e é aguardado antes da limpeza final; serviço: desativar → parar (90 s) → encerrar pelo PID → excluir | `test_uninstall.py`; CI 2.12 |
+| Remove só serviços do VYONIX Platform | Serviço só é tocado se o programa dele está em `Program Files\VYONIX\Platform` (Inno `ServiceOwned` e DEPLOY `owned_by_install`); DICOM Print nunca está na lista | `Ownership` (3 testes); CI 2.13 (serviço alheio com o mesmo nome) |
+| Sem processos ou serviços órfãos; erro quando não conclui | Verificação final do estado REAL (serviços, processos, pasta) → `C:\ProgramData\VYONIX\Logs\desinstalacao.json` com `concluida` / `reiniciar` / `incompleta`; `incompleta` registra ERRO no `instalador.log` e mostra mensagem de erro (modo interativo) | CI 2.12 e homologação 15 exigem `concluida` |
+| Dados preservados; reinstalação depois | `ProgramData\VYONIX` nunca é removido; reinstalar reconhece os dados e faz atualização | CI 2.12 / 2.8 / homologação 15 |
+| Testes sem condição de corrida | Os testes aguardam o fim do desinstalador **e** da cópia temporária e o status gravado antes de conferir | `wait_uninstall_finished` (CI 2.12 e homologação 15) |
+| Bancos preexistentes protegidos | A reversão de uma instalação que falhou só remove banco/cluster **comprovadamente criado nesta execução**; estado desconhecido nunca é removido | `test_faults.py` (rollback do banco e do cluster) |
+
 ## 3. Como recuperar a instalação atual (computador do proprietário)
 
 Passo a passo para o proprietário: `Procedimento_Recuperacao_Instalacao_Proprietario.md`. Checklist:
@@ -46,7 +58,7 @@ Passo a passo para o proprietário: `Procedimento_Recuperacao_Instalacao_Proprie
 | Primeira execução só diagnóstico | Sem `-Aplicar` nenhum comando que altere algo é executado (teste automático `test_recovery_diagnosis_path_is_strictly_read_only`; CI 2.13 compara serviços, registro, arquivos do programa, backups e firewall antes/depois). Única gravação: o relatório HTML na Área de Trabalho |
 | Identificar o que pertence ao VYONIX | Serviço pertence se o programa dele está em `Program Files\VYONIX\Platform`; processos idem; banco pelo `-D` do serviço do PostgreSQL. Serviço com o mesmo nome e programa em outro lugar: **NÃO PERTENCE**, nunca alterado. DICOM Print listado como nunca alterado |
 | Confirmação explícita com plano | Plano exibido antes (serviços, processos, pasta, dados, backup, impactos, limitações, reversão); só `RECUPERAR` continua; outra resposta → código 3, nada alterado |
-| Integridade do banco + backup consistente + prova de restauração | Core/Worker/PACS parados (sem escritas); `pg_dump` completo (lê todas as páginas, com somas de verificação ativas); restauração num banco temporário `vyonix_verif_*` e comparação da contagem de linhas de todas as tabelas; `backup.json` compatível com a restauração do DEPLOY. Sem banco acessível: cópia a frio conferida por SHA-256 de cada arquivo + estado "shut down" (`pg_controldata`). Último recurso: backup existente íntegro e legível. **Sem backup confirmado: religa os serviços e para (código 4)** |
+| Integridade do banco + backup consistente + prova de restauração | Core/Worker/PACS parados (sem escritas); `pg_dump` completo (lê todas as páginas, com somas de verificação ativas); restauração num banco temporário `vyonix_verif_*` e comparação, tabela a tabela, da contagem **e do resumo MD5 do conteúdo**, dos valores das sequências e da estrutura (índices, restrições, funções, gatilhos, políticas, visões); `amcheck` nos índices B-tree da cópia; arquivos DICOM e configurações inventariados antes e depois (devem ficar idênticos); `backup.json` compatível com a restauração do DEPLOY. Sem banco acessível: cópia a frio conferida por SHA-256 de cada arquivo + estado "shut down" (`pg_controldata`). Último recurso: backup existente íntegro e legível. **Sem backup confirmado: religa os serviços e para (código 4)** |
 | Estado anterior registrado | `Backups\recuperacao-<data>\estado-anterior`: serviços (JSON + `.reg` + recuperação automática), registro de desinstalação, firewall, lista de arquivos; configurações em `configuracao\` |
 | Reversão | `Reverter_VYONIX.cmd`: pasta de volta, registro de volta, serviços pelo reparo oficial, verificação; nunca toca o banco. Restauração do banco: operação separada com confirmação `RESTAURAR <nome>` |
 | Falhas | Serviço preso → marcado para exclusão, aviso REINICIAR, resultado PARCIAL (código 5); arquivo preso → pasta não renomeada, nada apagado; reexecução segura |

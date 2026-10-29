@@ -57,5 +57,22 @@ class RollbackNeverDropsExistingDatabase(unittest.TestCase):
             self.assertIsNone(st.capture(None)["database"])
 
 
+class ClusterRollback(unittest.TestCase):
+    def test_existing_or_unknown_cluster_is_never_removed(self):
+        import tempfile
+        from pathlib import Path
+        from vyonix_deploy.steps import postgres as pg
+        with tempfile.TemporaryDirectory() as d:
+            data = Path(d) / "data"
+            data.mkdir()
+            (data / "PG_VERSION").write_text("17")
+            st = pg.PgClusterStep(Path(d) / "bin", data)
+            for before in ({}, {"initialized": None}, {"initialized": True}):
+                st.rollback(mock.MagicMock(), before)
+                self.assertTrue((data / "PG_VERSION").exists(), before)
+            st.rollback(mock.MagicMock(), {"initialized": False})       # criado nesta execução: pode desfazer
+            self.assertFalse(data.exists())
+
+
 if __name__ == "__main__":
     unittest.main()

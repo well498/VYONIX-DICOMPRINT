@@ -854,6 +854,19 @@ $ap = $r | Get-NetFirewallApplicationFilter
             "Where-Object { $_.ExecutablePath -and $_.ExecutablePath.StartsWith($d, [StringComparison]::OrdinalIgnoreCase) } "
             "| ForEach-Object { $_.Name + ' ' + $_.ProcessId })", {"d": str(INSTALL)}))
 
+    def wait_uninstall_finished(started: float, timeout: float = 900) -> dict:
+        """Estado FINAL real: espera o desinstalador (e a cópia temporária _iu*.tmp) terminar e o status gravado."""
+        st = Path(os.environ.get("ProgramData", r"C:\ProgramData")) / "VYONIX" / "Logs" / "desinstalacao.json"
+        end = time.monotonic() + timeout
+        while time.monotonic() < end:
+            busy = as_list(powershell("@(Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Name -like '_iu*' "
+                                      "-or $_.Name -like 'unins*' } | ForEach-Object { $_.Name })"))
+            if not busy and st.exists() and st.stat().st_mtime >= started - 2:
+                return json.loads(st.read_text(encoding="utf-8-sig"))
+            time.sleep(3)
+        raise AssertionError(f"desinstalação não terminou em {timeout} s (status: "
+                             f"{st.read_text(encoding='utf-8-sig') if st.exists() else 'ausente'})")
+
     @check("2.12", "Desinstalação com o assistente aberto e uma execução interrompida: nada fica preso")
     def _():
         import sqlite3
@@ -869,8 +882,10 @@ $ap = $r | Get-NetFirewallApplicationFilter
         state["stale_run"] = rid
         before = app_processes()
         un = INSTALL / "unins000.exe"
+        t0 = time.time()
         sh([un, "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", f"/LOG={OUT / 'uninstall.log'}"], timeout=900)
-        time.sleep(5)
+        fin = wait_uninstall_finished(t0)
+        assert fin["status"] == "concluida", f"desinstalação: {fin}"
         for n in ("VyonixPacsEngine", "VyonixCore", "VyonixWorker", "VyonixPostgreSQL"):
             assert query_service(n) is None, f"{n} ainda registrado"
         left = app_processes()
@@ -886,7 +901,8 @@ $ap = $r | Get-NetFirewallApplicationFilter
         txt = log.read_text(encoding="utf-8", errors="replace")
         assert "desinstalação concluída" in txt, txt[-800:]
         shutil.copy2(log, OUT / "instalador.log")
-        return (f"antes: {len(before)} processo(s) na pasta do programa (assistente e serviços); depois: nenhum; "
+        return (f"código 0; estado final verificado após o término ({fin}); "
+                f"antes: {len(before)} processo(s) na pasta do programa (assistente e serviços); depois: nenhum; "
                 "4 serviços removidos; pasta do programa vazia; execução interrompida registrada como abandonada; "
                 "registro em ProgramData\\VYONIX\\Logs\\instalador.log")
 
@@ -967,7 +983,7 @@ $ap = $r | Get-NetFirewallApplicationFilter
         assert (PATHS.pg_data / "PG_VERSION").exists() and (PATHS.data_dir / "config.json").exists(), "dados alterados"
         rec = sorted(PATHS.backups.glob("recuperacao-*"))[-1]
         bj = json.loads((rec / "backup.json").read_text(encoding="utf-8-sig"))
-        assert bj.get("restauracao_testada") is True and bj["tabelas"] > 0, bj
+        assert bj.get("restauracao_testada") is True and bj.get("conteudo_conferido") is True and bj["tabelas"] > 0, bj
         assert (rec / "estado-anterior" / "servicos.json").exists(), "estado anterior não registrado"
         assert "R0" in html and "O que a recuperacao faria" in html, "relatório sem backups ou sem o plano"
         if query_service("VyonixDicomPrint"):
@@ -1058,7 +1074,7 @@ $ap = $r | Get-NetFirewallApplicationFilter
             assert str(w) == "1", f"Worker deveria estar marcado para exclusão: {w}"
             rec = sorted(PATHS.backups.glob("recuperacao-*"))[-1]
             bj = json.loads((rec / "backup.json").read_text(encoding="utf-8-sig"))
-            assert bj.get("restauracao_testada") is True, bj
+            assert bj.get("restauracao_testada") is True and bj.get("conteudo_conferido") is True, bj
             meta = json.loads((rec / "recuperacao.json").read_text(encoding="utf-8-sig"))
             assert meta["concluida"] is False and not meta["pasta_renomeada"], meta
             assert (PATHS.pg_data / "PG_VERSION").exists() and (PATHS.data_dir / "config.json").exists()
@@ -1071,7 +1087,8 @@ $ap = $r | Get-NetFirewallApplicationFilter
         state["rec_parcial"] = rec.name
         return (f"código 5 (parcial): Worker marcado para exclusão (o Windows remove ao soltar/reiniciar), serviço "
                 f"alheio “VyonixPacsEngine” não tocado, processos alheios não encerrados, pasta não renomeada e não "
-                f"apagada; backup novo restaurado em banco temporário ({bj['tabelas']} tabelas, {bj['linhas']} linhas); "
+                f"apagada; backup novo restaurado em banco temporário e idêntico ao original ({bj['tabelas']} tabelas, "
+                f"{bj['linhas']} linhas: contagem + MD5 do conteúdo, sequências, estrutura; {bj.get('indices')}); "
                 f"dados intactos")
 
     @check("2.13", "Reexecução segura: depois de soltar os bloqueios, a recuperação conclui (cópia a frio conferida)")
@@ -1086,11 +1103,13 @@ $ap = $r | Get-NetFirewallApplicationFilter
         rec = sorted(PATHS.backups.glob("recuperacao-*"))[-1]
         meta = json.loads((rec / "recuperacao.json").read_text(encoding="utf-8-sig"))
         assert meta["concluida"] is True and meta["pasta_renomeada"], meta
+        assert meta.get("dados_inalterados") is True, f"arquivos DICOM/configurações mudaram: {meta.get('dados')}"
         assert (rec / "copia-fria.json").exists() or (rec / "backup.json").exists(), "sem backup confirmado"
         assert (PATHS.pg_data / "PG_VERSION").exists() and (PATHS.data_dir / "config.json").exists()
         if query_service("VyonixDicomPrint"):
             assert query_service("VyonixDicomPrint")["state"] == "Running", "DICOM Print afetado"
         tipo = "cópia a frio conferida por SHA-256" if (rec / "copia-fria.json").exists() else "backup lógico testado"
+        tipo += f"; arquivos DICOM e configurações inalterados ({meta['dados']})"
         state["rec_final"] = rec
         return f"2ª execução concluída ({tipo}); serviços removidos; pasta renomeada para {Path(meta['pasta_renomeada']).name}"
 

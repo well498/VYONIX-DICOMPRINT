@@ -210,9 +210,14 @@ class Installer(unittest.TestCase):
         self.assertLess(body.index("return 4"), body.index("Rename-Item"))
         self.assertIn("Religar", body.split("return 4", 1)[0])              # sem backup confirmado: religa e para
         bl = fn["Backup-Logico"]
-        for t in ("pg_dump.exe", "pg_restore.exe", "createdb.exe", "Contagens", "restauracao_testada", "dropdb.exe"):
+        for t in ("pg_dump.exe", "pg_restore.exe", "createdb.exe", "Impressao", "Amcheck", "conteudo_conferido", "restauracao_testada", "dropdb.exe"):
             self.assertIn(t, bl)
         self.assertIn('$verif.StartsWith("vyonix_verif_")', bl)            # só o banco temporário é removido
+        imp = fn["Impressao"]
+        for t in ("md5(t::text)", "pg_sequences", "pg_constraint", "pg_policy"):   # conteúdo, não só contagens
+            self.assertIn(t, imp)
+        self.assertIn("Inventario-Dados", fn["Aplicar-Recuperacao"])          # DICOM/configurações antes e depois
+        self.assertNotIn("Remove-Item", fn["Inventario-Dados"])
         self.assertIn("Get-FileHash", fn["Copia-Fria"])
         self.assertIn("shut down", fn["Copia-Fria"])
         for t in ("servicos.json", "registro-desinstalacao.reg", "firewall.json", "arquivos-programa.csv"):
@@ -227,6 +232,39 @@ class Installer(unittest.TestCase):
         self.assertIn("Platform.descartada-", ps)                            # nunca apaga a pasta existente
         cmd = (ROOT / "installer" / "recuperacao" / "Reverter_VYONIX.cmd").read_bytes()
         self.assertIn(b"\r\n", cmd)
+
+
+class Ownership(unittest.TestCase):
+    def test_only_services_whose_program_is_in_the_install_folder(self):
+        from pathlib import PureWindowsPath
+        from vyonix_deploy.steps.update import owned_by_install
+        inst = PureWindowsPath(r"C:\Program Files\VYONIX\Platform")
+        self.assertTrue(owned_by_install({"path": r'"C:\Program Files\VYONIX\Platform\pgsql\bin\pg_ctl.exe" runservice'}, inst))
+        self.assertTrue(owned_by_install({"path": r"c:\program files\vyonix\platform\VyonixPlatform.exe serve"}, inst))
+        self.assertFalse(owned_by_install({"path": r"C:\Windows\System32\svchost.exe -k outro"}, inst))
+        self.assertFalse(owned_by_install({"path": r'"C:\Program Files\VYONIX\Platform.anterior\x.exe"'}, inst))
+        self.assertFalse(owned_by_install({"path": r'"C:\Program Files\VYONIX\DicomPrint\print.exe"'}, inst))
+        self.assertFalse(owned_by_install({"path": ""}, inst))
+
+    def test_foreign_service_with_same_name_is_never_removed(self):
+        from pathlib import PureWindowsPath
+        from vyonix_deploy.steps import update
+        st = update.ServiceRemovedStep("VyonixWorker")
+        ctx = mock.MagicMock()
+        ctx.paths.install_dir = PureWindowsPath(r"C:\Program Files\VYONIX\Platform")
+        foreign = {"state": "Running", "path": r"C:\Outro\worker.exe"}
+        with mock.patch.object(update, "IS_WINDOWS", True), mock.patch.object(update, "query_service", return_value=foreign):
+            self.assertTrue(st.check(ctx))                      # nada a fazer: não é nosso
+            self.assertFalse(st.observe(ctx)["owned"])
+
+    def test_inno_uninstaller_checks_ownership_and_final_state(self):
+        iss = (ROOT / "installer" / "VyonixPlatform.iss").read_text(encoding="utf-8-sig")
+        self.assertIn("function ServiceOwned", iss)
+        self.assertIn("if not ServiceOwned(Name) then", iss)
+        post = iss.split("usPostUninstall then", 1)[1]
+        self.assertIn("ServiceOwned(Services[I])", post)
+        for t in ("CountAppProcesses", "desinstalacao.json", "'incompleta'", "mbError"):
+            self.assertIn(t, post)
 
 
 if __name__ == "__main__":

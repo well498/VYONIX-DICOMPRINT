@@ -105,7 +105,7 @@ class PgClusterStep(Step):
         (self.data / "pg_hba.conf").write_text(HBA, encoding="utf-8")
 
     def rollback(self, ctx: Context, before: dict) -> None:
-        if not before.get("initialized") and self.data.exists():
+        if before.get("initialized") is False and self.data.exists():   # só o cluster criado nesta execução
             shutil.rmtree(self.data)
 
     def how_to_check(self) -> str:

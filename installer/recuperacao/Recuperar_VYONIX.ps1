@@ -11,7 +11,8 @@
 #      configuracoes) em ProgramData\VYONIX\Backups\recuperacao-<data>\estado-anterior;
 #   2. para os servicos que gravam no banco (Core, Worker, motor PACS) e, com o banco ainda ligado, faz um BACKUP
 #      NOVO (pg_dump; a leitura completa confere as somas de verificacao das paginas) e PROVA que ele restaura
-#      (restaura num banco temporario de verificacao e compara a contagem de linhas de todas as tabelas);
+#      (restaura num banco temporario de verificacao e compara, tabela a tabela, a contagem E o resumo MD5 do
+#      conteudo, as sequencias e a estrutura; confere os indices da copia com amcheck);
 #      sem banco acessivel: copia a frio do cluster (servicos parados) conferida arquivo a arquivo (SHA-256);
 #   3. se o backup NAO for confirmado: religa os servicos e PARA (nada removido);
 #   4. remove somente os servicos que pertencem ao VYONIX Platform (nunca o VyonixDicomPrint nem servicos de outros
@@ -227,11 +228,44 @@ function Plano-Linhas {
   return $l }
 
 # ------------------------------------------------------------------ aplicar
-function Contagens($db) {
-  $q = "select coalesce(string_agg(t, ';' order by t), '') from (select format('%s.%s=%s', table_schema, table_name, (xpath('/row/c/text()', query_to_xml(format('select count(*) as c from %I.%I', table_schema, table_name), false, true, '')))[1]::text) t from information_schema.tables where table_type = 'BASE TABLE' and table_schema not in ('pg_catalog', 'information_schema')) s"
+function Impressao($db) {
+  # Impressao digital do banco: por tabela, quantidade de linhas E resumo MD5 do conteudo (linhas ordenadas);
+  # valores das sequencias; quantidade de indices, restricoes, funcoes, gatilhos, politicas e visoes.
+  $q = "select coalesce(string_agg(x, ';' order by x), '') from (" +
+    "select format('T %s.%s %s %s', n.nspname, c.relname, " +
+    "(xpath('/row/c/text()', query_to_xml(format('select count(*) as c from %I.%I', n.nspname, c.relname), false, true, '')))[1]::text, " +
+    "(xpath('/row/h/text()', query_to_xml(format('select md5(coalesce(string_agg(md5(t::text), %L order by md5(t::text)), %L)) as h from %I.%I t', '', '', n.nspname, c.relname), false, true, '')))[1]::text) x " +
+    "from pg_class c join pg_namespace n on n.oid = c.relnamespace where c.relkind in ('r', 'p') and n.nspname not in ('pg_catalog', 'information_schema') and n.nspname not like 'pg_toast%' " +
+    "union all select format('S %s.%s %s', schemaname, sequencename, coalesce(last_value::text, '-')) from pg_sequences where schemaname not in ('pg_catalog', 'information_schema') " +
+    "union all select 'O indices ' || count(*) from pg_indexes where schemaname not in ('pg_catalog', 'information_schema') " +
+    "union all select 'O restricoes ' || count(*) from pg_constraint k join pg_namespace n on n.oid = k.connamespace where n.nspname not in ('pg_catalog', 'information_schema') " +
+    "union all select 'O funcoes ' || count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname not in ('pg_catalog', 'information_schema') " +
+    "union all select 'O gatilhos ' || count(*) from pg_trigger where not tgisinternal " +
+    "union all select 'O politicas ' || count(*) from pg_policy " +
+    "union all select 'O visoes ' || count(*) from pg_views where schemaname not in ('pg_catalog', 'information_schema')) s"
   $o = & (Join-Path $pgbin "psql.exe") -h 127.0.0.1 -p $script:pg.Porta -U vyonix_admin -d $db -At -c $q 2>&1
-  if ($LASTEXITCODE -ne 0) { throw ("contagem falhou em ${db}: " + ($o -join " ")) }
+  if ($LASTEXITCODE -ne 0) { throw ("impressao digital falhou em ${db}: " + ($o -join " ")) }
   return [string]($o -join "") }
+function Amcheck($db) {
+  # Verificacao estrutural dos indices B-tree (com conferencia contra as linhas) na COPIA restaurada.
+  $q = "create extension if not exists amcheck; select count(*) from (select bt_index_check(c.oid, true) from pg_index i join pg_class c on c.oid = i.indexrelid join pg_am a on a.oid = c.relam where a.amname = 'btree' and c.relpersistence <> 't' and i.indisvalid) s"
+  $o = & (Join-Path $pgbin "psql.exe") -h 127.0.0.1 -p $script:pg.Porta -U vyonix_admin -d $db -At -c $q 2>&1
+  if ($LASTEXITCODE -ne 0) {
+    $t = ($o -join " ")
+    if ($t -match 'amcheck.*(not available|nao esta disponivel|não está disponível)|could not open extension control file') { return "amcheck indisponivel nesta versao do PostgreSQL" }
+    throw ("verificacao dos indices (amcheck) encontrou problema: " + $t) }
+  return ("amcheck: " + ([string]($o | Select-Object -Last 1)).Trim() + " indice(s) B-tree integros") }
+function Inventario-Dados {
+  # Arquivos DICOM (PACS) e configuracoes: quantidade, tamanho e resumo da lista (nome|tamanho|data). So leitura.
+  $out = [ordered]@{}
+  foreach ($d in @("PACS", "Platform")) {
+    $p = Join-Path $dados $d
+    if (-not (Test-Path $p)) { $out[$d] = "ausente"; continue }
+    $fs = @(Get-ChildItem $p -Recurse -File -ErrorAction SilentlyContinue | Sort-Object FullName)
+    $lst = ($fs | ForEach-Object { $_.FullName.Substring($p.Length) + "|" + $_.Length + "|" + $_.LastWriteTimeUtc.Ticks }) -join "`n"
+    $h = [BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash([Text.Encoding]::UTF8.GetBytes($lst))).Replace("-", "").Substring(0, 16)
+    $out[$d] = "$($fs.Count) arquivo(s), " + [math]::Round((($fs | Measure-Object Length -Sum).Sum) / 1MB, 1) + " MB, lista $h" }
+  return $out }
 function Backup-Logico {
   # Com Core/Worker/PACS parados (sem escritas), o banco ainda ligado: dump completo + prova de restauracao.
   $senha = Ler-Segredo "pg_superuser"
@@ -252,14 +286,21 @@ function Backup-Logico {
     $criado = $true
     $o = & (Join-Path $pgbin "pg_restore.exe") -h 127.0.0.1 -p $script:pg.Porta -U vyonix_admin -d $verif --no-owner --no-privileges --exit-on-error $dump 2>&1
     if ($LASTEXITCODE -ne 0) { throw ("restauracao de teste falhou: " + (($o | Select-Object -Last 5) -join " ")) }
-    $a = Contagens "vyonix"; $r = Contagens $verif
-    if ($a -ne $r) { throw "contagem de linhas do banco restaurado difere do original" }
-    $nt = @($a.Split(";") | Where-Object { $_ }).Count
-    $nl = 0; foreach ($x in $a.Split(";")) { if ($x -match '=(\d+)$') { $nl += [int64]$matches[1] } }
+    $a = Impressao "vyonix"; $r = Impressao $verif
+    if ($a -ne $r) {
+      $da = $a.Split(";"); $dr = $r.Split(";")
+      $dif = @($da | Where-Object { $dr -notcontains $_ } | Select-Object -First 3) -join ", "
+      throw "o banco restaurado difere do original (conteudo, sequencias ou estrutura): $dif" }
+    $am = Amcheck $verif
+    $tabs = @($a.Split(";") | Where-Object { $_ -like "T *" })
+    $nt = $tabs.Count
+    $nl = 0; foreach ($x in $tabs) { $pp = $x.Split(" "); if ($pp.Count -ge 3) { $nl += [int64]$pp[2] } }
+    $fh = [BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash([Text.Encoding]::UTF8.GetBytes($a))).Replace("-", "").ToLower()
     $info = [ordered]@{ at = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss+00:00"); dump = "vyonix.dump"; bytes = (Get-Item $dump).Length; sha256 = $h
-      origem = "Recuperar_VYONIX"; restauracao_testada = $true; tabelas = $nt; linhas = $nl }
+      origem = "Recuperar_VYONIX"; restauracao_testada = $true; tabelas = $nt; linhas = $nl
+      conteudo_conferido = $true; impressao_sha256 = $fh; indices = $am }
     ($info | ConvertTo-Json) | Out-File (Join-Path $rec "backup.json") -Encoding ascii
-    return "backup novo $dump (" + [math]::Round($info.bytes / 1MB, 1) + " MB, SHA-256 $($h.Substring(0,12))...): restaurado com sucesso num banco temporario; $nt tabela(s) e $nl linha(s) conferidas"
+    return "backup novo $dump (" + [math]::Round($info.bytes / 1MB, 1) + " MB, SHA-256 $($h.Substring(0,12))...): restaurado num banco temporario; conteudo identico ao original ($nt tabela(s), $nl linha(s): contagem e resumo MD5 de cada tabela, sequencias e estrutura); $am"
   } finally {
     if ($criado -and $verif.StartsWith("vyonix_verif_")) { & (Join-Path $pgbin "dropdb.exe") -h 127.0.0.1 -p $script:pg.Porta -U vyonix_admin $verif 2>&1 | Out-Null }
     $env:PGPASSWORD = $null
@@ -329,10 +370,11 @@ function Aplicar-Recuperacao {
   Log "=== recuperacao: inicio (dados em $dados NAO sao alterados)"
   $script:parados = New-Object System.Collections.ArrayList
   New-Item -ItemType Directory -Path $rec -Force | Out-Null
-  $meta = [ordered]@{ tag = $tag; computador = $env:COMPUTERNAME; pasta_programa = $app; pasta_renomeada = $null; servicos_removidos = @(); backup = $null; concluida = $false }
+  $meta = [ordered]@{ tag = $tag; computador = $env:COMPUTERNAME; pasta_programa = $app; pasta_renomeada = $null; servicos_removidos = @(); backup = $null; dados_inalterados = $null; dados = $null; concluida = $false }
   Registrar-Estado
   $script:backupMsg = $null
   foreach ($s in $gravam) { Parar $s }
+  $invAntes = Inventario-Dados
   if ($script:pg.Conecta -eq $true -and $script:pg.Binarios) {
     try { $script:backupMsg = Backup-Logico; Acao ("BACKUP CONFIRMADO: " + $script:backupMsg) }
     catch { Acao ("Backup novo nao confirmado: " + $_.Exception.Message + " - tentando copia a frio") } }
@@ -377,6 +419,11 @@ function Aplicar-Recuperacao {
     if (Test-Path $bak) { Remove-Item $script:regKey -Recurse -Force; Acao "Registro de desinstalacao orfao removido (copia em $bak)" }
     else { $parcial = $true; Acao "Registro orfao mantido: a copia .reg nao foi gravada" }
   }
+  $invDepois = Inventario-Dados
+  $iguais = (($invAntes | ConvertTo-Json) -eq ($invDepois | ConvertTo-Json))
+  $meta.dados_inalterados = $iguais; $meta.dados = $invDepois
+  if ($iguais) { Acao ("Arquivos DICOM e configuracoes inalterados: PACS " + $invDepois.PACS + "; Platform " + $invDepois.Platform) }
+  else { $parcial = $true; Acao ("ATENCAO: a lista de arquivos de dados mudou durante a recuperacao (antes: " + ($invAntes | ConvertTo-Json -Compress) + "; depois: " + ($invDepois | ConvertTo-Json -Compress) + ")") }
   $meta.concluida = -not $parcial
   ($meta | ConvertTo-Json) | Out-File (Join-Path $rec "recuperacao.json") -Encoding utf8
   Log "=== recuperacao: fim ($(if ($parcial) { 'PARCIAL' } else { 'completa' }))"

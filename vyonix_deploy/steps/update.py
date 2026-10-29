@@ -98,6 +98,13 @@ def update_steps(ctx: Context, install: list[Step]) -> list[Step]:
     return out
 
 
+def owned_by_install(q: dict | None, install_dir: Path) -> bool:
+    """O serviço pertence ao VYONIX Platform só se o programa dele está na pasta do programa."""
+    path = str((q or {}).get("path") or "").strip().lstrip('"').lower().replace("/", "\\")
+    base = str(install_dir).lower().replace("/", "\\").rstrip("\\") + "\\"
+    return bool(path) and path.startswith(base)
+
+
 class ServiceRemovedStep(Step):
     category = "servico"
     reversible = False
@@ -109,7 +116,8 @@ class ServiceRemovedStep(Step):
 
     def observe(self, ctx: Context) -> dict:
         q = query_service(self.name) if IS_WINDOWS else None
-        return {"name": self.name, "exists": bool(q), "state": q["state"] if q else None}
+        return {"name": self.name, "exists": bool(q), "state": q["state"] if q else None,
+                "owned": owned_by_install(q, ctx.paths.install_dir) if q else None}
 
     def desired(self, ctx: Context) -> dict:
         return {"name": self.name, "exists": False}
@@ -122,6 +130,9 @@ class ServiceRemovedStep(Step):
     def check(self, ctx: Context) -> bool:
         o = self.observe(ctx)
         if not o["exists"]:
+            return True
+        if not o["owned"]:                                # mesmo nome, outro programa: nunca é removido
+            ctx.log("WARN", f"{self.name}: o programa do serviço não está em {ctx.paths.install_dir}; não alterado.")
             return True
         from vyonix_deploy.steps.services import marked_for_delete
         return marked_for_delete(self.name)               # já excluído; o Windows libera ao reiniciar

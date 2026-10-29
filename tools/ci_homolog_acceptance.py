@@ -55,6 +55,30 @@ def step(name):
     return deco
 
 
+def wait_uninstall_finished(started: float, timeout: float = 900) -> dict:
+    """Estado final real da desinstalação (sem corrida com a cópia temporária do desinstalador)."""
+    st = Path(os.environ.get("ProgramData", r"C:\ProgramData")) / "VYONIX" / "Logs" / "desinstalacao.json"
+    end = time.monotonic() + timeout
+    while time.monotonic() < end:
+        busy = subprocess.run(["powershell", "-NoProfile", "-Command",
+                               "@(Get-Process | Where-Object { $_.Name -like '_iu*' -or $_.Name -like 'unins*' }).Count"],
+                              capture_output=True, text=True).stdout.strip()
+        if busy == "0" and st.exists() and st.stat().st_mtime >= started - 2:
+            return json.loads(st.read_text(encoding="utf-8-sig"))
+        time.sleep(3)
+    raise AssertionError("desinstalação não terminou: " + (st.read_text(encoding="utf-8-sig") if st.exists() else "sem status"))
+
+
+def last_deploy_run() -> tuple[dict, list[dict]]:
+    import sqlite3
+    c = sqlite3.connect(str(PATHS.db_file))
+    c.row_factory = sqlite3.Row
+    r = dict(c.execute("SELECT * FROM runs ORDER BY created_at DESC, rowid DESC LIMIT 1").fetchone())
+    steps = [dict(x) for x in c.execute("SELECT * FROM steps WHERE run_id = ? ORDER BY seq", (r["id"],))]
+    c.close()
+    return r, steps
+
+
 def run(args, *, timeout=1800, env=None):
     e = dict(os.environ)
     e.update(env or {})
@@ -166,6 +190,20 @@ def main() -> int:
             bk = list((Path(os.environ.get("ProgramData", r"C:\ProgramData")) / "VYONIX" / "Backups")
                       .glob("antes-da-atualizacao-*"))
             assert bk, "atualização sem backup antes da migração"
+            r, steps = last_deploy_run()
+            assert r["kind"] == "update" and r["status"] == "succeeded", f"{r['kind']} {r['status']}: {r['message']}"
+            db = next(x for x in steps if x["step_id"] == "core.database")
+            after = json.loads(db["after_json"] or "{}") if db["status"] == "done" else {}
+            assert db["status"] in ("done", "already"), db
+            assert db["status"] == "already" or after.get("up_to_date"), f"migrações não chegaram à versão atual: {after}"
+            v = subprocess.run([APP / "vyonix-deploy.exe", "verificar", "--esperar", "120", "--json"], capture_output=True,
+                               text=True, encoding="utf-8", errors="replace")
+            ver = json.loads(v.stdout[v.stdout.index("{"):])
+            falhas = [f"{c['title']}: {c['detail']}" for c in ver["checks"] if c["status"] == "fail"]
+            assert not falhas, f"verificar funcionamento: {falhas}"
+            svc = {c["id"]: c["status"] for c in ver["checks"] if str(c.get("id", "")).startswith("service.")}
+            s["upgrade"] = (f"execução {r['id']} concluída; migrações aplicadas ({db['status']}); backup {bk[-1].name}; "
+                            f"serviços {svc}; endereços {ver.get('urls')}")
         else:
             run([Path(a.setup).resolve(), "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", f"/DEPLOYCONFIG={cfg}",
                  f"/LOG={OUT / 'setup.log'}"], env={"VYONIX_ADMIN_PASSWORD": ADMIN_PW})
@@ -176,7 +214,7 @@ def main() -> int:
         links = sorted(p.name for p in menu.glob("*")) if menu.exists() else []
         for n in ("VYONIX - Abrir sistema", "VYONIX - Assistente de instalacao", "VYONIX - Diagnostico"):
             assert any(x.startswith(n) for x in links), f"atalho {n} ausente: {links}"
-        return f"instalado em {APP}; atalhos: {', '.join(links)}"
+        return (s.get("upgrade", "") + "; " if prev else "") + f"instalado em {APP}; atalhos: {', '.join(links)}"
 
     @step("2. Sistema no ar como homologação interna")
     def _():
@@ -323,9 +361,11 @@ def main() -> int:
         wiz = subprocess.Popen([str(APP / "vyonix-deploy.exe"), "wizard", "--no-browser"],
                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         time.sleep(8)
+        t0 = time.time()
         run([APP / "unins000.exe", "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", f"/LOG={OUT / 'uninstall.log'}"],
             timeout=900)
-        time.sleep(5)
+        fin = wait_uninstall_finished(t0)
+        assert fin["status"] == "concluida", f"desinstalação: {fin}"
         left = [x for x in APP.rglob("*") if x.is_file()] if APP.exists() else []
         assert not left, f"arquivos não removidos: {left[:5]}"
         assert wiz.poll() is not None, "assistente continuou aberto"

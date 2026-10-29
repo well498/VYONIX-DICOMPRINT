@@ -211,6 +211,41 @@ begin
   L('processos da pasta do programa verificados (' + Dir + ')');
 end;
 
+{ Serviço pertence ao VYONIX Platform somente se o programa dele está na pasta do programa. Um serviço com o mesmo
+  nome e programa em outro lugar (outro produto) nunca é alterado. }
+function ServiceOwned(const Name: String): Boolean;
+var
+  P: String;
+begin
+  Result := False;
+  P := '';
+  if RegQueryStringValue(HKLM, 'SYSTEM\CurrentControlSet\Services\' + Name, 'ImagePath', P) then
+    Result := Pos(Lowercase(AddBackslash(ExpandConstant('{app}'))), Lowercase(P)) > 0;
+  if (not Result) and (ServiceState(Name) <> '') then
+    L(Name + ': NÃO pertence ao VYONIX Platform (' + P + '): não alterado');
+end;
+
+{ Quantos processos ainda executam arquivos da pasta do programa (verificação final da desinstalação). }
+function CountAppProcesses(const Dir: String): Integer;
+var
+  Code: Integer;
+  Ps, OutF: String;
+  Txt: AnsiString;
+begin
+  Result := -1;
+  Ps := GetTempDir() + 'vyonix_count.ps1';
+  OutF := GetTempDir() + 'vyonix_count.txt';
+  DeleteFile(OutF);
+  SaveStringToFile(Ps,
+    '$d = [IO.Path]::GetFullPath(''' + Dir + ''').TrimEnd([char]92) + [char]92' + #13#10 +
+    '@(Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -and $_.ExecutablePath.StartsWith($d, ' +
+    '[StringComparison]::OrdinalIgnoreCase) -and $_.Name -notlike ''unins*'' }).Count | Out-File -Encoding ascii "' +
+    OutF + '"' + #13#10, False);
+  if Exec(ExpandConstant('{cmd}'), '/C powershell -NoProfile -ExecutionPolicy Bypass -File "' + Ps + '"', '', SW_HIDE,
+          ewWaitUntilTerminated, Code) and LoadStringFromFile(OutF, Txt) then
+    Result := StrToIntDef(Trim(String(Txt)), -1);
+end;
+
 { Para o serviço sem deixar o Windows reiniciá-lo: sem recuperação automática enquanto os arquivos são trocados ou
   removidos (na atualização o DEPLOY reaplica a recuperação e o início automático). Disabled = desinstalação. }
 procedure Neutralize(const Name: String; Disabled: Boolean);
@@ -220,6 +255,8 @@ begin
     L(Name + ': não registrado');
     Exit;
   end;
+  if not ServiceOwned(Name) then
+    Exit;
   Sc('failure ' + Name + ' reset= 0 actions= ""');
   if Disabled then
     Sc('config ' + Name + ' start= disabled');
@@ -258,8 +295,9 @@ end;
   processo) é removido aqui e a pasta do programa é apagada. Dados (ProgramData\VYONIX) e DICOM Print preservados. }
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
-  I: Integer;
-  Left: String;
+  I, Procs: Integer;
+  Left, Status: String;
+  Files: Boolean;
 begin
   ServiceNames();
   if CurUninstallStep = usUninstall then
@@ -273,7 +311,7 @@ begin
   begin
     Left := '';
     for I := 0 to NSERV - 1 do
-      if ServiceState(Services[I]) <> '' then
+      if (ServiceState(Services[I]) <> '') and ServiceOwned(Services[I]) then
       begin
         Neutralize(Services[I], True);
         Sc('delete ' + Services[I]);
@@ -289,7 +327,30 @@ begin
       else
         L('pasta do programa: itens não removidos (arquivo em uso?)');
     end;
-    if Left <> '' then
+    { Verificação final do estado REAL: serviços, processos e arquivos da pasta do programa. }
+    Procs := CountAppProcesses(ExpandConstant('{app}'));
+    Files := DirExists(ExpandConstant('{app}'));
+    if (Procs <> 0) or Files then
+      Status := 'incompleta'
+    else if Left <> '' then
+      Status := 'reiniciar'
+    else
+      Status := 'concluida';
+    ForceDirectories(ExpandConstant('{commonappdata}\VYONIX\Logs'));
+    SaveStringToFile(ExpandConstant('{commonappdata}\VYONIX\Logs\desinstalacao.json'),
+      '{"status": "' + Status + '", "servicos_pendentes": "' + Trim(Left) + '", "processos": ' + IntToStr(Procs) +
+      ', "pasta_programa_restante": ' + IntToStr(Ord(Files)) + ', "quando": "' +
+      GetDateTimeString('yyyy-mm-dd hh:nn:ss', '-', ':') + '"}', False);
+    if Status = 'incompleta' then
+    begin
+      L('ERRO: desinstalação NÃO concluída (processos=' + IntToStr(Procs) + ', pasta restante=' + IntToStr(Ord(Files)) +
+        ', serviços pendentes:' + Left + '). Dados preservados.');
+      if not UninstallSilent() then
+        MsgBox('A desinstalação do VYONIX NÃO foi concluída: ainda há arquivos ou programas do VYONIX em uso.' + #13#10 +
+               'Nenhum dado foi apagado. Reinicie o computador e desinstale de novo, ou use a ferramenta ' +
+               'Recuperar_VYONIX. Registro: ' + LogFile(), mbError, MB_OK);
+    end
+    else if Status = 'reiniciar' then
     begin
       L('serviços marcados para exclusão até reiniciar:' + Left);
       if not UninstallSilent() then
