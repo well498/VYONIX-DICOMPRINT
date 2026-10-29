@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { get, post } from "../api";
 import { Notice, Page, useAction, useLoad } from "../ui";
+import { ViewerButtons, ViewerProtocolsPanel } from "../viewer";
 
 // Atributo DICOM JSON (PS3.18 F.2): {"vr": "...", "Value": [...]}
 type Attr = { vr: string; Value?: unknown[] };
@@ -62,6 +63,7 @@ export function ImagesPage({ me }: { me: { permissions: string[] } }) {
   const dests = useLoad(async () => isAdmin ? (await get<{ nodes: { id: string; ae_title: string; name: string | null;
     can_receive: boolean; host: string | null; port: number | null }[] }>("/pacs/nodes")).nodes.filter((n) => n.can_receive && n.host && n.port) : [], [isAdmin]);
   const [sendFor, setSendFor] = useState<{ uid: string; dest: string } | null>(null);
+  const [showProtocols, setShowProtocols] = useState(false);
 
   const issueMap = new Map((issues.data ?? []).map((x) => [x.study_uid, x.issues]));
   const rows = (studies.data ?? []).filter((s) => !onlyIssues || issueMap.has(val(s, "0020000D")));
@@ -79,13 +81,16 @@ export function ImagesPage({ me }: { me: { permissions: string[] } }) {
 
   return (
     <Page title="Imagens" intro="Estudos de imagem recebidos pelo VYONIX PACS. Abrir um estudo no Viewer é registrado na auditoria. Não liberado para uso clínico."
-      actions={isAdmin && status.data?.enabled ? (
+      actions={<>
+        <button onClick={() => setShowProtocols(!showProtocols)}>{showProtocols ? "Fechar protocolos" : "Protocolos do Viewer"}</button>
+        {isAdmin && status.data?.enabled && (
         <button disabled={sync.busy} onClick={() => sync.run(async () => {
           const r = await post<{ indexed: number; duplicates: number; rejected: number }>("/pacs/sync");
           await studies.reload(); await status.reload();
           sync.setMsg({ kind: "ok", text: `Sincronização: ${r.indexed} nova(s), ${r.duplicates} já indexada(s), ${r.rejected} recusada(s).` });
-        })}>Sincronizar recebimentos</button>) : undefined}>
+        })}>Sincronizar recebimentos</button>)}</>}>
       {sync.view}
+      {showProtocols && <ViewerProtocolsPanel />}
       {isAdmin && status.data && (
         <div className="card-row" role="group" aria-label="Estado do armazenamento">
           <div className="card">
@@ -140,8 +145,7 @@ export function ImagesPage({ me }: { me: { permissions: string[] } }) {
                   <td className="num">{val(s, "00201208")}</td>
                   <td className="nowrap">{val(s, "00080050") || "—"}</td>
                   <td className="actions"><div className="row-actions">
-                    <a className="button" href={`/viewer/viewer?StudyInstanceUIDs=${encodeURIComponent(uid)}`}
-                      target="_blank" rel="noopener">Abrir no Viewer</a>
+                    <ViewerButtons studyUid={uid} />
                     <button className="link" aria-expanded={!!q} onClick={() => void toggleQuality(uid)}>Qualidade</button>
                     {isAdmin && (dests.data ?? []).length > 0 && <button className="link" onClick={() => setSendFor(sendFor?.uid === uid ? null : { uid, dest: dests.data![0].id })}>Enviar…</button>}
                   </div></td>

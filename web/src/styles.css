@@ -337,3 +337,14 @@ fieldset.plain legend { font-weight: 600; margin-bottom: .3rem; }
 .rich-area h3, .rich-view h3 { font-size: 1.05rem; margin: .5rem 0 .25rem; }
 .rich-area h4, .rich-view h4 { font-size: 1rem; margin: .4rem 0 .2rem; }
 .rich-view { margin: .5rem 0; overflow-x: auto; }
+
+/* lançador do Viewer e histórico do paciente */
+.viewer-buttons { display: inline-flex; flex-wrap: wrap; gap: .35rem; align-items: center; }
+.viewer-pick select { max-width: 22rem; }
+.patient-history { list-style: none; padding: 0; margin: .5rem 0; border-left: 2px solid var(--line); }
+.patient-history li { position: relative; padding: .35rem 0 .35rem 1rem; }
+.patient-history li::before { content: ""; position: absolute; left: -6px; top: .75rem; width: 10px; height: 10px;
+  border-radius: 50%; background: var(--agent); }
+.patient-history li.ph-order::before { background: var(--amber); }
+.patient-history li.ph-encounter::before { background: var(--line); }
+.ph-date { display: inline-block; min-width: 6.5rem; font-variant-numeric: tabular-nums; color: var(--ink); font-weight: 600; }

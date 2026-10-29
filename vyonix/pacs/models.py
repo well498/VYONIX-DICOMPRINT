@@ -202,3 +202,17 @@ class PacsEdgeSync(TenantMixin, Base):
     last_error: Mapped[str | None] = mapped_column(String(300))
     remote_sha256: Mapped[str | None] = mapped_column(String(64))
     synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class ViewerProtocol(TenantMixin, Base):
+    """Protocolo de exibição do Viewer: da instituição (``owner_user_id`` vazio) ou pessoal do médico; por modalidade
+    e/ou procedimento (ambos vazios = padrão). ``layout``: default | grid | compare (atual + anterior)."""
+    __tablename__ = "viewer_protocols"
+    __table_args__ = (Index("ix_pacs_viewer_protocols_owner", "tenant_id", "owner_user_id"), SCHEMA)
+    owner_user_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
+    modality: Mapped[str | None] = mapped_column(String(16))
+    procedure_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
+    layout: Mapped[str] = mapped_column(String(12), nullable=False, default="default")
+    compare_prior: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    prior_same_modality: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
+    created_by: Mapped[str] = mapped_column(String(120), nullable=False)

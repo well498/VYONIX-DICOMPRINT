@@ -268,9 +268,22 @@ class WebE2E(unittest.TestCase):
         row = pg.get_by_role("row", name="MARIA SINTETICA SILVA")
         expect(row).to_be_visible()
         expect(row.get_by_role("cell", name="CT", exact=True)).to_be_visible()
-        link = row.get_by_role("link", name="Abrir no Viewer")
-        self.assertEqual(link.get_attribute("href"), f"/viewer/viewer?StudyInstanceUIDs={uid(1)}")
-        self.assertEqual(link.get_attribute("rel"), "noopener")
+        with pg.expect_popup() as pop:                              # lançador: o servidor decide protocolo e escopo
+            row.get_by_role("button", name="Abrir no Viewer").click()
+        popup = pop.value
+        popup.wait_for_url(f"**/viewer/viewer?StudyInstanceUIDs={uid(1)}")
+        self.assertIsNone(popup.evaluate("window.opener"))                          # sem acesso à janela de origem
+        popup.close()
+        expect(row.get_by_role("status")).to_contain_text("Padrão (1 quadro)")
+        row.get_by_role("button", name="Comparar…").click()
+        expect(row.get_by_text("Nenhum exame anterior com imagens disponível para você.")).to_be_visible()
+        pg.get_by_role("button", name="Protocolos do Viewer").click()
+        vp = pg.get_by_role("form", name="Novo protocolo do Viewer")
+        vp.get_by_label("Protocolo da instituição").check()
+        vp.get_by_label("Modalidade do protocolo").fill("CT")
+        vp.get_by_label("Layout ao abrir").select_option(label="Grade de séries")
+        vp.get_by_role("button", name="Salvar protocolo").click()
+        expect(pg.get_by_role("region", name="Protocolos do Viewer").get_by_role("listitem").filter(has_text="Grade de séries")).to_contain_text("CT")
         status = pg.get_by_role("group", name="Estado do armazenamento")
         expect(status.get_by_text("Habilitado")).to_be_visible()
         expect(status.get_by_text("memoria-teste 0")).to_be_visible()              # nome e versão vindos do motor

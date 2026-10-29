@@ -216,6 +216,21 @@ def study_timeline(study_id: uuid.UUID, c: Ctx = Depends(ctx_any)):
         return timeline.study_timeline(s, study_id)
 
 
+@router.get("/patients/{patient_id}/history")
+def patient_history(patient_id: uuid.UUID, c: Ctx = Depends(needs("clinical.patients.read"))):
+    """Histórico integrado do paciente (PACS, RIS e laudos), com as regras de acesso da preparação: exame de unidade
+    sem vínculo aparece restrito."""
+    from vyonix.report import queue
+    from vyonix.ris import prep, timeline
+    _prep_reader(c)
+    with c.session() as s:
+        sc = queue.scope(s, c.p.user_id, can_assign=c.p.has("report.assign"))
+        out = timeline.patient_history(s, patient_id, scope=sc, shared=prep.shared_studies(s, c.p.user_id))
+        out["can_view_images"] = c.p.has("pacs.studies.read")
+        out["can_read_reports"] = c.p.has("report.read")
+        return out
+
+
 @router.get("/studies/{study_id}/priors")
 def study_priors(study_id: uuid.UUID, c: Ctx = Depends(ctx_any)):
     """Exames anteriores do mesmo paciente (comparação), com as mesmas regras de acesso da preparação."""

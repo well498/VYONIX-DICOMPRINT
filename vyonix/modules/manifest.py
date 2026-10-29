@@ -85,6 +85,14 @@ class PacsReception(_Strict):
                                           "para o administrador autorizar ou descartar)")
 
 
+class ViewerSettings(_Strict):
+    access: str = Field("organization", pattern=r"^(organization|linked)$",
+                        description="Imagens no Viewer: organization = todo estudo da organização para quem pode abrir "
+                                    "estudos (padrão); linked = médicos só veem estudos das unidades em que têm vínculo "
+                                    "vigente (mesmo escopo da fila de laudos) ou compartilhados com eles")
+    allow_personal: bool = Field(True, description="Médicos podem salvar protocolos de exibição pessoais")
+
+
 class ExamWorkflow(_Strict):
     """Etapas do fluxo do exame usadas pela instituição. Cadastro do paciente, recepção no PACS, laudo e liberação são
     sempre usados; as demais podem ser desligadas em clínicas com fluxo simplificado (respeitando as dependências)."""
@@ -191,9 +199,11 @@ PACS = ModuleManifest(
                 "sobre o Orthanc sem modificações (ADR-0012). Primeira entrega vertical — não liberada para uso clínico.",
     permissions={"pacs.studies.read": "Pesquisar e abrir estudos de imagem",
                  "pacs.studies.store": "Enviar estudos de imagem (STOW-RS)",
-                 "pacs.admin": "Sincronizar e consultar o estado do armazenamento DICOM"},
+                 "pacs.admin": "Sincronizar e consultar o estado do armazenamento DICOM",
+                 "pacs.viewer.protocols": "Definir os protocolos de exibição do Viewer da instituição"},
     settings=(SettingSpec("retention", PacsRetention, "Retenção de estudos (relatório; nada é excluído)"),
-              SettingSpec("reception", PacsReception, "Recepção DICOM: de qualquer equipamento ou só dos cadastrados")),
+              SettingSpec("reception", PacsReception, "Recepção DICOM: de qualquer equipamento ou só dos cadastrados"),
+              SettingSpec("viewer", ViewerSettings, "Viewer: acesso às imagens e protocolos pessoais")),
     publishes=("pacs.study.received.v1",),
 )
 

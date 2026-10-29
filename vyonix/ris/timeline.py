@@ -144,3 +144,109 @@ def priors(s: Session, study_id: uuid.UUID, *, limit: int = 30) -> dict[str, Any
                                                          "finalized_at": rep.finalized_at.isoformat()
                                                          if rep.finalized_at else None}})
     return {"patient_linked": True, "items": items}
+
+
+def patient_history(s: Session, patient_id: uuid.UUID, *, scope=None, shared: set | None = None) -> dict[str, Any]:
+    """Histórico do paciente na instituição, um item por exame (sem duplicar): estudos com pedido, agendamento,
+    imagens no PACS, documentos (séries DOC/SR, anexos da preparação), situação do laudo e atendimento; pedidos ainda
+    sem estudo (agendados, cancelados); atendimentos sem pedido. Mais recentes primeiro.
+
+    ``scope``: escopo do médico (``report.queue.scope``); exame de unidade fora do vínculo aparece como **restrito**
+    (data e modalidade, sem descrição, laudo, documentos nem acesso às imagens). Organização isolada por RLS.
+    Não contém texto de laudo nem conteúdo de documentos."""
+    from sqlalchemy import func
+    from vyonix.clinical.models import Encounter, Order, Patient, Procedure, Study
+    from vyonix.pacs.models import PacsSeries, PacsStudy
+    from vyonix.report import queue
+    from vyonix.report.models import Report
+    from vyonix.ris.models import ExamAttachment, Schedule
+    pt = s.get(Patient, patient_id)
+    if pt is None:
+        raise NotFound("Paciente não encontrado.")
+    shared = shared or set()
+    studies = list(s.execute(select(Study).where(Study.patient_id == pt.id)).scalars())
+    orders = {o.id: o for o in s.execute(select(Order).where(Order.patient_id == pt.id)).scalars()}
+    encs = {e.id: e for e in s.execute(select(Encounter).where(Encounter.patient_id == pt.id)).scalars()}
+    procs = {p.id: p for p in s.execute(select(Procedure).where(
+        Procedure.id.in_([o.procedure_id for o in orders.values() if o.procedure_id]))).scalars()} if orders else {}
+    scheds: dict[uuid.UUID, list] = {}
+    if orders:
+        for sc_ in s.execute(select(Schedule).where(Schedule.order_id.in_(list(orders)))).scalars():
+            scheds.setdefault(sc_.order_id, []).append(sc_)
+    uids = [x.study_instance_uid for x in studies]
+    pst = {p.study_uid: p for p in s.execute(select(PacsStudy).where(PacsStudy.study_uid.in_(uids))).scalars()} \
+        if uids else {}
+    series = {}
+    if pst:
+        for ser in s.execute(select(PacsSeries).where(PacsSeries.study_id.in_([p.id for p in pst.values()]))).scalars():
+            series.setdefault(ser.study_id, []).append(ser)
+    reports = {r.study_id: r for r in s.execute(select(Report).where(
+        Report.study_id.in_([x.id for x in studies]))).scalars()} if studies else {}
+    atts = dict(s.execute(select(ExamAttachment.study_id, func.count()).where(
+        ExamAttachment.study_id.in_([x.id for x in studies])).group_by(ExamAttachment.study_id)).all()) if studies else {}
+
+    def enc_of(o):
+        e = encs.get(o.encounter_id) if o and o.encounter_id else None
+        return {"number": e.number, "arrived_at": e.arrived_at.isoformat() if e.arrived_at else None,
+                "status": e.status} if e else None
+
+    items: list[dict[str, Any]] = []
+    used_orders, used_encs = set(), set()
+    for st in studies:
+        o = orders.get(st.order_id) if st.order_id else None
+        if o is None:                                      # estudo ligado ao pedido só pelo agendamento
+            o = next((orders[oid] for oid, ss in scheds.items() if any(
+                x.study_instance_uid == st.study_instance_uid for x in ss)), None)
+        if o is not None:
+            used_orders.add(o.id)
+            if o.encounter_id:
+                used_encs.add(o.encounter_id)
+        when = st.study_date.isoformat() if st.study_date else st.created_at.date().isoformat()
+        ok = queue.allowed(scope, st.site_id) or st.id in shared
+        base = {"kind": "study", "date": when, "modality": st.modality, "study_id": str(st.id), "restricted": not ok}
+        if not ok:
+            items.append(base)
+            continue
+        ps = pst.get(st.study_instance_uid)
+        sers = series.get(ps.id, []) if ps else []
+        rep = reports.get(st.id)
+        docs = [{"kind": "dicom", "modality": x.modality, "description": x.description}
+                for x in sers if (x.modality or "").upper() in ("DOC", "SR", "OT", "PR", "KO")]
+        items.append({**base, "description": st.description, "accession": st.accession,
+                      "study_instance_uid": st.study_instance_uid if ps else None,
+                      "images": {"series": len(sers)} if ps else None,
+                      "procedure": procs[o.procedure_id].name if o and o.procedure_id in procs else None,
+                      "requester": o.requester if o else None, "order_status": o.status if o else None,
+                      "encounter": enc_of(o),
+                      "report": None if rep is None else {
+                          "id": str(rep.id), "status": rep.status, "critical": rep.critical,
+                          "finalized_at": rep.finalized_at.isoformat() if rep.finalized_at else None,
+                          "versions": rep.version},
+                      "documents": docs + ([{"kind": "attachment", "count": atts[st.id]}] if atts.get(st.id) else [])})
+    for o in orders.values():
+        if o.id in used_orders:
+            continue
+        ss = sorted(scheds.get(o.id, []), key=lambda x: x.scheduled_at)
+        if o.encounter_id:
+            used_encs.add(o.encounter_id)
+        first = ss[0] if ss else None
+        items.append({"kind": "order", "date": (first.scheduled_at if first else o.created_at).date().isoformat(),
+                      "modality": first.modality if first else None, "restricted": False,
+                      "description": (procs[o.procedure_id].name if o.procedure_id in procs else None)
+                      or (first.description if first else None), "accession": o.accession, "order_status": o.status,
+                      "schedule": [{"at": x.scheduled_at.isoformat(), "status": x.status, "room": x.room} for x in ss],
+                      "requester": o.requester, "encounter": enc_of(o)})
+    for e in encs.values():
+        if e.id in used_encs:
+            continue
+        items.append({"kind": "encounter", "date": (e.arrived_at or e.created_at).date().isoformat(),
+                      "restricted": False, "encounter": {"number": e.number, "status": e.status,
+                                                         "arrived_at": e.arrived_at.isoformat() if e.arrived_at else None}})
+    items.sort(key=lambda x: x["date"], reverse=True)
+    return {"patient": {"id": str(pt.id), "name": pt.name,
+                        "birth_date": pt.birth_date.isoformat() if pt.birth_date else None, "sex": pt.sex,
+                        "merged_into_id": str(pt.merged_into_id) if pt.merged_into_id else None},
+            "counts": {"studies": sum(1 for x in items if x["kind"] == "study"),
+                       "orders_without_study": sum(1 for x in items if x["kind"] == "order"),
+                       "encounters_without_order": sum(1 for x in items if x["kind"] == "encounter")},
+            "items": items}

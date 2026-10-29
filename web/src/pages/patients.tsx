@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { fmtDate, get, post, type Me } from "../api";
 import { Field, Notice, Page, useAction, useLoad } from "../ui";
+import { PatientHistory } from "../history";
 
 type Patient = { id: string; name: string; birth_date: string | null; sex: string | null; active: boolean;
   merged_into_id: string | null; row_version: number; identifiers: { issuer: string; value: string }[];
@@ -103,6 +104,7 @@ function PatientDetail({ id, me, onChanged }: { id: string; me: Me; onChanged: (
         {x.identifiers.map((i) => <div key={i.issuer + i.value}><dt>{i.issuer}</dt><dd>{i.value}</dd></div>)}
       </dl>
       {act.view}
+      {["ris.exam.prepare", "ris.schedule.read", "report.read"].some(can) && <PatientHistory patientId={x.id} />}
       {can("clinical.orders.write") && !x.merged_into_id && (
         <button onClick={() => act.run(async () => { await post("/orders", { patient_id: x.id }); await orders.reload(); }, "Pedido criado.")}>Novo pedido</button>
       )}

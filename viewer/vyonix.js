@@ -19,8 +19,28 @@ window.config = {
   investigationalUseDialog: { option: 'never' },
   // Sem o tour guiado do primeiro uso (em inglês e sobreposto à imagem). Fase "global" do customizationService
   // do OHIF 3.13: aplicada depois que as extensões registram as personalizações padrão.
+  // Identificação do exame em cada quadro (essencial na comparação atual × anterior): o OHIF já mostra a data do
+  // estudo e a descrição da série; acrescenta modalidade e descrição do exame. Só personalização (sem código no OHIF).
   customizationService: {
-    global: [{ 'ohif.tours': { $set: [] } }],
+    global: [
+      { 'ohif.tours': { $set: [] } },
+      {
+        'viewportOverlay.topLeft': {
+          $push: [
+            {
+              id: 'VyonixExame',
+              inheritsFrom: 'ohif.overlayItem',
+              label: '',
+              title: 'Exame',
+              condition: ({ referenceInstance }) =>
+                referenceInstance && (referenceInstance.Modality || referenceInstance.StudyDescription),
+              contentF: ({ referenceInstance }) =>
+                [referenceInstance.Modality, referenceInstance.StudyDescription].filter(Boolean).join(' · '),
+            },
+          ],
+        },
+      },
+    ],
   },
   defaultDataSourceName: 'vyonix',
   dataSources: [

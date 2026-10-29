@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { del, fmtDate, get, post, put, upload, type Me } from "../api";
 import { asHtml, RichEditor, RichView, type Phrase } from "../richtext";
+import { ViewerButtons } from "../viewer";
 import { Priors } from "./prep";
 import { Field, Notice, Page, useAction, useLoad } from "../ui";
 import { BrandingPanel } from "./branding";
@@ -168,8 +169,7 @@ export function ReportsPage({ me }: { me: Me }) {
                 <td className="actions"><div className="row-actions">
                   {(r.report_id || can("report.write")) &&
                     <button onClick={() => void openRow(r)}>{r.report_status === "final" ? "Ver laudo" : "Laudar"}</button>}
-                  {can("pacs.studies.read") && <a href={`/viewer/viewer?StudyInstanceUIDs=${encodeURIComponent(r.study_instance_uid)}`}
-                    target="_blank" rel="noopener">Abrir no Viewer</a>}
+                  {can("pacs.studies.read") && <ViewerButtons studyUid={r.study_instance_uid} compact />}
                 </div></td>
               </tr>
             ))}
@@ -270,6 +270,7 @@ function Editor({ me, row, initial, onClose }: { me: Me; row: Row; initial: Repo
     <section className="panel" aria-label="Laudo">
       <div className="row-actions"><h2>{title}</h2><button type="button" className="link" onClick={onClose}>Fechar</button></div>
       {act.view}
+      {can("pacs.studies.read") && <p><ViewerButtons studyUid={row.study_instance_uid} label="Abrir imagens no Viewer" /></p>}
       <details className="prior-box"><summary>Exames anteriores do paciente</summary><Priors studyId={row.study_id} /></details>
       {!report && (can("report.write") ? (
         <div className="grid2">

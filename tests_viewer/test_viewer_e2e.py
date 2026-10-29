@@ -109,6 +109,25 @@ class ViewerE2E(unittest.TestCase):
                                                        series_number=2, pixel_spacing=(0.5, 0.5),
                                                        patient_id=cls.patient_id, patient_name="VIEWER^SINTETICO"),
                             actor="teste")
+        # exame anterior do mesmo paciente (outra data e outro conteúdo) para a comparação lado a lado
+        cls.prior = uid(n, 8)
+        with db.session(cls.tenant) as s:
+            for i in range(1, 4):
+                pacs.ingest(s, cls.backend, make_dicom(study=cls.prior, series=uid(n, 8, 1), sop=uid(n, 8, 1, i),
+                                                       rows=64, cols=64, fill=200 + i * 900, instance_number=i,
+                                                       pixel_spacing=(0.5, 0.5), study_date="20250315",
+                                                       description="Anterior sintético",
+                                                       # outro PatientID DICOM só para não mudar o painel de séries
+                                                       # dos outros testes; o vínculo é o paciente do cadastro
+                                                       patient_id=cls.patient_id + "-A", patient_name="VIEWER^SINTETICO"),
+                            actor="teste")
+            from datetime import date as _date
+            from vyonix.clinical import service as clinical
+            pat = clinical.create_patient(s, name="Viewer Sintetico", identifiers=[("DICOM", cls.patient_id)],
+                                          actor="teste")
+            for su, d in ((cls.study, _date(2026, 10, 20)), (cls.prior, _date(2025, 3, 15))):
+                st = clinical.register_study(s, study_instance_uid=su, modality="CT", study_date=d, actor="teste")
+                st.patient_id = pat.id
         cfg = Config(data_dir=cls.tmp / "data", default_organization=cls.code)
         cfg.data_dir.mkdir(parents=True)
         plat = build(cfg, licensing=lic, db=db)
@@ -250,6 +269,32 @@ class ViewerE2E(unittest.TestCase):
         page.wait_for_timeout(3000)
         self.assertNotEqual(canvas.screenshot(), series2, "voltar para a série 1 não mudou o viewport")
         self.shot(page, "duas-series")
+
+    def test_compare_current_and_prior_side_by_side(self):
+        """Lançador do VYONIX com o protocolo de comparação: atual e anterior do mesmo paciente lado a lado
+        (``@ohif/hpCompare``), cada quadro com imagem desenhada e identificação (data, modalidade e exame)."""
+        page = self.session_page()
+        r = page.context.request.get(self.base + "/api/v1/pacs/viewer/launch",
+                                     params={"study_uid": self.study, "layout": "compare"})
+        self.assertEqual(r.status, 200, r.text())
+        d = r.json()
+        self.assertEqual((d["layout"], d["prior"]["study_instance_uid"]), ("compare", self.prior))
+        page.goto(self.base + d["url"], wait_until="domcontentloaded")
+        page.wait_for_function("""() => {
+            const cs = [...document.querySelectorAll('canvas.cornerstone-canvas')];
+            return cs.length >= 2 && cs.every(c => c.width > 0 && c.height > 0);
+        }""", timeout=90000)
+        page.wait_for_timeout(4000)
+        canvases = page.locator("canvas.cornerstone-canvas")
+        self.assertGreaterEqual(canvases.count(), 2, "comparação sem dois quadros")
+        left, right = canvases.nth(0).screenshot(), canvases.nth(1).screenshot()
+        for png, what in ((left, "atual"), (right, "anterior")):
+            self.assertGreater(self.distinct_levels(png), 4, f"quadro {what} sem imagem desenhada")
+        self.assertNotEqual(left, right, "os dois quadros mostram a mesma imagem")
+        body = page.locator("body").inner_text()
+        for want in ("Estudo sintético", "Anterior sintético"):                # identificação do exame (vyonix.js)
+            self.assertIn(want, body, f"identificação “{want}” ausente nos quadros")
+        self.shot(page, "comparacao")
 
     def test_engine_outage_and_recovery(self):
         """Motor parado: a lista de estudos continua (vem do índice); abrir o estudo recebe 503 sem quebrar a página;

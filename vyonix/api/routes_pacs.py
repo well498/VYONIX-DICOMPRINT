@@ -200,11 +200,22 @@ def _qido_params(request: Request) -> tuple[dict[str, str], int, int]:
     return q, limit, offset
 
 
+def _visible(c: Ctx, s, study_uid: str) -> None:
+    """Escopo opcional do Viewer (``pacs/viewer.access = linked``): estudo fora do vínculo do médico = inexistente."""
+    from vyonix.pacs import viewing
+    viewing.require_uid(s, c.p, study_uid)
+
+
 @router.get(DW + "/studies")
 def qido_studies(request: Request, c: Ctx = Depends(needs("pacs.studies.read"))):
+    from vyonix.pacs import viewing
     params, limit, offset = _qido_params(request)
     with c.session() as s:
         out = pacs.search_studies(s, params, limit=limit, offset=offset)
+        if out and viewing.scope_for(s, c.p) is not None:
+            uid = lambda d: ((d.get("0020000D") or {}).get("Value") or [None])[0]  # noqa: E731
+            ok = viewing.allowed_uids(s, c.p, [u for u in (uid(d) for d in out) if u])
+            out = [d for d in out if uid(d) in ok]
     return _json(out) if out else Response(status_code=204)
 
 
@@ -212,6 +223,7 @@ def qido_studies(request: Request, c: Ctx = Depends(needs("pacs.studies.read")))
 def qido_series(study_uid: str, request: Request, c: Ctx = Depends(needs("pacs.studies.read"))):
     params, _, _ = _qido_params(request)
     with c.session() as s:
+        _visible(c, s, study_uid)
         out = pacs.search_series(s, study_uid, params)
     return _json(out) if out else Response(status_code=204)
 
@@ -219,6 +231,7 @@ def qido_series(study_uid: str, request: Request, c: Ctx = Depends(needs("pacs.s
 @router.get(DW + "/studies/{study_uid}/instances")
 def qido_study_instances(study_uid: str, c: Ctx = Depends(needs("pacs.studies.read"))):
     with c.session() as s:
+        _visible(c, s, study_uid)
         out = pacs.search_instances(s, study_uid)
     return _json(out) if out else Response(status_code=204)
 
@@ -226,6 +239,7 @@ def qido_study_instances(study_uid: str, c: Ctx = Depends(needs("pacs.studies.re
 @router.get(DW + "/studies/{study_uid}/series/{series_uid}/instances")
 def qido_instances(study_uid: str, series_uid: str, c: Ctx = Depends(needs("pacs.studies.read"))):
     with c.session() as s:
+        _visible(c, s, study_uid)
         out = pacs.search_instances(s, study_uid, series_uid)
     return _json(out) if out else Response(status_code=204)
 
@@ -243,6 +257,7 @@ def _wrap(fn):
 def wado_study_metadata(study_uid: str, request: Request, c: Ctx = Depends(needs("pacs.studies.read"))):
     b, base = _backend(c), _base(request)
     with c.session() as s:
+        _visible(c, s, study_uid)
         pacs.open_study(s, study_uid, actor=c.p.username, actor_id=c.p.user_id, ip=c.ip,
                         dedup_s=pacs.OPEN_DEDUP_S)
         out = _wrap(lambda: pacs.metadata(s, b, study_uid, base_url=base))
@@ -254,6 +269,7 @@ def wado_series_metadata(study_uid: str, series_uid: str, request: Request,
                          c: Ctx = Depends(needs("pacs.studies.read"))):
     b, base = _backend(c), _base(request)
     with c.session() as s:
+        _visible(c, s, study_uid)
         pacs.open_study(s, study_uid, actor=c.p.username, actor_id=c.p.user_id, ip=c.ip,
                         dedup_s=pacs.OPEN_DEDUP_S)
         out = _wrap(lambda: pacs.metadata(s, b, study_uid, series_uid, base_url=base))
@@ -264,6 +280,7 @@ def wado_series_metadata(study_uid: str, series_uid: str, request: Request,
 def wado_study(study_uid: str, c: Ctx = Depends(needs("pacs.studies.read"))):
     b = _backend(c)
     with c.session() as s:
+        _visible(c, s, study_uid)
         pacs.open_study(s, study_uid, actor=c.p.username, actor_id=c.p.user_id, ip=c.ip, purpose="retrieve")
         body, ctype = _wrap(lambda: multipart(list(pacs.retrieve_many(s, b, study_uid)), "application/dicom"))
     return Response(body, media_type=ctype)
@@ -273,6 +290,7 @@ def wado_study(study_uid: str, c: Ctx = Depends(needs("pacs.studies.read"))):
 def wado_series(study_uid: str, series_uid: str, c: Ctx = Depends(needs("pacs.studies.read"))):
     b = _backend(c)
     with c.session() as s:
+        _visible(c, s, study_uid)
         body, ctype = _wrap(lambda: multipart(list(pacs.retrieve_many(s, b, study_uid, series_uid)),
                                               "application/dicom"))
     return Response(body, media_type=ctype)
@@ -282,6 +300,7 @@ def wado_series(study_uid: str, series_uid: str, c: Ctx = Depends(needs("pacs.st
 def wado_instance(study_uid: str, series_uid: str, sop_uid: str, c: Ctx = Depends(needs("pacs.studies.read"))):
     b = _backend(c)
     with c.session() as s:
+        _visible(c, s, study_uid)
         data = _wrap(lambda: pacs.retrieve_instance(s, b, study_uid, series_uid, sop_uid))
     body, ctype = multipart([data], "application/dicom")
     return Response(body, media_type=ctype)
@@ -296,6 +315,7 @@ def wado_frames(study_uid: str, series_uid: str, sop_uid: str, frame_list: str,
         raise ValidationFailed("Lista de frames inválida.") from exc
     b = _backend(c)
     with c.session() as s:
+        _visible(c, s, study_uid)
         media, ts, items = _wrap(lambda: pacs.frames(s, b, study_uid, series_uid, sop_uid, numbers))
     body, ctype = multipart(items, media, transfer_syntax=ts)
     return Response(body, media_type=ctype)
@@ -562,3 +582,71 @@ def retention_hold(study_uid: str, body: HoldIn, c: Ctx = Depends(needs("pacs.ad
     with c.session() as s:
         st = retention.set_hold(s, study_uid, body.hold, reason=body.reason, **c.actor)
         return {"study_uid": st.study_uid, "hold": st.retention_hold, "reason": st.retention_hold_reason}
+
+
+# --------------------------------------------------------------------------- Viewer: lançador e protocolos
+class ViewerProtocolIn(BaseModel):
+    modality: str | None = Field(None, max_length=16)
+    procedure_id: uuid.UUID | None = None
+    layout: str = Field("default", pattern="^(default|grid|compare)$")
+    compare_prior: bool = False
+    prior_same_modality: bool = True
+    personal: bool = True
+
+
+@router.get("/viewer/launch")
+def viewer_launch(study_uid: str, layout: str | None = None, prior: str | None = None, preview: bool = False,
+                  c: Ctx = Depends(needs("pacs.studies.read"))):
+    """Endereço do Viewer com o protocolo efetivo (explícito → pessoal → instituição → padrão) e, na comparação, o
+    anterior autorizado do mesmo paciente. Também devolve os anteriores disponíveis para escolher."""
+    from vyonix.pacs import viewing
+    with c.session() as s:
+        return viewing.launch(s, c.p, study_uid, layout=layout, prior_uid=prior, ip=c.ip, record=not preview)
+
+
+def _protocol_owner(c: Ctx, s, personal: bool):
+    from vyonix.errors import Forbidden
+    from vyonix.pacs import viewing
+    if personal:
+        if not viewing.settings_of(s).get("allow_personal", True):
+            raise Forbidden("A instituição não permite protocolos pessoais no Viewer.", code="personal_disabled")
+        return c.p.user_id
+    c.require("pacs.viewer.protocols")
+    return None
+
+
+@router.get("/viewer/protocols")
+def viewer_protocols(c: Ctx = Depends(needs("pacs.studies.read"))):
+    from vyonix.pacs import viewing
+    with c.session() as s:
+        st = viewing.settings_of(s)
+        return {"items": viewing.protocols(s, user_id=c.p.user_id), "layouts": viewing.LAYOUT_NAMES,
+                "allow_personal": st.get("allow_personal", True), "access": st.get("access"),
+                "can_manage": c.p.has("pacs.viewer.protocols")}
+
+
+@router.post("/viewer/protocols", status_code=201)
+def save_viewer_protocol(body: ViewerProtocolIn, c: Ctx = Depends(needs("pacs.studies.read"))):
+    from vyonix.pacs import viewing
+    with c.session() as s:
+        owner = _protocol_owner(c, s, body.personal)
+        r = viewing.save_protocol(s, owner_user_id=owner, modality=body.modality, procedure_id=body.procedure_id,
+                                  layout=body.layout, compare_prior=body.compare_prior,
+                                  prior_same_modality=body.prior_same_modality, **c.actor)
+        return viewing._out(r)
+
+
+@router.delete("/viewer/protocols/{pid}", status_code=204)
+def delete_viewer_protocol(pid: uuid.UUID, c: Ctx = Depends(needs("pacs.studies.read"))):
+    from vyonix.errors import NotFound
+    from vyonix.pacs import viewing
+    from vyonix.pacs.models import ViewerProtocol
+    with c.session() as s:
+        r = s.get(ViewerProtocol, pid)
+        if r is None or (r.owner_user_id is not None and r.owner_user_id != c.p.user_id):
+            raise NotFound("Protocolo não encontrado.")
+        owner = r.owner_user_id
+        if owner is None:
+            c.require("pacs.viewer.protocols")
+        viewing.delete_protocol(s, pid, owner_user_id=owner, **c.actor)
+    return Response(status_code=204)
