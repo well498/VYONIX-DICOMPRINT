@@ -12,6 +12,8 @@ inicializou e não foi possível acessar pelo IP no navegador".
 | 3 (contribuinte provável no acesso pelo IP) | A regra de firewall valia só para redes **Privada** e **Domínio**. O Windows classifica redes novas — e muitas máquinas virtuais — como **Pública**. | `vyonix_deploy/steps/firewall.py` (perfis `Domain, Private`). | Funciona em `localhost`, mas outros computadores não acessam. |
 | 4 (contribuinte provável) | O servidor só fala HTTPS. Quem digita `http://IP:8444` recebe "conexão redefinida/página não funciona". | Instruções e prompts usam `http://`; teste com `http.client` na porta HTTPS. | Parece que o sistema não iniciou. |
 
+| 5 (encontrada no teste real do CI em 29/10) | Se o processo do banco cair, o serviço VyonixPostgreSQL (``pg_ctl runservice``) termina como "parado normalmente" e o Windows **não** o reinicia; além disso, sem tempo limite de conexão, a API demorava a responder com o banco fora. | CI deploy-windows run 40890008726: critério 2.10 "banco derrubado" reprovado (`/health` sem resposta em 180 s). | O sistema ficava fora do ar até alguém iniciar o banco à mão. |
+
 Investigado e **não** era causa: o Core escuta em `0.0.0.0` (configuração `bind`); os serviços já tinham dependência
 (Core e Worker dependem do PostgreSQL), início automático e reinício após falha (5 s, 15 s, 60 s, repetido).
 
@@ -27,6 +29,7 @@ Investigado e **não** era causa: o Core escuta em `0.0.0.0` (configuração `bi
 | Ao concluir no assistente, verificação real do acesso com os endereços que responderam | `vyonix_deploy/wizard` (`/api/access`) | este lote |
 | Regra de firewall complementar no perfil **Público só para a sub-rede local** (Core HTTPS e, com o PACS, DICOM 4242/4243); desligável (`firewall_public_lan`) e removida na desinstalação | `vyonix_deploy/plans.py`, `steps/firewall.py`, `steps/pacs.py`, `steps/update.py` | este lote |
 | `http://` na porta do VYONIX é redirecionado para `https://` (mesmo host e caminho); nenhum dado é servido sem TLS | `vyonix/api/https_server.py`, `vyonix/winservice.py` | este lote |
+| Vigia do banco no serviço Worker: banco local fora por 45 s → o Worker encerra com erro e o Windows o reinicia, subindo antes o banco (dependência); tempo limite de conexão de 5 s (API responde "banco indisponível" em segundos) | `vyonix/winservice.py`, `vyonix/db/session.py` | seguinte |
 | Atalho "VYONIX Diagnóstico" marcado para executar como administrador (o DEPLOY exige) | `vyonix_deploy/steps/shortcuts.py` | este lote |
 
 ## 3. Testes

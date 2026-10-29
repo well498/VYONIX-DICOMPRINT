@@ -33,6 +33,9 @@ def tenant_scope(tenant_id: uuid.UUID | str | None) -> Iterator[None]:
         _tenant.reset(tok)
 
 
+CONNECT_TIMEOUT_S = 5
+
+
 def _url(url: str) -> str:
     # driver psycopg 3; aceita postgresql://… e postgres://…
     if url.startswith("postgres://"):
@@ -44,10 +47,13 @@ def _url(url: str) -> str:
 
 class Database:
     def __init__(self, url: str, *, service_url: str | None = None, pool_size: int = 10) -> None:
+        # connect_timeout: com o banco fora do ar, cada pedido falha em segundos em vez de prender a API (no Windows,
+        # conectar numa porta local fechada pode demorar vários segundos por tentativa)
+        ca = {"connect_timeout": CONNECT_TIMEOUT_S}
         self.engine: Engine = create_engine(_url(url), pool_size=pool_size, max_overflow=10, pool_pre_ping=True,
-                                            future=True)
+                                            future=True, connect_args=ca)
         self.service_engine: Engine = create_engine(_url(service_url or url), pool_size=4, pool_pre_ping=True,
-                                                    future=True)
+                                                    future=True, connect_args=ca)
         self._factory = sessionmaker(self.engine, expire_on_commit=False)
         self._service_factory = sessionmaker(self.service_engine, expire_on_commit=False)
         for f in (self._factory, self._service_factory):

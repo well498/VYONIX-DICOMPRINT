@@ -78,6 +78,9 @@ class Runner:
             from vyonix.events.worker import build_worker
             self.worker = build_worker(plat)
             self.thread = threading.Thread(target=self.worker.run_forever, name="vyonix-worker", daemon=True)
+            # o PostgreSQL rodando como serviço (pg_ctl runservice) não volta sozinho se o processo do banco cair:
+            # o Worker encerra com erro e a recuperação do Windows o reinicia — e, por dependência, sobe o banco antes
+            db_watchdog(cfg.database_url, stop=self.worker.stop)
         self.thread.start()
 
     def stop(self, timeout: float = 20) -> None:
@@ -91,6 +94,49 @@ class Runner:
             self.qr.stop()
         if self.thread is not None:
             self.thread.join(timeout)
+
+
+WATCHDOG_INTERVAL_S = 10
+WATCHDOG_LIMIT_S = 45
+
+
+def db_watchdog(database_url: str | None, *, stop: threading.Event, on_down=None,
+                interval: float = WATCHDOG_INTERVAL_S, limit: float = WATCHDOG_LIMIT_S) -> threading.Thread | None:
+    """Vigia a porta do banco local; fora do ar por ``limit`` segundos → ``on_down`` (padrão: encerra o processo com
+    código 70 para o Windows reiniciar o serviço, o que sobe primeiro o serviço do banco, que é dependência)."""
+    import os
+    import socket
+    import time
+    from urllib.parse import urlsplit
+    if not database_url:
+        return None
+    u = urlsplit(database_url.replace("postgresql+psycopg://", "postgresql://"))
+    host, port = u.hostname or "127.0.0.1", u.port or 5432
+    if host not in ("127.0.0.1", "localhost", "::1"):
+        return None                                   # banco remoto: a recuperação não é deste servidor
+    log = logging.getLogger("vyonix.watchdog")
+
+    def down_default():
+        log.critical("Banco %s:%s fora do ar há mais de %ss: reiniciando o serviço para subir o banco.", host, port,
+                     int(limit))
+        logging.shutdown()
+        os._exit(70)
+    action = on_down or down_default
+
+    def loop():
+        since = None
+        while not stop.wait(interval):
+            try:
+                with socket.create_connection((host, port), timeout=3):
+                    since = None
+            except OSError:
+                since = since or time.monotonic()
+                if time.monotonic() - since >= limit:
+                    action()
+                    since = None
+    t = threading.Thread(target=loop, name="vyonix-db-watchdog", daemon=True)
+    t.start()
+    return t
 
 
 def _service_class(which: str, data_dir: Path):
