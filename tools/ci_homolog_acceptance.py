@@ -98,6 +98,20 @@ class Client:
         return me
 
 
+def wait_health(timeout: int = 300) -> dict:
+    c = Client()
+    end = time.monotonic() + timeout
+    while time.monotonic() < end:
+        try:
+            st, data = c.raw("GET", "/api/v1/health")
+            if st == 200:
+                return json.loads(data)
+        except Exception:  # noqa: BLE001
+            pass
+        time.sleep(3)
+    raise AssertionError("o VYONIX não respondeu em https://localhost:8444")
+
+
 def first_login(user, temp, final):
     c = Client()
     me = c.login(user, temp)
@@ -113,6 +127,7 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--setup", required=True)
     ap.add_argument("--out", required=True)
+    ap.add_argument("--previous-setup", help="instalador anterior: instala-o primeiro e atualiza por cima")
     a = ap.parse_args()
     OUT = Path(a.out).resolve()
     OUT.mkdir(parents=True, exist_ok=True)
@@ -122,10 +137,39 @@ def main() -> int:
                    encoding="utf-8")
     s: dict = {}
 
-    @step("1. Instalar pelo VYONIX_Homologacao_Setup_x64.exe")
+    prev = Path(a.previous_setup).resolve() if a.previous_setup and Path(a.previous_setup).exists() else None
+    if prev:
+        @step("0a. Instalar a versão anterior (instalador de homologação bc9cf28)")
+        def _():
+            run([prev, "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", f"/DEPLOYCONFIG={cfg}",
+                 f"/LOG={OUT / 'setup-anterior.log'}"], env={"VYONIX_ADMIN_PASSWORD": ADMIN_PW})
+            wait_health()
+            c = Client()
+            c.login(ADMIN, ADMIN_PW)
+            p = c.call("POST", "/patients", {"name": "Paciente Da Versao Anterior", "birth_date": "1970-05-05",
+                                             "sex": "M", "identifiers": [{"issuer": "PRONTUARIO", "value": "HML-000"}]})
+            s["old_patient"] = p["id"]
+            return f"versão anterior instalada e em uso; paciente fictício {p['id']} cadastrado nela"
+    else:
+        STEPS.append({"step": "0a. Instalar a versão anterior", "result": "Não executado",
+                      "detail": "instalador anterior indisponível neste pipeline", "seconds": 0})
+
+    @step("1. Instalar pelo VYONIX_Homologacao_Setup_x64.exe" + (" — por cima da versão anterior (atualização)"
+                                                                  if prev else ""))
     def _():
-        run([Path(a.setup).resolve(), "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", f"/DEPLOYCONFIG={cfg}",
-             f"/LOG={OUT / 'setup.log'}"], env={"VYONIX_ADMIN_PASSWORD": ADMIN_PW})
+        if prev:
+            run([Path(a.setup).resolve(), "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/DEPLOYUPDATE=1",
+                 f"/LOG={OUT / 'setup.log'}"])
+            wait_health()
+            c = Client()
+            c.login(ADMIN, ADMIN_PW)
+            assert c.call("GET", f"/patients/{s['old_patient']}")["name"] == "Paciente Da Versao Anterior"
+            bk = list((Path(os.environ.get("ProgramData", r"C:\ProgramData")) / "VYONIX" / "Backups")
+                      .glob("antes-da-atualizacao-*"))
+            assert bk, "atualização sem backup antes da migração"
+        else:
+            run([Path(a.setup).resolve(), "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", f"/DEPLOYCONFIG={cfg}",
+                 f"/LOG={OUT / 'setup.log'}"], env={"VYONIX_ADMIN_PASSWORD": ADMIN_PW})
         for f in ("Preparar_Homologacao.cmd", "Enviar_Exame_Simulado.cmd", "LEIA-ME_HOMOLOGACAO.txt",
                   "Abrir_VYONIX.url", "Assistente_Instalacao.cmd", "Diagnostico.cmd"):
             assert (APP / f).exists(), f"{f} ausente"
@@ -263,7 +307,45 @@ def main() -> int:
         assert st == 200 and pdf[:5] == b"%PDF-", st
         return f"laudo liberado (versão {fin['version']}); PDF {len(pdf)} bytes"
 
-    ok = all(x["result"] == "Aprovado" for x in STEPS)
+    @step("14. Reparar instalação (mesmo comando do atalho “VYONIX - Reparar instalacao”, aprovado)")
+    def _():
+        subprocess.run(["sc.exe", "stop", "VyonixWorker"], capture_output=True)
+        time.sleep(5)
+        subprocess.run(["sc.exe", "delete", "VyonixWorker"], capture_output=True)
+        time.sleep(3)
+        p = run([APP / "vyonix-deploy.exe", "repair", "--approve-all", "--silent"], timeout=1800)
+        wait_health()
+        st = run(["sc.exe", "query", "VyonixWorker"]).stdout
+        assert "RUNNING" in st, st
+        return "serviço removido por fora; reparo recriou e iniciou; sistema respondendo"
+
+    @step("15. Desinstalar (assistente aberto) e reinstalar: dados, estudo, laudo e usuários preservados")
+    def _():
+        wiz = subprocess.Popen([str(APP / "vyonix-deploy.exe"), "wizard", "--no-browser"],
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        time.sleep(8)
+        run([APP / "unins000.exe", "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", f"/LOG={OUT / 'uninstall.log'}"],
+            timeout=900)
+        time.sleep(5)
+        left = [x for x in APP.rglob("*") if x.is_file()] if APP.exists() else []
+        assert not left, f"arquivos não removidos: {left[:5]}"
+        assert wiz.poll() is not None, "assistente continuou aberto"
+        for n in ("VyonixCore", "VyonixWorker", "VyonixPostgreSQL", "VyonixPacsEngine"):
+            q = subprocess.run(["sc.exe", "query", n], capture_output=True, text=True)
+            assert q.returncode != 0, f"{n} ainda registrado"
+        run([Path(a.setup).resolve(), "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/DEPLOYUPDATE=1",
+             f"/LOG={OUT / 'setup-reinstalar.log'}"])
+        wait_health()
+        c = Client()
+        c.login(ADMIN, ADMIN_PW)
+        assert c.call("GET", f"/patients/{s['patient']}")["name"] == "Maria Ficticia"
+        users = {u["username"] for u in c.call("GET", "/users")}
+        assert {"tecnico.alfa", "dra.ficticia"} <= users, users
+        st, _ = c.raw("GET", f"/api/v1/pacs/dicomweb/studies/{s['uid']}/metadata")
+        assert st == 200, f"estudo DICOM não abre depois da reinstalação: {st}"
+        return "pasta do programa removida; serviços removidos; reinstalado; paciente, usuários e estudo DICOM preservados"
+
+    ok = all(x["result"] in ("Aprovado", "Não executado") for x in STEPS) and any(x["result"] == "Aprovado" for x in STEPS)
     (OUT / "homologacao.json").write_text(json.dumps({"approved": ok, "steps": STEPS}, ensure_ascii=False, indent=2),
                                           encoding="utf-8")
     lines = ["# Roteiro de homologação executado no instalador (Windows do CI)", "",

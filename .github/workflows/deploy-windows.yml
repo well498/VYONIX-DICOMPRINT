@@ -17,6 +17,7 @@ on:
 
 permissions:
   contents: read
+  actions: read          # baixar o instalador de homologação anterior (atualização por cima da versão do proprietário)
 
 concurrency:
   group: deploy-windows-${{ github.ref }}-${{ inputs.flavor || 'commercial' }}
@@ -225,6 +226,16 @@ jobs:
             throw "critérios reprovados"
           }
 
+      - name: Instalador de homologação anterior (bc9cf28, o que está no computador do proprietário)
+        if: ${{ inputs.flavor == 'homologacao' }}
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          gh run download 40896631587 -R ${{ github.repository }} -n homologacao-windows -D dist\previous
+          Get-ChildItem dist\previous -Recurse -Filter *.exe | ForEach-Object { Write-Host "::notice title=Versão anterior::$($_.FullName) SHA-256 $((Get-FileHash $_ -Algorithm SHA256).Hash)" }
+
       - name: Homologação interna — roteiro do proprietário executado no instalador
         if: ${{ inputs.flavor == 'homologacao' }}
         shell: pwsh
@@ -232,7 +243,9 @@ jobs:
           PYTHONIOENCODING: utf-8
           PYTHONUTF8: "1"
         run: |
-          python tools/ci_homolog_acceptance.py --setup dist\installer-platform\VYONIX_Homologacao_Setup_x64.exe --out dist\acceptance 2>&1 | Tee-Object -FilePath dist\acceptance-console.txt
+          $prev = (Get-ChildItem dist\previous -Recurse -Filter VYONIX_Homologacao_Setup_x64.exe -ErrorAction SilentlyContinue | Select-Object -First 1).FullName
+          $extra = @(); if ($prev) { $extra = @("--previous-setup", $prev) }
+          python tools/ci_homolog_acceptance.py --setup dist\installer-platform\VYONIX_Homologacao_Setup_x64.exe --out dist\acceptance @extra 2>&1 | Tee-Object -FilePath dist\acceptance-console.txt
           if ($LASTEXITCODE -ne 0) { throw "roteiro de homologação reprovado" }
 
       - name: Diagnóstico em caso de falha
