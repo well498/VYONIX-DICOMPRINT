@@ -36,7 +36,7 @@ HOST_RE = re.compile(r"^(?=.{1,64}$)[A-Za-z0-9]([A-Za-z0-9\-]{0,62}[A-Za-z0-9])?
 MODALITY_RE = re.compile(r"^[A-Z]{2,8}$")
 COALESCE = timedelta(minutes=10)
 ACTIVE_WINDOW = timedelta(days=7)
-SERVICES = ("association", "echo", "store", "find", "move", "get", "mwl", "mpps")
+SERVICES = ("association", "echo", "store", "find", "move", "get", "mwl", "mpps", "commit")
 OUTCOMES = ("accepted", "rejected", "ok", "failed", "held")
 
 

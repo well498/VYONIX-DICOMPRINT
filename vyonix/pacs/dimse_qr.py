@@ -66,7 +66,8 @@ class QRServer:
         ae.acse_timeout, ae.dimse_timeout, ae.network_timeout = 30, 60, 60
         ae.maximum_associations = 16
         from pynetdicom import ALL_TRANSFER_SYNTAXES, StoragePresentationContexts
-        for uid in (VERIFICATION, FIND, MOVE, GET, MWL, MPPS):
+        from vyonix.pacs.commitment import PUSH_MODEL
+        for uid in (VERIFICATION, FIND, MOVE, GET, MWL, MPPS, PUSH_MODEL):
             ae.add_supported_context(uid)
         for cx in StoragePresentationContexts:            # C-GET: o VYONIX atua como SCU de armazenamento
             ae.add_supported_context(cx.abstract_syntax, ALL_TRANSFER_SYNTAXES, scu_role=True, scp_role=True)
@@ -75,7 +76,8 @@ class QRServer:
             (evt.EVT_ABORTED, self._on_end), (evt.EVT_CONN_CLOSE, self._on_end),
             (evt.EVT_C_ECHO, lambda e: 0x0000), (evt.EVT_C_FIND, self._on_find), (evt.EVT_C_MOVE, self._on_move),
             (evt.EVT_C_GET, self._on_get),
-            (evt.EVT_N_CREATE, self._on_n_create), (evt.EVT_N_SET, self._on_n_set)])
+            (evt.EVT_N_CREATE, self._on_n_create), (evt.EVT_N_SET, self._on_n_set),
+            (evt.EVT_N_ACTION, self._on_n_action)])
         log.info("Consulta/recuperação DICOM em %s:%d (AE %s)", self.bind, self.port, self.ae_title)
 
     def stop(self) -> None:
@@ -112,9 +114,17 @@ class QRServer:
                 return
             with self.plat.db.session(tid) as s:
                 node = pacs.node_for(s, calling, address=address, query=True)
-                if node is None:
+                # equipamento só de envio também associa, mas só para o storage commitment (N-ACTION)
+                store_node = pacs.node_for(s, calling, address=address, store=True) if node is None else None
+                if node is None and store_node is None:
                     from vyonix.pacs import nodes as dnodes
                     why = dnodes.refusal_reason(s, calling, address=address, service="query")
+            if node is None and store_node is not None:
+                self._record(tid, "accepted", calling, called, address, "Somente storage commitment")
+                with self._lock:
+                    self._ctx[id(assoc)] = {"tenant": tid, "calling": calling.upper(), "address": address,
+                                            "can_receive": False, "can_query": False, "can_store": True}
+                return
             if node is None:
                 log.warning("Q/R: %s@%s não autorizado a consultar (AE chamado %s)", calling, address, called)
                 self._record(tid, "rejected", calling, called, address, why)
@@ -123,7 +133,8 @@ class QRServer:
             self._record(tid, "accepted", calling, called, address, None)
             with self._lock:
                 self._ctx[id(assoc)] = {"tenant": tid, "calling": calling.upper(), "address": address,
-                                        "can_receive": bool(node.can_receive)}
+                                        "can_receive": bool(node.can_receive), "can_query": True,
+                                        "can_store": bool(node.can_store)}
         except Exception:  # noqa: BLE001 - na dúvida, recusa
             log.exception("Q/R: falha ao avaliar associação; recusando")
             assoc.acse.send_reject(0x02, 0x01, 0x01)
@@ -149,9 +160,16 @@ class QRServer:
         with self._lock:
             self._ctx.pop(id(event.assoc), None)
 
-    def _info(self, event) -> dict[str, Any] | None:
+    def _info(self, event, need: str = "query") -> dict[str, Any] | None:
+        """Contexto da associação, se o nó tiver a permissão do serviço pedido (``query`` ou ``store``)."""
         with self._lock:
-            return self._ctx.get(id(event.assoc))
+            info = self._ctx.get(id(event.assoc))
+        if info is not None and not info.get("can_query" if need == "query" else "can_store"):
+            self._record(info["tenant"], "rejected", info["calling"], self.ae_title, info["address"],
+                         "Equipamento sem permissão para consultar" if need == "query"
+                         else "Equipamento sem permissão para enviar estudos (storage commitment)")
+            return None
+        return info
 
     # ------------------------------------------------------------------ C-FIND
     def _on_find(self, event):
@@ -309,6 +327,37 @@ class QRServer:
             log.warning("MPPS N-SET recusado (%s): %s", info["calling"], exc)
             return exc.status, None
         return 0x0000, mod
+
+    # ------------------------------------------------------------------ Storage Commitment (N-ACTION)
+    def _on_n_action(self, event):
+        """Pedido de storage commitment: responde ao N-ACTION e envia o resultado (N-EVENT-REPORT) em seguida,
+        numa associação nova para o equipamento (ver ``vyonix.pacs.commitment``)."""
+        from vyonix.pacs.commitment import PUSH_MODEL, PUSH_MODEL_INSTANCE, handle_request
+        info = self._info(event, need="store")
+        req = event.request
+        if info is None:
+            return 0x0124, None                                    # recusado: sem permissão
+        if str(req.RequestedSOPClassUID) != PUSH_MODEL or str(req.RequestedSOPInstanceUID) != PUSH_MODEL_INSTANCE \
+                or event.action_type != 1:
+            return 0x0123, None                                    # ação não suportada
+        ds = event.action_information
+        tx = str(ds.get("TransactionUID", "") or "").strip()
+        seq = ds.get("ReferencedSOPSequence") or []
+        refs = [(str(x.ReferencedSOPClassUID), str(x.ReferencedSOPInstanceUID)) for x in seq
+                if "ReferencedSOPClassUID" in x and "ReferencedSOPInstanceUID" in x]
+        if not tx or not refs:
+            return 0x0120, None                                    # atributo obrigatório ausente
+        if len(refs) > 10000:
+            return 0x0110, None
+
+        def later():
+            try:
+                handle_request(self.plat, self.backend, tenant=info["tenant"], calling=info["calling"],
+                               address=info["address"], transaction_uid=tx, refs=refs, our_ae=self.ae_title)
+            except Exception:  # noqa: BLE001
+                log.exception("Storage commitment: falha ao processar o pedido de %s", info["calling"])
+        threading.Thread(target=later, name="vyx-commitment", daemon=True).start()
+        return 0x0000, None
 
     # ------------------------------------------------------------------ C-MOVE
     def _on_move(self, event):

@@ -122,6 +122,27 @@ indexação ficam no motor, mas **não** aparecem na pesquisa nem na recuperaç�
 * Cada N-CREATE/N-SET fica na auditoria (AE, situação; sem dados do paciente). Atributos de dose são aceitos, mas não
   armazenados nesta versão.
 
+### 3.7 Storage Commitment Push Model (SCP)
+
+* Classe SOP: Storage Commitment Push Model `1.2.840.10008.1.20.1` (SCP), instância `1.2.840.10008.1.20.1.1`, no AE
+  do Q/R do Core. Aceita só de nós cadastrados com **Envia imagens** (nó só de envio associa, mas não consulta:
+  C-FIND/C-MOVE/C-GET/MWL/MPPS recusados). Nó sem essa permissão: `0x0124`.
+* **N-ACTION** (tipo 1): TransactionUID e ReferencedSOPSequence obrigatórios (`0x0120`); responde `0x0000` e processa
+  depois.
+* Uma instância só é confirmada se estiver no índice da organização, com a mesma classe SOP e se o arquivo **relido
+  do motor** tiver o SHA-256 registrado na entrada. Falhas: `0x0112` (não existe), `0x0119` (classe divergente),
+  `0x0110` (arquivo ausente ou integridade violada).
+* **N-EVENT-REPORT** (tipo 1 = todas confirmadas; 2 = com falhas) numa **associação nova** do VYONIX para o endereço e
+  a porta cadastrados do equipamento, com negociação de papel (o VYONIX como SCP). Nó sem endereço/porta: o resultado
+  não é enviado e fica no histórico de conexões.
+* Histórico de conexões e auditoria (AE, quantidades; sem dados do paciente).
+
+### 3.8 Envio de estudos (C-STORE SCU) — encaminhamento
+
+* Regras de encaminhamento por origem/modalidade e envio manual: C-STORE do AE do Q/R para nós com **Recebe estudos**,
+  depois de encerrada a recepção; SHA-256 conferido antes de cada imagem; novas tentativas em 5 min, 15 min, 1 h, 3 h
+  e 12 h.
+
 ## 4. DICOMweb (Core)
 
 Base: `https://<servidor>:<porta>/api/v1/pacs/dicomweb`. Autenticação pela sessão do VYONIX (cookie

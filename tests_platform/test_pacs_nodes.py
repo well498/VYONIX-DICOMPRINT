@@ -223,17 +223,17 @@ class QRHistory(unittest.TestCase):
             nodes.add(s, "SO_ENVIA", can_store=True, can_query=False, actor="admin")
         self.assertTrue(self.assoc("ESTACAO_1"))
         self.assertFalse(self.assoc("INTRUSA"))
-        self.assertFalse(self.assoc("SO_ENVIA"))
+        self.assertTrue(self.assoc("SO_ENVIA"))                 # só envio: associa, mas só para storage commitment
         self.assertFalse(self.assoc("ESTACAO_1", called="AE_ERRADO"))
         with db.session(self.t) as s:
             ev = {(e["calling_ae"], e["outcome"], e["called_ae"]): e["detail"] for e in nodes.events(s)}
             st = {n["ae_title"]: n for n in nodes.listing(s)}
         self.assertIn(("ESTACAO_1", "accepted", "VYONIX_QR"), ev)
         self.assertEqual(ev[("INTRUSA", "rejected", "VYONIX_QR")], "AE Title não cadastrado")
-        self.assertEqual(ev[("SO_ENVIA", "rejected", "VYONIX_QR")], "Equipamento sem permissão para consultar")
+        self.assertEqual(ev[("SO_ENVIA", "accepted", "VYONIX_QR")], "Somente storage commitment")
         self.assertIn("AE Title chamado desconhecido", ev[("ESTACAO_1", "rejected", "AE_ERRADO")])
         self.assertEqual(st["ESTACAO_1"]["status"]["code"], "ok")
-        self.assertEqual(st["SO_ENVIA"]["last_error"], "Equipamento sem permissão para consultar")
+        self.assertIsNone(st["SO_ENVIA"]["last_error"])
 
 
 if __name__ == "__main__":

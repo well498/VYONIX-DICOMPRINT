@@ -19,7 +19,7 @@ type HoldGroup = { remote_aet: string | null; remote_ip: string | null; called_a
 type Site = { id: string; name: string };
 
 const SERVICE: Record<string, string> = { association: "Associação", echo: "Teste C-ECHO", store: "Envio de imagens",
-  find: "Consulta", move: "Recuperação (C-MOVE)", get: "Recuperação (C-GET)", mwl: "Worklist", mpps: "MPPS" };
+  find: "Consulta", move: "Recuperação (C-MOVE)", get: "Recuperação (C-GET)", mwl: "Worklist", mpps: "MPPS", commit: "Storage commitment" };
 const OUTCOME: Record<string, string> = { accepted: "Aceita", rejected: "Recusada", ok: "Sucesso", failed: "Falha",
   held: "Retida" };
 const STATUS_TONE: Record<Status["code"], string> = { ok: "dot-ok", never: "dot-off", idle: "dot-warn", error: "dot-bad",
