@@ -22,6 +22,16 @@
 | `40945047712` homologação | 28d25ce (=78ce54b + docs) | 0a–9 aprovados (inclui atualização por cima de bc9cf28); 10–14 sem resultado visível (limite de 10 avisos do GitHub; agora há resumo único); 15 reprovado (mesma causa) |
 | `40951093428` comercial / `40951161126` homologação | b22bcc4 | **em execução** (inclui 2.13) |
 
+## Pedido de 29/10 17:50 — acompanhamento P0
+| Item | Situação |
+|---|---|
+| 1. Resultados individuais de `40951093428`/`40951161126` (b22bcc4) | aguardando término |
+| 2. Desinstalador: não encerra a si nem temporários; aguarda; só serviços do VYONIX; sem órfãos; erro se incompleto; testes sem corrida | Implementado em `457a6eb` (testes locais OK); **CI a executar após b22bcc4** |
+| 3. Integridade além de contagem; DICOM/configurações preservados; bancos preexistentes protegidos | `457a6eb`: MD5 por tabela + sequências + estrutura + amcheck; inventário DICOM; reversão só de banco/cluster criado na execução |
+| 4. Homologação sobre bc9cf28: migrações, serviços, verificação | `457a6eb` (passo 1 ampliado) |
+| 5. Entrega: instalador, kit, Verificar funcionamento, procedimento, checklist, reversão, logs, versão/commit/limitações | após aprovação |
+| 6. DICOM Print: testes dependentes de impressora/equipamento registrados à parte, não como falha do Platform | aplicado no relatório |
+
 ## Pedido de 29/10 17:05 — validação do procedimento de recuperação (P0)
 | Item | Situação |
 |---|---|
