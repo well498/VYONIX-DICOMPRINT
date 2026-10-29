@@ -227,6 +227,9 @@ class QRServer:
             except NotLicensed:
                 yield 0xC001, None
                 return
+            if not ris.workflow(s)["worklist"]:
+                yield 0xC001, None                                   # worklist desligada no fluxo da instituição
+                return
             entries = ris.worklist(
                 s, date_from=d_from, date_to=d_to,
                 modality=(_value(sps, "Modality") if sps is not None else "") or None,

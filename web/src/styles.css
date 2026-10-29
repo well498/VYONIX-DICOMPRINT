@@ -292,3 +292,22 @@ fieldset.plain legend { font-weight: 600; margin-bottom: .3rem; }
 .bar-track { background: #eef2f5; border-radius: 99px; height: .6rem; overflow: hidden; }
 .bar-fill { display: block; height: 100%; background: var(--agent); border-radius: 99px; min-width: 2px; }
 .bar-value { min-width: 2ch; text-align: right; }
+
+/* Linha do tempo do exame */
+.stage-strip { list-style: none; padding: 0; margin: .5rem 0 1rem; display: flex; flex-wrap: wrap; gap: .3rem; }
+.stage-strip li { font-size: .75rem; padding: .15rem .55rem; border-radius: 99px; background: #eef2f5; color: var(--ink-2); }
+.stage-strip li.done { background: var(--agent-soft); color: var(--agent); font-weight: 600; }
+.timeline { list-style: none; margin: 0; padding: 0 0 0 .9rem; border-left: 2px solid var(--line); display: grid; gap: .7rem; }
+.timeline li { display: grid; gap: .1rem; position: relative; }
+.timeline li::before { content: ""; position: absolute; left: -1.27rem; top: .35rem; width: .6rem; height: .6rem; border-radius: 50%; background: var(--agent); }
+.tl-when { font-size: .8rem; color: var(--ink-2); }
+.tl-what .sub { color: var(--ink-2); font-size: .85rem; }
+
+/* Fluxo do exame (Configurações) */
+.flow { list-style: none; counter-reset: f; padding: 0; margin: .5rem 0 0; display: grid; gap: .35rem; }
+.flow li { counter-increment: f; display: grid; grid-template-columns: 2rem minmax(160px, 30%) 1fr; gap: .5rem; align-items: baseline; }
+.flow li::before { content: counter(f); font-weight: 700; color: var(--ink-2); }
+.flow li span { color: var(--ink-2); }
+.flow-on strong, .flow-always strong { color: var(--ink); }
+.flow-off strong, .flow-na strong { color: var(--ink-2); text-decoration: none; font-weight: 500; }
+@media (max-width: 640px) { .flow li { grid-template-columns: 1.6rem 1fr; } .flow li span { grid-column: 2; } }

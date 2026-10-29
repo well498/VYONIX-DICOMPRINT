@@ -206,6 +206,16 @@ def prep_queue(date_from: date | None = None, date_to: date | None = None, modal
                           site_id=site_id, stage_filter=stage, priority=priority, patient=patient, accession=accession)
 
 
+@router.get("/studies/{study_id}/timeline")
+def study_timeline(study_id: uuid.UUID, c: Ctx = Depends(ctx_any)):
+    """Linha do tempo do exame (etapas, horários e responsáveis), para quem pode ver a preparação do estudo."""
+    from vyonix.ris import timeline
+    _prep_reader(c)
+    with c.session() as s:
+        _prep_scope(c, s, study_id)
+        return timeline.study_timeline(s, study_id)
+
+
 @router.get("/prep/{study_id}")
 def prep_detail(study_id: uuid.UUID, c: Ctx = Depends(ctx_any)):
     from vyonix.ris import prep

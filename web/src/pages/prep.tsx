@@ -37,6 +37,7 @@ const ICON: Record<string, string> = {
   share: "M18 8a3 3 0 10-2.8-4M6 15a3 3 0 100-6 3 3 0 000 6zM18 21a3 3 0 100-6 3 3 0 000 6zM8.6 13.5l6.8 4M15.4 6.5l-6.8 4",
   flag: "M12 3l10 18H2zM12 10v5M12 18v.5",
   cancel: "M5 7h14M10 7V4h4v3M7 7l1 14h8l1-14",
+  timeline: "M6 4v16M6 7h4M6 12h8M6 17h6M18 7a1 1 0 100 .1",
 };
 
 function Icon({ name }: { name: string }) {
@@ -111,9 +112,11 @@ export function PrepSheet({ studyId, onClose, onChanged }: { studyId: string; on
                 badge={openFlags.length ? <span className="count count-warn">{openFlags.length}</span> : undefined} />}
               {x.can.return && x.stage === "forwarded" || x.can.return && x.stage === "assigned"
                 ? <Row icon="cancel" label="Devolver para correção" tone="warn" onClick={() => setTool("return")} /> : null}
+              <Row icon="timeline" label="Linha do tempo do exame" onClick={() => setTool("timeline")} />
               {x.can.cancel && !closed && <Row icon="cancel" label="Cancelar exame" tone="danger" onClick={() => setTool("cancel")} />}
             </nav>)}
           {tool !== null && <button type="button" className="link back" onClick={() => setTool(null)}>‹ Voltar às ações</button>}
+          {tool === "timeline" && <Timeline studyId={studyId} />}
           {tool === "audio" && <AudioTool studyId={studyId} onSaved={() => run(async () => undefined, "Áudio anexado ao estudo.")} />}
           {tool === "photo" && <FileTool studyId={studyId} kind="photo" capture onSaved={() => run(async () => undefined, "Foto anexada.")} />}
           {tool === "attach" && <Attachments d={x} studyId={studyId} onSaved={() => run(async () => undefined, "Anexo incluído.", false)} />}
@@ -134,6 +137,29 @@ export function PrepSheet({ studyId, onClose, onChanged }: { studyId: string; on
         </>}
       </section>
     </div>
+  );
+}
+
+type TL = { current_name: string; stages: { code: string; name: string; done: boolean }[];
+  events: { stage: string; stage_name: string; at: string; by: string | null; text: string; detail: string | null }[] };
+
+function Timeline({ studyId }: { studyId: string }) {
+  const t = useLoad(() => get<TL>(`/ris/studies/${studyId}/timeline`), [studyId]);
+  return (
+    <section aria-label="Linha do tempo do exame">
+      <Notice kind="error">{t.error}</Notice>
+      {t.data && <>
+        <ol className="stage-strip" aria-label="Etapas">
+          {t.data.stages.map((st) => <li key={st.code} className={st.done ? "done" : ""}>{st.name}</li>)}
+        </ol>
+        <ol className="timeline">
+          {t.data.events.map((e, i) => (
+            <li key={i}><span className="tl-when">{fmtDate(e.at)}</span>
+              <span className="tl-what"><strong>{e.text}</strong>{e.detail ? ` — ${e.detail}` : ""}
+                <span className="sub"> {e.stage_name}{e.by ? ` · ${e.by}` : ""}</span></span></li>))}
+        </ol>
+      </>}
+    </section>
   );
 }
 

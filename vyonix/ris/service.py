@@ -60,10 +60,18 @@ def conflicts(s: Session, *, start: datetime, minutes: int, station_aet: str | N
             if x.scheduled_at + timedelta(minutes=x.duration_min) > start]
 
 
+def workflow(s: Session) -> dict[str, bool]:
+    """Etapas do fluxo do exame configuradas pela instituição (``ris/workflow``)."""
+    from vyonix.settings import service as settings
+    return settings.get(s, "ris", "workflow")
+
+
 def schedule(s: Session, order_id: uuid.UUID, *, scheduled_at: datetime, modality: str | None = None,
              station_aet: str | None = None, room: str | None = None, description: str | None = None,
              duration_min: int | None = None, actor: str, actor_id=None, ip=None) -> Schedule:
     from pydicom.uid import generate_uid
+    if not workflow(s)["scheduling"]:
+        raise ValidationFailed("O agendamento está desligado nesta instituição (Configurações → Fluxo do exame).")
     o = s.get(Order, order_id)
     if o is None:
         raise NotFound("Pedido não encontrado.")

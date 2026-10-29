@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 @dataclass(frozen=True)
@@ -83,6 +83,19 @@ class PacsReception(_Strict):
                               description="Recepção por C-STORE: any = de qualquer equipamento (padrão); registered = só "
                                           "de equipamentos cadastrados com \"Enviar estudos\" (os demais ficam retidos "
                                           "para o administrador autorizar ou descartar)")
+
+
+class ExamWorkflow(_Strict):
+    """Etapas do fluxo do exame usadas pela instituição. Cadastro do paciente, recepção no PACS, laudo e liberação são
+    sempre usados; as demais podem ser desligadas em clínicas com fluxo simplificado (respeitando as dependências)."""
+    scheduling: bool = Field(True, description="Solicitação e agendamento de exames no RIS")
+    worklist: bool = Field(True, description="Worklist para as modalidades (exige agendamento)")
+
+    @model_validator(mode="after")
+    def _deps(self):
+        if self.worklist and not self.scheduling:
+            raise ValueError("A worklist exige a etapa de agendamento.")
+        return self
 
 
 class ChecklistItem(_Strict):
@@ -196,7 +209,8 @@ RIS = ModuleManifest(
                  "ris.exam.cancel": "Cancelar exame (com justificativa)",
                  "ris.exam.share": "Compartilhar estudo temporariamente com usuário da instituição",
                  "ris.rooms.manage": "Cadastrar salas de exame"},
-    settings=(SettingSpec("preparation", ExamPreparation, "Preparação técnica dos estudos"),),
+    settings=(SettingSpec("preparation", ExamPreparation, "Preparação técnica dos estudos"),
+              SettingSpec("workflow", ExamWorkflow, "Etapas do fluxo do exame usadas pela instituição")),
     publishes=("ris.schedule.created.v1",), consumes=("pacs.study.received.v1",),
 )
 
