@@ -20,6 +20,12 @@ P3 (com correções P1 de acesso/permissões/usabilidade operacional); não inte
 (referências brasileiras) em execução; C (arquitetura por perfil) e D (protótipos + mapas de navegação) depois,
 **para aprovação** antes de qualquer substituição em massa.
 
+### Fluxo integrado (29/10 21:54) — `docs/ux/Fluxo_Integrado_RadCloud_VYONIX.md`
+Comparativo dos 6 conceitos divulgados pela RadCloud (imagens não anexadas; só o texto) × VYONIX, fluxograma
+com regras por transição, oportunidades sem retrabalho e backlog INT-01…INT-08 (P1: publicação só de laudo
+assinado e sem pendência; máquina de estados única do exame; prazo na fila; contexto do estudo no laudo).
+Documentos UX: `docs/ux/` (Fase A, Fase B, matriz de oportunidades, referência R7).
+
 ## Correções de segurança da auditoria (29/10, `c725108`, testes locais; CI Linux pendente)
 A05-001, A05-002, A03-001, A04-002, A04-003. Aguardando aprovação do proprietário: A04-001 (papel por unidade vale
 para a organização — escalada de privilégio; P0), A05-003, A05-014, A05-015, A03-015, A04-007, A04-009.
