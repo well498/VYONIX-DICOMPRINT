@@ -41,8 +41,8 @@ evolutivo [D]). Da 1ª rodada: Dedalus RISonWEB, Fujifilm Synapse RIS, Carestrea
 |---|---|---|
 | PACS/RIS integrado | "tudo em um só sistema" [D] | módulos, telas, papéis |
 | Central de exames | acompanhamento da recepção à entrega [D] | colunas, filtros, lote |
-| Filas | [NV] (imagem pública mostra worklist com unidade, prioridade, status e SLA) | regras de fila |
-| Prioridade e SLA | por urgência [D] | níveis, alertas, escalonamento, relatório |
+| Filas | [D] R7: worklist única; colunas ordenáveis Unidade, Paciente, Data, Médico, Status, SLA; status Novo → Laudando → Assinado; tema escuro | filtros salvos, filas por especialidade, lote, "só os meus", volume real, acessibilidade |
+| Prioridade e SLA | [D] R1–R3, R7: Eletivo/Urgência/Emergência em etiqueta; prazo-limite + barra de % consumido que continua após 100%; "Finalizado" ao concluir | cálculo (corrido/útil, feriados, por cliente/modalidade), quando o relógio para, alertas, quem muda a prioridade, relatório |
 | Distribuição | [NV] | automática/manual, balanceamento |
 | Produtividade | [NV] | painéis, exportação |
 | MFA | para médicos e equipes [D] | métodos, obrigatoriedade, recuperação |
@@ -67,7 +67,7 @@ IA anunciada como apoio.
 
 ## 4. Candidatas para o VYONIX [P] (situação no VYONIX: preenchida na matriz de oportunidades)
 1 Faixa fixa de identificação do paciente (NIST 7804-1) · 2 Banner da instituição ativa · 3 Worklist com prazo
-restante e alerta (R1, LA1, PX6, TL1) · 4 Filtros salvos, filtro mínimo, código de barras (PX8) · 5 Status do laudo
+restante e alerta (R1, R7, LA1, PX6, TL1: prazo absoluto + consumo relativo, contagem segue após vencer, regra de parada por contrato) · 4 Filtros salvos, filtro mínimo, código de barras (PX8) · 5 Status do laudo
 por selo, não só cor · 6 Distribuição automática com pegar/devolver e trilha · 7 Bloqueio por habilitação
 (CFM 2.107 arts. 4º/6º; 2.314 art. 8) · 8 Ambiente único de laudo · 9 Protocolos de exibição editáveis ·
 10 Modelos/frases com busca e "mais usados" · 11 Voz com checagem de lateralidade/negação/medidas (LGPD do áudio) ·
@@ -84,7 +84,7 @@ art. 15) · 24 Check-in por QR, anamnese prévia, painel de chamadas · 25 Agend
 produção × treinamento (NIST 7804) · 30 Laudo em vídeo opcional (anonimização, consentimento).
 
 ## 5. Fontes
-RadCloud: R1 radcloud.com.br · R2 /pacs-ris · R3 /telerradiologia · R4 /central-de-ajuda · R5 /politica-lgpd ·
+RadCloud: R7 imagem pública de divulgação (framerusercontent.com, dados fictícios, foto enviada pelo proprietário; ver `Referencia_RadCloud_Worklist.md`) · R1 radcloud.com.br · R2 /pacs-ris · R3 /telerradiologia · R4 /central-de-ajuda · R5 /politica-lgpd ·
 R6 /politica-de-privacidade. Audo: audo.com.br, portal.audo.com.br (sem conteúdo). Telepacs: telepacs.com.br e 3
 páginas. ASL: asl.com.br, /asl-ris, /asl-pacs, post de interoperabilidade. Pixeon: pixeon.com, /sistema/radiologia,
 blogs (hanging protocols, central de laudos, entrega, assinatura, cloud, worklist), Laudite, laudo multimídia,
