@@ -26,6 +26,10 @@ com regras por transição, oportunidades sem retrabalho e backlog INT-01…INT-
 assinado e sem pendência; máquina de estados única do exame; prazo na fila; contexto do estudo no laudo).
 Documentos UX: `docs/ux/` (Fase A, Fase B, matriz de oportunidades, referência R7).
 
+### Apresentação contínua das telas (diretriz de 29/10 22:08) — `docs/ux/Telas_Apresentadas.md`
+Página "Revisão das Telas VYONIX" publicada com 24 capturas reais por perfil e avaliação do proprietário gravada na
+própria página (coleção `avaliacoes`). Ler as avaliações a cada retomada e levar ajustes aprovados ao backlog.
+
 ## Correções de segurança da auditoria (29/10, `c725108`, testes locais; CI Linux pendente)
 A05-001, A05-002, A03-001, A04-002, A04-003. Aguardando aprovação do proprietário: A04-001 (papel por unidade vale
 para a organização — escalada de privilégio; P0), A05-003, A05-014, A05-015, A03-015, A04-007, A04-009.
