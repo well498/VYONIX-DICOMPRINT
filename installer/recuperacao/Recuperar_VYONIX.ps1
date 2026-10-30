@@ -99,6 +99,12 @@ function Banco-Info {
   [pscustomobject]@{ Data=$data; Existe=(Test-Path (Join-Path $data "PG_VERSION")); Porta=$porta; Bytes=$tam; Estado=$estado; Checksums=$checks;
     Conecta=$con; Versao=$versao; Senha=[bool]$senha; Binarios=(Test-Path (Join-Path $pgbin "pg_dump.exe")); Servico=$svc } }
 
+function Hash-Arquivo($p) {
+  # SHA-256 pelo .NET (sem depender do módulo Microsoft.PowerShell.Utility: Get-FileHash não carrega quando o
+  # PSModulePath vem do PowerShell 7 — encontrado no CI Windows em 30/10/2026).
+  $fs = [IO.File]::Open($p, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
+  try { $sha = [Security.Cryptography.SHA256]::Create(); return ([BitConverter]::ToString($sha.ComputeHash($fs))).Replace("-", "").ToLower() }
+  finally { $fs.Dispose() } }
 function Verificar-Backups {
   # Copias de seguranca: cada pasta com backup.json (gravado pelo DEPLOY) tem o resumo SHA-256 do arquivo .dump.
   $raiz = Join-Path $dados "Backups"
@@ -109,7 +115,7 @@ function Verificar-Backups {
     if (-not (Test-Path $m)) { continue }
     try { $j = Get-Content $m -Raw | ConvertFrom-Json } catch { $ruins += $b.Name; continue }
     $d = Join-Path $b.FullName $j.dump
-    if ((Test-Path $d) -and ((Get-FileHash $d -Algorithm SHA256).Hash.ToLower() -eq ([string]$j.sha256).ToLower())) { $ok++; $ultima = $b.Name; $ultimaDir = $d }
+    if ((Test-Path $d) -and ((Hash-Arquivo $d) -eq ([string]$j.sha256).ToLower())) { $ok++; $ultima = $b.Name; $ultimaDir = $d }
     else { $ruins += $b.Name }
   }
   $leg = ""
@@ -278,7 +284,7 @@ function Backup-Logico {
     $o = & (Join-Path $pgbin "pg_dump.exe") -h 127.0.0.1 -p $script:pg.Porta -U vyonix_admin -Fc -f $dump vyonix 2>&1
     if ($LASTEXITCODE -ne 0) { throw ("pg_dump falhou (leitura completa do banco): " + ($o -join " ")) }
     & (Join-Path $pgbin "pg_dumpall.exe") -h 127.0.0.1 -p $script:pg.Porta -U vyonix_admin --globals-only -f (Join-Path $rec "papeis.sql") 2>&1 | Out-Null
-    $h = (Get-FileHash $dump -Algorithm SHA256).Hash.ToLower()
+    $h = Hash-Arquivo $dump
     & (Join-Path $pgbin "pg_restore.exe") --list $dump *> $null
     if ($LASTEXITCODE -ne 0) { throw "pg_restore nao leu o backup" }
     $o = & (Join-Path $pgbin "createdb.exe") -h 127.0.0.1 -p $script:pg.Porta -U vyonix_admin $verif 2>&1
@@ -319,7 +325,7 @@ function Copia-Fria {
   $dif = 0
   foreach ($f in $fs) {
     $rel = $f.FullName.Substring($pg.Length).TrimStart('\'); $c = Join-Path $destino $rel
-    if (-not (Test-Path $c) -or (Get-FileHash $f.FullName -Algorithm SHA256).Hash -ne (Get-FileHash $c -Algorithm SHA256).Hash) { $dif++ } }
+    if (-not (Test-Path $c) -or (Hash-Arquivo $f.FullName) -ne (Hash-Arquivo $c)) { $dif++ } }
   if ($dif) { throw "$dif arquivo(s) da copia diferem do original" }
   $est = "nao verificavel (programas do PostgreSQL ausentes)"
   $pgc = Join-Path $pgbin "pg_controldata.exe"

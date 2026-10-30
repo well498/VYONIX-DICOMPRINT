@@ -1,15 +1,15 @@
 {
-  "atualizado": "2026-10-29 21:40",
+  "atualizado": "2026-10-29 22:45",
   "commit": "ad7434d (P0) · c725108 (segurança)",
   "requisitos": [
     {
       "req": "Desinstalador não encerra a si mesmo nem a cópia temporária",
       "mudou": "Exclui unins* do fechamento de processos; a cópia temporária (_iu*.tmp) fica em %TEMP%, fora da pasta do programa",
       "local": "Aprovado",
-      "ci": "Não executado",
+      "ci": "Aprovado",
       "prop": "Pendente",
-      "evid": "tests_deploy/test_uninstall.py::test_uninstaller_itself_is_never_killed; CI 2.12 (a executar)",
-      "data": ""
+      "evid": "CI 2.12 run 40979557950: status final 'concluida' gravado e conferido após o término; reinstalar e atualizar com assistente aberto aprovados",
+      "data": "2026-10-30"
     },
     {
       "req": "Remove somente serviços do VYONIX",
@@ -26,7 +26,7 @@
       "local": "Aprovado",
       "ci": "Não executado",
       "prop": "Pendente",
-      "evid": "test_inno_uninstaller_checks_ownership_and_final_state; CI 2.12 e homologação 15 (a executar)",
+      "evid": "test_inno_uninstaller_checks_ownership_and_final_state; CI 2.12 e homologação 15 (a executar); run 40979557950: status 'concluida' conferido; checagem do texto do log reprovou por codificação (teste corrigido)",
       "data": ""
     },
     {
@@ -51,19 +51,19 @@
       "req": "Bancos preexistentes protegidos",
       "mudou": "Reversão de instalação com falha só remove banco/cluster comprovadamente criado na mesma execução; estado desconhecido nunca é removido",
       "local": "Aprovado",
-      "ci": "Não executado",
+      "ci": "Aprovado",
       "prop": "Pendente",
-      "evid": "tests_deploy/test_faults.py (RollbackNeverDropsExistingDatabase, ClusterRollback); CI 2.13 falha na migração (a executar)",
-      "data": "2026-10-29"
+      "evid": "tests_deploy/test_faults.py (RollbackNeverDropsExistingDatabase, ClusterRollback); CI 2.13 falha na migração (a executar); CI 2.13 falha simulada na migração: rolled_back, banco preservado, restauração e nova atualização aprovadas (run 40979557950)",
+      "data": "2026-10-30"
     },
     {
       "req": "Atualização sobre bc9cf28",
       "mudou": "Homologação confere também migrações aplicadas, serviços e 'Verificar funcionamento'",
       "local": "Não executado",
-      "ci": "Não executado",
+      "ci": "Aprovado",
       "prop": "Pendente",
-      "evid": "Em b22bcc4: homologação 0a–15 aprovada (run 40951161126). Verificações ampliadas (migrações/serviços) rodam em ad7434d.",
-      "data": ""
+      "evid": "Homologação 0a–15 aprovada em ad7434d (run 40979622943)",
+      "data": "2026-10-29"
     },
     {
       "req": "DICOM Print (testes que dependem de impressora/equipamento)",
@@ -78,10 +78,10 @@
       "req": "Banco volta sozinho após queda forçada (2.10)",
       "mudou": "Coletor de log do PostgreSQL desligado (registros no Log de Eventos); antes de iniciar o serviço parado, o DEPLOY encerra postgres.exe órfãos só da pasta do VYONIX; atualização reaplica a configuração",
       "local": "Aprovado",
-      "ci": "Não executado",
+      "ci": "Aprovado",
       "prop": "Pendente",
-      "evid": "tests_deploy/test_faults.py::PostgresOrphans; causa no CI 40951093428 (syslogger com pai encerrado)",
-      "data": "2026-10-29"
+      "evid": "tests_deploy/test_faults.py::PostgresOrphans; causa no CI 40951093428 (syslogger com pai encerrado); CI 2.10 aprovado no run 40979557950 (ad7434d)",
+      "data": "2026-10-30"
     }
   ],
   "execucoes": [
@@ -125,18 +125,27 @@
       "run": "40979557950",
       "versao": "comercial",
       "commit": "ad7434d",
-      "situacao": "Em execução",
-      "obs": "Inclui a correção do banco (2.10), o desinstalador com verificação final e o critério 2.13",
+      "situacao": "Reprovado",
+      "obs": "41 aprovados, 6 reprovados, 1 não executado (DICOM Print: impressora — registrado à parte). APROVADOS: 2.10 banco derrubado volta sozinho (correção do syslogger confirmada); reinstalar, atualizar por cima com assistente aberto, reparo; 2.13 diagnóstico só leitura, cancelamento, falha simulada na migração com restauração. REPROVADOS: ferramenta de recuperação (Get-FileHash indisponível com PSModulePath do PowerShell 7 → corrigido com SHA-256 .NET) e 3 em cascata; teste do registro da desinstalação lia o log ANSI como UTF-8 (teste); verificar na porta errada após 2.7 (teste).",
       "evid": "https://github.com/well498/VYONIX-DICOMPRINT/actions/runs/40979557950",
-      "data": ""
+      "data": "2026-10-30"
     },
     {
       "run": "40979622943",
       "versao": "homologação",
       "commit": "ad7434d",
-      "situacao": "Em execução",
-      "obs": "Inclui migrações/serviços/verificação após atualizar sobre bc9cf28 e a espera do fim real da desinstalação",
+      "situacao": "Aprovado",
+      "obs": "Homologação 0a–15 aprovada em ad7434d (inclui verificação de migrações/serviços após atualizar sobre bc9cf28 e espera do fim real da desinstalação).",
       "evid": "https://github.com/well498/VYONIX-DICOMPRINT/actions/runs/40979622943",
+      "data": "2026-10-29"
+    },
+    {
+      "run": "(a disparar)",
+      "versao": "comercial + homologação",
+      "commit": "próximo",
+      "situacao": "Pendente",
+      "obs": "Correções da ferramenta de recuperação e dos testes; segurança c725108; botão da assinatura 76c6754",
+      "evid": "",
       "data": ""
     }
   ],

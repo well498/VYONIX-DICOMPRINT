@@ -218,7 +218,8 @@ class Installer(unittest.TestCase):
             self.assertIn(t, imp)
         self.assertIn("Inventario-Dados", fn["Aplicar-Recuperacao"])          # DICOM/configurações antes e depois
         self.assertNotIn("Remove-Item", fn["Inventario-Dados"])
-        self.assertIn("Get-FileHash", fn["Copia-Fria"])
+        self.assertIn("Hash-Arquivo", fn["Copia-Fria"])
+        self.assertNotIn("(Get-FileHash ", ps)          # não depende do módulo Utility (CI 30/10)
         self.assertIn("shut down", fn["Copia-Fria"])
         for t in ("servicos.json", "registro-desinstalacao.reg", "firewall.json", "arquivos-programa.csv"):
             self.assertIn(t, fn["Registrar-Estado"])

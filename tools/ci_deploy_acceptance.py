@@ -80,6 +80,11 @@ class NotRun(Exception):
 
 def sh(args, *, timeout=900, env=None, ok=(0,)) -> subprocess.CompletedProcess:
     e = dict(os.environ)
+    if str(args[0]).lower() in ("powershell", "powershell.exe"):      # mesmo ambiente do computador do cliente:
+        sysroot = os.environ.get("SystemRoot", r"C:\Windows")         # módulos do Windows PowerShell 5.1, não do 7
+        pf = os.environ.get("ProgramW6432") or os.environ.get("ProgramFiles", r"C:\Program Files")
+        e["PSModulePath"] = os.pathsep.join([os.path.join(sysroot, "System32", "WindowsPowerShell", "v1.0", "Modules"),
+                                             os.path.join(pf, "WindowsPowerShell", "Modules")])
     e.update(env or {})
     p = subprocess.run([str(a) for a in args], capture_output=True, text=True, timeout=timeout, env=e,
                        encoding="utf-8", errors="replace")
@@ -899,7 +904,11 @@ $ap = $r | Get-NetFirewallApplicationFilter
         c.close()
         assert st == "abandoned", f"execução interrompida ficou {st}"
         log = Path(os.environ.get("ProgramData", r"C:\ProgramData")) / "VYONIX" / "Logs" / "instalador.log"
-        txt = log.read_text(encoding="utf-8", errors="replace")
+        raw = log.read_bytes()
+        try:
+            txt = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            txt = raw.decode("cp1252", errors="replace")     # o Inno grava o registro em ANSI
         assert "desinstalação concluída" in txt, txt[-800:]
         shutil.copy2(log, OUT / "instalador.log")
         return (f"código 0; estado final verificado após o término ({fin}); "
@@ -1167,7 +1176,7 @@ $ap = $r | Get-NetFirewallApplicationFilter
         assert r2["status"] == "succeeded", r2["message"]
         health(port, 300)
         assert "Paciente Persistencia CI" in patients()
-        p = deploy("verificar", "--esperar", "120")
+        p = deploy("verificar", "--porta", str(port), "--esperar", "120")     # 2.7 pode ter movido a porta
         return f"execução {run['id']}: {run['status']} (erro registrado no DEPLOY); nova atualização ok; verificar: código {p.returncode}"
 
     # ---------------------------------------------------------------- 2.1 (ao final, para não afetar os demais)
