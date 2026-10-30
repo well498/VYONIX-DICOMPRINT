@@ -325,13 +325,17 @@ def wado_frames(study_uid: str, series_uid: str, sop_uid: str, frame_list: str,
 
 @router.get("/quality")
 def quality_list(only_issues: bool = True, limit: int = 100, c: Ctx = Depends(needs("pacs.studies.read"))):
+    from vyonix.pacs import viewing
     with c.session() as s:
-        return {"studies": pacs.quality_overview(s, limit=limit, only_issues=only_issues)}
+        rows = pacs.quality_overview(s, limit=limit, only_issues=only_issues)
+        ok = viewing.allowed_uids(s, c.p, [r["study_uid"] for r in rows])       # A03-001: escopo por vínculo
+        return {"studies": [r for r in rows if r["study_uid"] in ok]}
 
 
 @router.get("/studies/{study_uid}/quality")
 def quality_study(study_uid: str, c: Ctx = Depends(needs("pacs.studies.read"))):
     with c.session() as s:
+        _visible(c, s, study_uid)                                                 # A03-001
         return pacs.quality(s, study_uid)
 
 

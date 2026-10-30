@@ -34,8 +34,10 @@ def _scope(c: Ctx, s):
     return queue.scope(s, c.p.user_id, can_assign=c.p.has("report.assign"))
 
 
-def _in_scope(c: Ctx, s, *, study_id: uuid.UUID | None = None, report_id: uuid.UUID | None = None) -> None:
-    """Médico só acessa exame/laudo de unidade com vínculo vigente (TELELAUDO T7)."""
+def _in_scope(c: Ctx, s, *, study_id: uuid.UUID | None = None, report_id: uuid.UUID | None = None,
+              write: bool = False) -> None:
+    """Médico só acessa exame/laudo de unidade com vínculo vigente (TELELAUDO T7). Compartilhamento temporário:
+    ``view`` só lê; escrever (abrir rascunho, editar, revisar, liberar, adendo, enviar) exige ``report``."""
     from vyonix.errors import NotFound
     from vyonix.report import queue
     from vyonix.report.models import Report
@@ -45,8 +47,8 @@ def _in_scope(c: Ctx, s, *, study_id: uuid.UUID | None = None, report_id: uuid.U
             raise NotFound("Laudo não encontrado.")
         study_id = r.study_id
     from vyonix.ris import prep
-    if study_id in prep.shared_studies(s, c.p.user_id):     # compartilhado temporariamente com este usuário
-        return
+    if study_id in prep.shared_studies(s, c.p.user_id, scope="report" if write else None):
+        return                                               # compartilhado temporariamente com este usuário
     queue.require(s, _scope(c, s), study_id)
 
 
@@ -148,7 +150,7 @@ def claim(study_id: uuid.UUID, c: Ctx = Depends(needs("report.write"))):
     """O médico reserva um exame livre (expira se o laudo não for iniciado)."""
     from vyonix.report import distribution
     with c.session() as s:
-        _in_scope(c, s, study_id=study_id)
+        _in_scope(c, s, study_id=study_id, write=True)
         a = distribution.claim(s, study_id, c.p.user_id, actor=c.p.username, ip=c.ip)
         return {"assignment_id": str(a.id), "reserved_until": a.reserved_until.isoformat() if a.reserved_until else None}
 
@@ -165,7 +167,7 @@ def release_claim(study_id: uuid.UUID, c: Ctx = Depends(needs("report.write"))):
 def open_report(body: OpenIn, c: Ctx = Depends(needs("report.write"))):
     with c.session() as s:
         _require(c, s)
-        _in_scope(c, s, study_id=body.study_id)
+        _in_scope(c, s, study_id=body.study_id, write=True)
         r = rep.open_report(s, body.study_id, template_id=body.template_id, auto=body.auto, **c.actor)
         return rep.get(s, r.id)
 
@@ -189,7 +191,7 @@ def get_report(rid: uuid.UUID, c: Ctx = Depends(needs("report.read"))):
 def save_draft(rid: uuid.UUID, body: DraftIn, c: Ctx = Depends(needs("report.write"))):
     with c.session() as s:
         _require(c, s)
-        _in_scope(c, s, report_id=rid)
+        _in_scope(c, s, report_id=rid, write=True)
         rep.update_draft(s, rid, body=body.body, critical=body.critical, critical_note=body.critical_note,
                          expected_version=body.row_version, body_format=body.body_format,
                          reviewer=_is_reviewer(c, s, rid), **c.actor)
@@ -216,7 +218,7 @@ def request_review(rid: uuid.UUID, body: ReviewRequestIn, c: Ctx = Depends(needs
     """Envia o rascunho para revisão (segunda leitura)."""
     with c.session() as s:
         _require(c, s)
-        _in_scope(c, s, report_id=rid)
+        _in_scope(c, s, report_id=rid, write=True)
         rep.request_review(s, rid, reviewer_id=body.reviewer_id, note=body.note, expected_version=body.row_version,
                            **c.actor)
         return rep.get(s, rid)
@@ -226,7 +228,7 @@ def request_review(rid: uuid.UUID, body: ReviewRequestIn, c: Ctx = Depends(needs
 def return_review(rid: uuid.UUID, body: ReviewReturnIn, c: Ctx = Depends(needs("report.review"))):
     with c.session() as s:
         _require(c, s)
-        _in_scope(c, s, report_id=rid)
+        _in_scope(c, s, report_id=rid, write=True)
         if not _is_reviewer(c, s, rid):
             raise Forbidden("Só o revisor deste laudo pode devolvê-lo.", code="not_reviewer")
         rep.return_review(s, rid, note=body.note, **c.actor)
@@ -257,7 +259,7 @@ def reviewers(c: Ctx = Depends(needs("report.write"))):
 def finalize(rid: uuid.UUID, body: SignIn, c: Ctx = Depends(needs("report.sign"))):
     with c.session() as s:
         _require(c, s)
-        _in_scope(c, s, report_id=rid)
+        _in_scope(c, s, report_id=rid, write=True)
     with c.session() as s:                         # tentativa falha fica registrada mesmo sem liberar
         ok = auth.confirm_password(s, c.p, body.password, purpose="report.finalize", ip=c.ip)
     if not ok:
@@ -272,7 +274,7 @@ def finalize(rid: uuid.UUID, body: SignIn, c: Ctx = Depends(needs("report.sign")
 def add_addendum(rid: uuid.UUID, body: AddendumIn, c: Ctx = Depends(needs("report.sign"))):
     with c.session() as s:
         _require(c, s)
-        _in_scope(c, s, report_id=rid)
+        _in_scope(c, s, report_id=rid, write=True)
     with c.session() as s:
         ok = auth.confirm_password(s, c.p, body.password, purpose="report.addendum", ip=c.ip)
     if not ok:
@@ -329,7 +331,7 @@ def finalize_batch(body: BatchIn, c: Ctx = Depends(needs("report.sign"))):
     for rid in ids:
         try:
             with c.session() as s:
-                _in_scope(c, s, report_id=rid)
+                _in_scope(c, s, report_id=rid, write=True)
                 r = rep.finalize(s, rid, actor=c.p.display_name or c.p.username, actor_id=c.p.user_id, ip=c.ip,
                                  batch=batch)
                 results.append({"report_id": str(rid), "ok": True, "version": r.version})
@@ -363,8 +365,17 @@ def critical(status: str | None = "open", c: Ctx = Depends(needs("report.read"))
 @router.post("/critical/{aid}/communicate")
 def communicate(aid: uuid.UUID, body: CommunicateIn, c: Ctx = Depends(needs("report.write"))):
     with c.session() as s:
+        from vyonix.errors import NotFound
+        from vyonix.report import queue
+        from vyonix.report.models import CriticalAlert
+        a = s.get(CriticalAlert, aid)
+        if a is None:
+            raise NotFound("Achado crítico não encontrado.")
+        _in_scope(c, s, report_id=a.report_id, write=True)    # A05-001: só alerta de unidade do escopo
         rep.communicate(s, aid, notified_to=body.notified_to, channel=body.channel, note=body.note, **c.actor)
-        return {"items": rep.critical_alerts(s, status="open")}
+        sc = _scope(c, s)
+        return {"items": [x for x in rep.critical_alerts(s, status="open")
+                          if queue.allowed(sc, uuid.UUID(x["site_id"]) if x["site_id"] else None)]}
 
 
 @router.get("/templates")
@@ -913,7 +924,7 @@ def send_to_pacs(rid: uuid.UUID, c: Ctx = Depends(needs("report.write"))):
     from vyonix.report import interop
     from vyonix.report.models import Report
     with c.session() as s:
-        _in_scope(c, s, report_id=rid)
+        _in_scope(c, s, report_id=rid, write=True)
         if not registry.is_enabled(s, "pacs"):
             raise Conflict("O VYONIX PACS não está habilitado nesta organização.")
         r = s.get(Report, rid)

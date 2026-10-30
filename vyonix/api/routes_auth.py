@@ -95,8 +95,18 @@ def me(c: Ctx = AuthPending):
 
 @router.post("/auth/password")
 def change_password(body: PasswordIn, c: Ctx = AuthPending):
+    # A04-002: com o segundo fator pendente (mfa_verify/mfa_enroll) a senha não pode ser trocada — quem só sabe a
+    # senha não toma a conta nem derruba as sessões do dono.
+    if c.p.stage not in ("ok", "password_change"):
+        raise ValidationFailed("Conclua a verificação do segundo fator antes de trocar a senha.")
+    err = None
     with c.session() as s:
-        auth.change_password(s, c.p, body.current, body.new, ip=c.ip)
+        try:
+            auth.change_password(s, c.p, body.current, body.new, ip=c.ip)
+        except Unauthorized as exc:
+            err = exc                       # A04-003: a tentativa errada (e o bloqueio) precisa ser confirmada
+    if err is not None:
+        raise err
     return {"ok": True}
 
 

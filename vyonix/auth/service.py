@@ -485,12 +485,22 @@ CONFIRM_MAX_FAILS, CONFIRM_WINDOW_MIN = 5, 15
 def change_password(s: Session, p: Principal, current: str, new: str, ip: str | None = None) -> None:
     u = s.get(User, p.user_id)
     if not passwords.check_password(current, u.pw_hash):
-        audit.record(s, actor=u.username, actor_id=u.id, action="auth.password_change_failed", ip=ip)
+        # A04-003: a falha conta para o bloqueio da conta (mesma política do login) e fica registrada — o chamador
+        # confirma a transação antes de devolver o erro.
+        u.failed += 1
+        pol = _policy(s)
+        details = {"failed": u.failed}
+        if u.failed >= pol["lockout_attempts"]:
+            u.locked_until, u.failed = utcnow() + timedelta(minutes=pol["lockout_minutes"]), 0
+            details["locked_until"] = u.locked_until.isoformat()
+            _end_sessions(s, u.id)
+        audit.record(s, actor=u.username, actor_id=u.id, action="auth.password_change_failed", ip=ip,
+                     details=details)
         raise Unauthorized("Senha atual incorreta.")
     if hmac.compare_digest(current, new):
         raise ValidationFailed("A nova senha deve ser diferente da atual.")
     _check_pw(s, new)
-    u.pw_hash, u.must_change = passwords.hash_password(new), False
+    u.pw_hash, u.must_change, u.failed = passwords.hash_password(new), False, 0
     _end_sessions(s, u.id, except_id=p.session_id)
     audit.record(s, actor=u.username, actor_id=u.id, action="auth.password_change", target_type="user",
                  target_id=u.id, ip=ip)

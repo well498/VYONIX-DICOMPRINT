@@ -1,7 +1,6 @@
 # Diretriz permanente — auditoria técnica e aperfeiçoamento contínuo (29/10/2026, 18:13)
 
-Origem: mensagem do proprietário de 29/10/2026 18:13. **O texto recebido termina em "Util" (seção 7, linha 158)**; o
-restante (se houver) ainda não foi recebido e deve ser incorporado quando chegar.
+Origem: mensagens do proprietário de 29/10/2026 18:13 (truncada) e 21:22 (texto completo, seções 1–8 e ordem final).
 
 ## Resumo operacional
 * Cada especialidade audita o que já existe (código, arquitetura, funcionalidades, integrações, interfaces, banco,
@@ -15,7 +14,12 @@ restante (se houver) ainda não foi recebido e deve ser incorporado quando chega
   incremental → testes afetados → registro. Sem reescrever módulos inteiros; sem mudar o aprovado por preferência;
   mudança arquitetônica relevante vai para aprovação.
 * Sem ociosidade artificial: terminado o prioritário, consultar o backlog; auditoria direcionada só com motivo; nada
-  de auditorias completas repetidas.
+  de auditorias completas repetidas. Análise baseada em alterações, riscos e evidências: melhorias reais, não
+  ocupação artificial.
+* **Proteção do desenvolvimento atual (seção 8):** a homologação P0 do instalador permanece prioritária; a diretriz não
+  autoriza interromper testes em andamento, substituir implementações ou alterar componentes críticos sem necessidade.
+* **Ordem final:** incorporada às instruções permanentes dos cinco agentes; análise gradual, começando pelos
+  componentes de maior risco, sem conflitar com as tarefas em andamento.
 * Continuam valendo: P0 primeiro; não modificar o DICOM Print; nada destrutivo, produção ou dados reais sem
   autorização; diretriz de continuidade (novo pedido não cancela o anterior).
 

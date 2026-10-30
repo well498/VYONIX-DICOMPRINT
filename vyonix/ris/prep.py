@@ -451,10 +451,15 @@ def share(s: Session, study_id: uuid.UUID, user_id: uuid.UUID, *, scope: str, ho
     return sh
 
 
-def shared_studies(s: Session, user_id: uuid.UUID) -> set[uuid.UUID]:
+def shared_studies(s: Session, user_id: uuid.UUID, *, scope: str | None = None) -> set[uuid.UUID]:
+    """Estudos compartilhados com o usuário (vigentes). ``scope="report"``: só os que permitem laudar — um
+    compartilhamento ``view`` dá apenas leitura (A05-002)."""
     now = utcnow()
-    return set(s.execute(select(ExamShare.study_id).where(ExamShare.user_id == user_id, ExamShare.expires_at > now,
-                                                          ExamShare.revoked_at.is_(None))).scalars())
+    q = select(ExamShare.study_id).where(ExamShare.user_id == user_id, ExamShare.expires_at > now,
+                                         ExamShare.revoked_at.is_(None))
+    if scope is not None:
+        q = q.where(ExamShare.scope == scope)
+    return set(s.execute(q).scalars())
 
 
 def revoke_share(s: Session, share_id: uuid.UUID, *, actor: str, actor_id=None, ip=None) -> None:
