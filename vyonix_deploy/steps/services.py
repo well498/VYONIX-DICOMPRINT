@@ -257,6 +257,12 @@ class ServiceRunningStep(Step):
             ctx.log("INFO", f"{self.name} em execução, mas sem responder como esperado: reiniciando.")
             stop_service(self.name)
             q = query_service(self.name)
+        if q and q["state"] != "Running" and self.name == "VyonixPostgreSQL":
+            from vyonix_deploy.steps import postgres as pg
+            left = pg.orphan_processes(ctx.paths.pg_bin, kill=True)   # serviço parado: só podem ser órfãos
+            if left:
+                ctx.log("WARN", f"Processos órfãos do banco encerrados antes de iniciar: {[x.get('pid') for x in left]}")
+                time.sleep(2)
         if q and q["state"] != "Running":
             r = run([SC, "start", self.name])
             if not r.ok and "1056" not in r.out:          # 1056 = já em execução

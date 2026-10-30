@@ -403,10 +403,11 @@ $pf = $r | Get-NetFirewallPortFilter
                 "@(Get-CimInstance Win32_Process | Where-Object { $_.Name -in @('postgres.exe','pg_ctl.exe') } | "
                 "ForEach-Object { [pscustomobject]@{ pid=$_.ProcessId; pai=$_.ParentProcessId; cmd=([string]$_.CommandLine).Substring(0, [Math]::Min(120, ([string]$_.CommandLine).Length)) } })"),
                 ensure_ascii=False)[:900])
-            logs = sorted((PATHS.pg_data / "log").glob("*"), key=lambda x: x.stat().st_mtime) if (PATHS.pg_data / "log").exists() else []
-            if logs:
-                out.append("log do PostgreSQL: " + " | ".join(logs[-1].read_text(encoding="utf-8", errors="replace")
-                                                             .splitlines()[-25:])[:1800])
+            out.append("log do PostgreSQL (Eventos): " + json.dumps(powershell(
+                "@(Get-WinEvent -FilterHashtable @{LogName='Application'; ProviderName='VYONIX PostgreSQL'} -MaxEvents 15 "
+                "-ErrorAction SilentlyContinue | ForEach-Object { $_.TimeCreated.ToString('HH:mm:ss') + ' ' + "
+                "([string]$_.Message).Substring(0, [Math]::Min(200, ([string]$_.Message).Length)) })"),
+                ensure_ascii=False)[:1800])
             out.append("SCM: " + json.dumps(powershell(
                 "@(Get-WinEvent -FilterHashtable @{LogName='System'; ProviderName='Service Control Manager'} -MaxEvents 40 "
                 "-ErrorAction SilentlyContinue | Where-Object { $_.Message -like '*VYONIX*' } | Select-Object -First 8 | "
