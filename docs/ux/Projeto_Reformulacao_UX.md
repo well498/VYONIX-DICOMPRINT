@@ -7,6 +7,31 @@ perfil, adaptadas à rotina dos profissionais de saúde brasileiros, mantendo a 
 usabilidade operacional. **Não interrompe a homologação P0.** Nada é substituído em massa antes da aprovação da
 proposta visual pelo proprietário.
 
+## Ampliação de 29/10 21:45 — benchmarking profundo de plataformas brasileiras
+Referências prioritárias: **RadCloud** (estudo especial), Audo, Telepacs, ASL Sistemas, Pixeon, Telelaudo, MV (outras
+só com justificativa). Classificação obrigatória: CONFIRMADO · DECLARADO PELO FORNECEDOR · NÃO VERIFICADO ·
+PROPOSTA VYONIX. Nada de áreas restritas; nunca afirmar teste de plataforma sem acesso. O modelo de login
+multi-institucional divulgado pela RadCloud **não** substitui as contas independentes por instituição do VYONIX
+(decisão aprovada). Conformidade de concorrente não prova conformidade do VYONIX. Assinatura, compartilhamento, IA
+clínica, portal do paciente e uso diagnóstico passam por avaliação de segurança, privacidade e regulatória.
+
+### Entregas (10)
+| # | Entrega | Responsável | Estado |
+|---|---|---|---|
+| 1 | Relatório comparativo das plataformas brasileiras | UX/pesquisa (apoio 01) | Em execução |
+| 2 | Estudo específico da RadCloud | UX/pesquisa | Em execução |
+| 3 | Inventário das funcionalidades existentes no VYONIX | 01 + Fase A (UX) | Em execução |
+| 4 | Matriz de oportunidades e lacunas (11 colunas: plataforma, funcionalidade, fonte, situação no VYONIX — implementada e adequada / precisa melhoria / parcial / não implementada / não recomendada / dependente de decisão ou conformidade —, problema, benefício, complexidade, riscos e dependências, prioridade, agente, critérios de aceitação) | 01 consolida; 03/04/05 revisam | Após 1–3 |
+| 5 | Nova arquitetura de navegação por perfil | 01 + UX | Após 4 |
+| 6 | Proposta de design system VYONIX | UX | Após 4 |
+| 7 | Protótipos das principais telas (comparados com a experiência atual; funcionalidades preservadas) | UX | Após 5–6 |
+| 8 | Plano de implementação incremental | 01 + 02 (impacto de empacotamento/atualização) | Após aprovação |
+| 9 | Backlog priorizado por agente | 01 | Contínuo |
+| 10 | Critérios de aceitação e testes | 04 | Com 4 e 7 |
+
+Perfis incluídos: técnico, radiologista, solicitante, recepção, coordenador do CDI, administrador da clínica,
+administrador global VYONIX, enfermagem, faturamento, auditoria, paciente e demais autorizados.
+
 ## Fases
 | Fase | Conteúdo | Estado |
 |---|---|---|
