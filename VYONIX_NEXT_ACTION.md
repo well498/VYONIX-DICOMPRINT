@@ -15,6 +15,15 @@
 | P0 | Desinstalador que não removia; atualização direta; Reparar; recuperação da instalação atual; logs | Implementado (`efbae29`), testes locais OK; **CI Windows 2.12 em execução**; depois: versão de teste + kit `VYONIX_Kit_P0_Recuperacao.zip`; **resolvido só após validação no computador do proprietário** e Windows 10/11 (BLK-04) |
 | P0 | Inicialização automática sem login, acesso pelo IP (bc9cf28) | Corrigido e aprovado no CI (2.10/2.11); **aguarda validação presencial** |
 
+## Reformulação UX/UI (autorizada em 29/10 21:36) — `docs/ux/Projeto_Reformulacao_UX.md`
+P3 (com correções P1 de acesso/permissões/usabilidade operacional); não interrompe o P0. Fases A (diagnóstico) e B
+(referências brasileiras) em execução; C (arquitetura por perfil) e D (protótipos + mapas de navegação) depois,
+**para aprovação** antes de qualquer substituição em massa.
+
+## Correções de segurança da auditoria (29/10, `c725108`, testes locais; CI Linux pendente)
+A05-001, A05-002, A03-001, A04-002, A04-003. Aguardando aprovação do proprietário: A04-001 (papel por unidade vale
+para a organização — escalada de privilégio; P0), A05-003, A05-014, A05-015, A03-015, A04-007, A04-009.
+
 ## Diretriz permanente de auditoria e aperfeiçoamento (29/10 18:13)
 `docs/governanca/Diretriz_Auditoria_Aperfeicoamento.md` (texto recebido truncado em "Util"). Registro único:
 `docs/governanca/Registro_Aperfeicoamento.md`. Auditorias iniciais 03 (PACS/Viewer), 04 (QA/Segurança) e 05
