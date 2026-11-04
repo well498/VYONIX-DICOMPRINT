@@ -32,8 +32,10 @@ def exam_center(s: Session, *, date_from: date, date_to: date, modality: str | N
                 late_only: bool = False, limit: int = 500, now: datetime | None = None) -> dict[str, Any]:
     from vyonix.pacs.models import PacsInstance, PacsStudy
     from vyonix.report.models import Report
-    from vyonix.report.queue import SLA_HOURS
+    from vyonix.report.queue import open_by_study, sla_hours
     from vyonix.ris.service import completeness
+    SLA_HOURS = sla_hours(s)
+    due_by_study = {k: datetime.fromisoformat(v["due_at"]) for k, v in open_by_study(s).items()}
     now = now or utcnow()
     start = datetime.combine(date_from, time.min, tzinfo=BRT)
     end = datetime.combine(date_to, time.max, tzinfo=BRT)
@@ -86,7 +88,8 @@ def exam_center(s: Session, *, date_from: date, date_to: date, modality: str | N
         if stg in ("scheduled", "arrived", "in_progress") and now > sc.scheduled_at + timedelta(
                 minutes=sc.duration_min) + GRACE:
             flags.append("late_acquisition")
-        if stg in ("images", "reporting") and now > st.created_at + timedelta(hours=SLA_HOURS.get(o.priority, 48)):
+        due = due_by_study.get(st.id) if st is not None else None    # prazo já calculado não muda com a configuração
+        if stg in ("images", "reporting") and now > (due or st.created_at + timedelta(hours=SLA_HOURS.get(o.priority, 48))):
             flags.append("late_report")
         img = completeness(s, sc) if sc is not None else None
         if img and img["received"] < img["expected"]:

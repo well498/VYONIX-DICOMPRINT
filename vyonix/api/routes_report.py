@@ -902,6 +902,36 @@ def assignable(c: Ctx = Depends(needs("report.assign"))):
         return {"items": [{"id": p["id"], "name": p["identification"]} for p in phys.listing(s) if p["active"]]}
 
 
+# ------------------------------------------------------------------ prazos por prioridade (configuração da instituição)
+class SlaIn(BaseModel):
+    routine: int = Field(ge=1, le=720)
+    urgent: int = Field(ge=1, le=720)
+    stat: int = Field(ge=1, le=720)
+    reason: str = Field(min_length=3, max_length=300)
+    apply_to_open: bool = False       # regra explícita: recalcular os prazos já em andamento
+
+
+@router.get("/sla")
+def sla_get(c: Ctx = Depends(ctx_any)):
+    from vyonix.report import queue
+    with c.session() as s:
+        return {"hours": queue.sla_hours(s), "labels": {"routine": "Rotina", "urgent": "Prioritário", "stat": "Urgente"},
+                "can_manage": c.p.has("report.sla.manage")}
+
+
+@router.put("/sla")
+def sla_put(body: SlaIn, c: Ctx = Depends(needs("report.sla.manage"))):
+    """Novos prazos valem para atribuições e mudanças de prioridade a partir de agora. Exames em andamento só mudam
+    com ``apply_to_open`` (explícito, com justificativa, auditado)."""
+    from vyonix.report import queue
+    from vyonix.settings import service as settings
+    with c.session() as s:
+        settings.put(s, "report", "sla", {"routine": body.routine, "urgent": body.urgent, "stat": body.stat},
+                     reason=body.reason, **c.actor)
+        n = queue.reapply_sla(s, reason=body.reason, **c.actor) if body.apply_to_open else 0
+        return {"hours": queue.sla_hours(s), "reapplied": n}
+
+
 # ------------------------------------------------------------------ saídas padronizadas opcionais (T8)
 def _pdf_bytes(c: Ctx, s, rid: uuid.UUID) -> bytes:
     data, _ = rep.pdf(s, rid, signature_key=_sig_key(c), **c.actor)

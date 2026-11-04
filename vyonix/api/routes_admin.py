@@ -256,6 +256,11 @@ def setting_get(module: str, key: str, site_id: uuid.UUID | None = None,
 
 @router.put("/settings/{module}/{key}")
 def setting_put(module: str, key: str, body: SettingIn, c: Ctx = Depends(needs("core.settings.manage"))):
+    spec = MANIFESTS[module].setting(key) if module in MANIFESTS else None
+    if spec is not None and spec.permission and not c.p.has(spec.permission):
+        from vyonix.errors import Forbidden
+        raise Forbidden("Esta configuração exige permissão específica.", code="forbidden",
+                        details={"permission": spec.permission})
     with c.session() as s:
         settings.put(s, module, key, body.value, reason=body.reason, site_id=body.site_id,
                      expected_version=body.row_version, **c.actor)

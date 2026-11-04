@@ -1,174 +1,206 @@
 {
-  "atualizado": "2026-10-29 22:45",
-  "commit": "ad7434d (P0) · c725108 (segurança)",
-  "requisitos": [
-    {
-      "req": "Desinstalador não encerra a si mesmo nem a cópia temporária",
-      "mudou": "Exclui unins* do fechamento de processos; a cópia temporária (_iu*.tmp) fica em %TEMP%, fora da pasta do programa",
-      "local": "Aprovado",
-      "ci": "Aprovado",
-      "prop": "Pendente",
-      "evid": "CI 2.12 run 40979557950: status final 'concluida' gravado e conferido após o término; reinstalar e atualizar com assistente aberto aprovados",
-      "data": "2026-10-30"
-    },
-    {
-      "req": "Remove somente serviços do VYONIX",
-      "mudou": "Instalador e DEPLOY só tocam um serviço se o programa dele está em Program Files\\VYONIX\\Platform; serviço alheio com o mesmo nome nunca é alterado; DICOM Print nunca está na lista",
-      "local": "Aprovado",
-      "ci": "Não executado",
-      "prop": "Pendente",
-      "evid": "tests_deploy/test_uninstall.py::Ownership (3 testes); CI 2.13 serviço alheio (a executar)",
-      "data": ""
-    },
-    {
-      "req": "Sem órfãos; erro quando a remoção não conclui",
-      "mudou": "Verificação final do estado real (serviços, processos, pasta) em C:\\ProgramData\\VYONIX\\Logs\\desinstalacao.json (concluída / reiniciar / incompleta); 'incompleta' registra ERRO e mostra mensagem",
-      "local": "Aprovado",
-      "ci": "Não executado",
-      "prop": "Pendente",
-      "evid": "test_inno_uninstaller_checks_ownership_and_final_state; CI 2.12 e homologação 15 (a executar); run 40979557950: status 'concluida' conferido; checagem do texto do log reprovou por codificação (teste corrigido)",
-      "data": ""
-    },
-    {
-      "req": "Testes sem condição de corrida",
-      "mudou": "Aguardam o fim do desinstalador e da cópia temporária e o arquivo de status; exigem 'concluída'",
-      "local": "Não executado",
-      "ci": "Não executado",
-      "prop": "Pendente",
-      "evid": "tools/ci_deploy_acceptance.py e ci_homolog_acceptance.py: wait_uninstall_finished (só roda no Windows)",
-      "data": ""
-    },
-    {
-      "req": "Integridade além da contagem de registros",
-      "mudou": "Cópia restaurada comparada por resumo MD5 do conteúdo de cada tabela, sequências e estrutura; amcheck nos índices da cópia; arquivos DICOM e configurações inventariados antes e depois",
-      "local": "Aprovado",
-      "ci": "Não executado",
-      "prop": "Pendente",
-      "evid": "test_recovery_backs_up_and_records_state_before_removing; SQL testado no PostgreSQL local (original = cópia; alteração detectada; amcheck)",
-      "data": "2026-10-29"
-    },
-    {
-      "req": "Bancos preexistentes protegidos",
-      "mudou": "Reversão de instalação com falha só remove banco/cluster comprovadamente criado na mesma execução; estado desconhecido nunca é removido",
-      "local": "Aprovado",
-      "ci": "Aprovado",
-      "prop": "Pendente",
-      "evid": "tests_deploy/test_faults.py (RollbackNeverDropsExistingDatabase, ClusterRollback); CI 2.13 falha na migração (a executar); CI 2.13 falha simulada na migração: rolled_back, banco preservado, restauração e nova atualização aprovadas (run 40979557950)",
-      "data": "2026-10-30"
-    },
-    {
-      "req": "Atualização sobre bc9cf28",
-      "mudou": "Homologação confere também migrações aplicadas, serviços e 'Verificar funcionamento'",
-      "local": "Não executado",
-      "ci": "Aprovado",
-      "prop": "Pendente",
-      "evid": "Homologação 0a–15 aprovada em ad7434d (run 40979622943)",
-      "data": "2026-10-29"
-    },
-    {
-      "req": "DICOM Print (testes que dependem de impressora/equipamento)",
-      "mudou": "Registrados à parte como 'não executado', sem contar como falha do instalador do Medical Platform",
-      "local": "Não executado",
-      "ci": "Não executado",
-      "prop": "Pendente",
-      "evid": "CI 2.8 'Impressão de teste no DICOM Print': não executado (exige equipamento autorizado e impressora)",
-      "data": ""
-    },
-    {
-      "req": "Banco volta sozinho após queda forçada (2.10)",
-      "mudou": "Coletor de log do PostgreSQL desligado (registros no Log de Eventos); antes de iniciar o serviço parado, o DEPLOY encerra postgres.exe órfãos só da pasta do VYONIX; atualização reaplica a configuração",
-      "local": "Aprovado",
-      "ci": "Aprovado",
-      "prop": "Pendente",
-      "evid": "tests_deploy/test_faults.py::PostgresOrphans; causa no CI 40951093428 (syslogger com pai encerrado); CI 2.10 aprovado no run 40979557950 (ad7434d)",
-      "data": "2026-10-30"
-    }
-  ],
-  "execucoes": [
-    {
-      "run": "40944999029",
-      "versao": "comercial",
-      "commit": "78ce54b",
-      "situacao": "Reprovado",
-      "obs": "34 aprovados, 6 reprovados, 1 não executado; os 6 vêm do desinstalador encerrar o próprio unins000.exe (corrigido em 4bb8b0f)",
-      "evid": "https://github.com/well498/VYONIX-DICOMPRINT/actions/runs/40944999029",
-      "data": "2026-10-29"
-    },
-    {
-      "run": "40945047712",
-      "versao": "homologação",
-      "commit": "28d25ce",
-      "situacao": "Reprovado",
-      "obs": "Passos 0a–9 aprovados (inclui atualização sobre bc9cf28); 10–14 sem resultado visível (limite de avisos do GitHub); 15 reprovado (mesma causa)",
-      "evid": "https://github.com/well498/VYONIX-DICOMPRINT/actions/runs/40945047712",
-      "data": "2026-10-29"
-    },
-    {
-      "run": "40951093428",
-      "versao": "comercial",
-      "commit": "b22bcc4",
-      "situacao": "Reprovado",
-      "obs": "17 aprovados, 30 reprovados, 1 não executado (DICOM Print: impressora). Causa: no teste de queda do banco (2.10) o processo 'syslogger' do PostgreSQL sobreviveu e impediu o serviço de subir; os demais critérios caíram em cascata. Corrigido em ad7434d (coletor de log desligado + encerramento de órfãos).",
-      "evid": "https://github.com/well498/VYONIX-DICOMPRINT/actions/runs/40951093428",
-      "data": "2026-10-29"
-    },
-    {
-      "run": "40951161126",
-      "versao": "homologação",
-      "commit": "b22bcc4",
-      "situacao": "Aprovado",
-      "obs": "Homologação: passos 0a–15 aprovados — instalação de bc9cf28, atualização por cima com o paciente preservado, módulos, usuários, exame simulado, Central de Exames, Viewer/DICOMweb, laudo e PDF, reparo, desinstalar com o assistente aberto e reinstalar com dados preservados. Instalador SHA-256 ED20ED4A…1953",
-      "evid": "https://github.com/well498/VYONIX-DICOMPRINT/actions/runs/40951161126",
-      "data": "2026-10-29"
-    },
-    {
-      "run": "40979557950",
-      "versao": "comercial",
-      "commit": "ad7434d",
-      "situacao": "Reprovado",
-      "obs": "41 aprovados, 6 reprovados, 1 não executado (DICOM Print: impressora — registrado à parte). APROVADOS: 2.10 banco derrubado volta sozinho (correção do syslogger confirmada); reinstalar, atualizar por cima com assistente aberto, reparo; 2.13 diagnóstico só leitura, cancelamento, falha simulada na migração com restauração. REPROVADOS: ferramenta de recuperação (Get-FileHash indisponível com PSModulePath do PowerShell 7 → corrigido com SHA-256 .NET) e 3 em cascata; teste do registro da desinstalação lia o log ANSI como UTF-8 (teste); verificar na porta errada após 2.7 (teste).",
-      "evid": "https://github.com/well498/VYONIX-DICOMPRINT/actions/runs/40979557950",
-      "data": "2026-10-30"
-    },
-    {
-      "run": "40979622943",
-      "versao": "homologação",
-      "commit": "ad7434d",
-      "situacao": "Aprovado",
-      "obs": "Homologação 0a–15 aprovada em ad7434d (inclui verificação de migrações/serviços após atualizar sobre bc9cf28 e espera do fim real da desinstalação).",
-      "evid": "https://github.com/well498/VYONIX-DICOMPRINT/actions/runs/40979622943",
-      "data": "2026-10-29"
-    },
-    {
-      "run": "(a disparar)",
-      "versao": "comercial + homologação",
-      "commit": "próximo",
-      "situacao": "Pendente",
-      "obs": "Correções da ferramenta de recuperação e dos testes; segurança c725108; botão da assinatura 76c6754",
-      "evid": "",
-      "data": ""
-    }
-  ],
-  "passos": [
-    {
-      "passo": "Relatar cada critério das execuções em ad7434d",
-      "condicao": "Término de 40979557950 e 40979622943",
-      "feito": "Não"
-    },
-    {
-      "passo": "Executar a CI Linux (platform) com as correções de segurança c725108",
-      "condicao": "Sem cancelar os runs Windows em andamento",
-      "feito": "Não"
-    },
-    {
-      "passo": "Entregar instalador de homologação e kit (versão, commit, limitações)",
-      "condicao": "2.10, 2.12, 2.13 e homologação aprovados no mesmo commit",
-      "feito": "Não"
-    },
-    {
-      "passo": "Validação prática no computador do proprietário (checklist dos 5 pontos)",
-      "condicao": "Kit entregue; P0 só encerra após esta validação",
-      "feito": "Não"
-    }
-  ]
+ "atualizado": "2026-11-04 03:40",
+ "commit": "a58edb6 (P0, aprovado na CI) · 7f6358e+ (regra técnico/laudo, CI pendente)",
+ "requisitos": [
+  {
+   "req": "Desinstalador não encerra a si mesmo nem a cópia temporária",
+   "mudou": "Exclui unins* do fechamento de processos; a cópia temporária (_iu*.tmp) fica em %TEMP%, fora da pasta do programa",
+   "local": "Aprovado",
+   "ci": "Aprovado",
+   "prop": "Pendente",
+   "evid": "CI 2.12 run 40979557950: status final 'concluida' gravado e conferido após o término; reinstalar e atualizar com assistente aberto aprovados",
+   "data": "2026-10-30"
+  },
+  {
+   "req": "Remove somente serviços do VYONIX",
+   "mudou": "Instalador e DEPLOY só tocam um serviço se o programa dele está em Program Files\\VYONIX\\Platform; serviço alheio com o mesmo nome nunca é alterado; DICOM Print nunca está na lista",
+   "local": "Aprovado",
+   "ci": "Aprovado",
+   "prop": "Pendente",
+   "evid": "CI comercial run 41778888356 (a58edb6): 47 aprovados, 0 reprovados, 1 não executado (2.8 impressora); 2.12/2.13: serviço alheio VyonixPacsEngine preservado; só serviços com executável na pasta do VYONIX removidos",
+   "data": "2026-11-04"
+  },
+  {
+   "req": "Sem órfãos; erro quando a remoção não conclui",
+   "mudou": "Verificação final do estado real (serviços, processos, pasta) em C:\\ProgramData\\VYONIX\\Logs\\desinstalacao.json (concluída / reiniciar / incompleta); 'incompleta' registra ERRO e mostra mensagem",
+   "local": "Aprovado",
+   "ci": "Aprovado",
+   "prop": "Pendente",
+   "evid": "CI comercial run 41778888356 (a58edb6): 47 aprovados, 0 reprovados, 1 não executado (2.8 impressora); 2.12: estado final conferido após o término (desinstalacao.json); 2.13 parcial com código 5",
+   "data": "2026-11-04"
+  },
+  {
+   "req": "Testes sem condição de corrida",
+   "mudou": "Aguardam o fim do desinstalador e da cópia temporária e o arquivo de status; exigem 'concluída'",
+   "local": "Não executado",
+   "ci": "Aprovado",
+   "prop": "Pendente",
+   "evid": "CI comercial run 41778888356 (a58edb6): 47 aprovados, 0 reprovados, 1 não executado (2.8 impressora); 2.12 e homologação: espera o término real do desinstalador antes de conferir",
+   "data": "2026-11-04"
+  },
+  {
+   "req": "Integridade além da contagem de registros",
+   "mudou": "Cópia restaurada comparada por resumo MD5 do conteúdo de cada tabela, sequências e estrutura; amcheck nos índices da cópia; arquivos DICOM e configurações inventariados antes e depois",
+   "local": "Aprovado",
+   "ci": "Aprovado",
+   "prop": "Pendente",
+   "evid": "CI comercial run 41778888356 (a58edb6): 47 aprovados, 0 reprovados, 1 não executado (2.8 impressora); 2.13: cópia restaurada comparada por tabela (contagem + MD5 do conteúdo), sequências, objetos e amcheck",
+   "data": "2026-11-04"
+  },
+  {
+   "req": "Bancos preexistentes protegidos",
+   "mudou": "Reversão de instalação com falha só remove banco/cluster comprovadamente criado na mesma execução; estado desconhecido nunca é removido",
+   "local": "Aprovado",
+   "ci": "Aprovado",
+   "prop": "Pendente",
+   "evid": "tests_deploy/test_faults.py (RollbackNeverDropsExistingDatabase, ClusterRollback); CI 2.13 falha na migração (a executar); CI 2.13 falha simulada na migração: rolled_back, banco preservado, restauração e nova atualização aprovadas (run 40979557950)",
+   "data": "2026-10-30"
+  },
+  {
+   "req": "Atualização sobre bc9cf28",
+   "mudou": "Homologação confere também migrações aplicadas, serviços e 'Verificar funcionamento'",
+   "local": "Não executado",
+   "ci": "Aprovado",
+   "prop": "Pendente",
+   "evid": "Homologação 0a–15 aprovada em ad7434d (run 40979622943)",
+   "data": "2026-10-29"
+  },
+  {
+   "req": "DICOM Print (testes que dependem de impressora/equipamento)",
+   "mudou": "Registrados à parte como 'não executado', sem contar como falha do instalador do Medical Platform",
+   "local": "Não executado",
+   "ci": "Não executado",
+   "prop": "Pendente",
+   "evid": "CI 2.8 'Impressão de teste no DICOM Print': não executado (exige equipamento autorizado e impressora)",
+   "data": ""
+  },
+  {
+   "req": "Banco volta sozinho após queda forçada (2.10)",
+   "mudou": "Coletor de log do PostgreSQL desligado (registros no Log de Eventos); antes de iniciar o serviço parado, o DEPLOY encerra postgres.exe órfãos só da pasta do VYONIX; atualização reaplica a configuração",
+   "local": "Aprovado",
+   "ci": "Aprovado",
+   "prop": "Pendente",
+   "evid": "tests_deploy/test_faults.py::PostgresOrphans; causa no CI 40951093428 (syslogger com pai encerrado); CI 2.10 aprovado no run 40979557950 (ad7434d)",
+   "data": "2026-10-30"
+  }
+ ],
+ "execucoes": [
+  {
+   "run": "40985609484",
+   "versao": "homologação",
+   "commit": "315c708",
+   "situacao": "Aprovado",
+   "obs": "0a–15 aprovados",
+   "evid": "https://github.com/well498/VYONIX-DICOMPRINT/actions/runs/40985609484",
+   "data": "2026-10-30"
+  },
+  {
+   "run": "40985546865",
+   "versao": "comercial",
+   "commit": "315c708",
+   "situacao": "Reprovado",
+   "obs": "46 aprovados, 1 reprovado (2.13 reversão: verificar consultava a porta 8444 depois que o teste 2.7 mudou a porta), 1 não executado; corrigido em a58edb6",
+   "evid": "https://github.com/well498/VYONIX-DICOMPRINT/actions/runs/40985546865",
+   "data": "2026-10-30"
+  },
+  {
+   "run": "40944999029",
+   "versao": "comercial",
+   "commit": "78ce54b",
+   "situacao": "Reprovado",
+   "obs": "34 aprovados, 6 reprovados, 1 não executado; os 6 vêm do desinstalador encerrar o próprio unins000.exe (corrigido em 4bb8b0f)",
+   "evid": "https://github.com/well498/VYONIX-DICOMPRINT/actions/runs/40944999029",
+   "data": "2026-10-29"
+  },
+  {
+   "run": "40945047712",
+   "versao": "homologação",
+   "commit": "28d25ce",
+   "situacao": "Reprovado",
+   "obs": "Passos 0a–9 aprovados (inclui atualização sobre bc9cf28); 10–14 sem resultado visível (limite de avisos do GitHub); 15 reprovado (mesma causa)",
+   "evid": "https://github.com/well498/VYONIX-DICOMPRINT/actions/runs/40945047712",
+   "data": "2026-10-29"
+  },
+  {
+   "run": "40951093428",
+   "versao": "comercial",
+   "commit": "b22bcc4",
+   "situacao": "Reprovado",
+   "obs": "17 aprovados, 30 reprovados, 1 não executado (DICOM Print: impressora). Causa: no teste de queda do banco (2.10) o processo 'syslogger' do PostgreSQL sobreviveu e impediu o serviço de subir; os demais critérios caíram em cascata. Corrigido em ad7434d (coletor de log desligado + encerramento de órfãos).",
+   "evid": "https://github.com/well498/VYONIX-DICOMPRINT/actions/runs/40951093428",
+   "data": "2026-10-29"
+  },
+  {
+   "run": "40951161126",
+   "versao": "homologação",
+   "commit": "b22bcc4",
+   "situacao": "Aprovado",
+   "obs": "Homologação: passos 0a–15 aprovados — instalação de bc9cf28, atualização por cima com o paciente preservado, módulos, usuários, exame simulado, Central de Exames, Viewer/DICOMweb, laudo e PDF, reparo, desinstalar com o assistente aberto e reinstalar com dados preservados. Instalador SHA-256 ED20ED4A…1953",
+   "evid": "https://github.com/well498/VYONIX-DICOMPRINT/actions/runs/40951161126",
+   "data": "2026-10-29"
+  },
+  {
+   "run": "40979557950",
+   "versao": "comercial",
+   "commit": "ad7434d",
+   "situacao": "Reprovado",
+   "obs": "41 aprovados, 6 reprovados, 1 não executado (DICOM Print: impressora — registrado à parte). APROVADOS: 2.10 banco derrubado volta sozinho (correção do syslogger confirmada); reinstalar, atualizar por cima com assistente aberto, reparo; 2.13 diagnóstico só leitura, cancelamento, falha simulada na migração com restauração. REPROVADOS: ferramenta de recuperação (Get-FileHash indisponível com PSModulePath do PowerShell 7 → corrigido com SHA-256 .NET) e 3 em cascata; teste do registro da desinstalação lia o log ANSI como UTF-8 (teste); verificar na porta errada após 2.7 (teste).",
+   "evid": "https://github.com/well498/VYONIX-DICOMPRINT/actions/runs/40979557950",
+   "data": "2026-10-30"
+  },
+  {
+   "run": "40979622943",
+   "versao": "homologação",
+   "commit": "ad7434d",
+   "situacao": "Aprovado",
+   "obs": "Homologação 0a–15 aprovada em ad7434d (inclui verificação de migrações/serviços após atualizar sobre bc9cf28 e espera do fim real da desinstalação).",
+   "evid": "https://github.com/well498/VYONIX-DICOMPRINT/actions/runs/40979622943",
+   "data": "2026-10-29"
+  },
+  {
+   "run": "41778888356",
+   "versao": "comercial",
+   "commit": "a58edb6",
+   "situacao": "Aprovado",
+   "obs": "47 aprovados, 0 reprovados, 1 não executado (2.8 impressão: exige impressora). Inclui 2.10, 2.12 e 2.13 (reversão corrigida: verificar usa a porta gravada)",
+   "evid": "https://github.com/well498/VYONIX-DICOMPRINT/actions/runs/41778888356",
+   "data": "2026-11-04"
+  },
+  {
+   "run": "41778895463",
+   "versao": "homologação",
+   "commit": "a58edb6",
+   "situacao": "Aprovado",
+   "obs": "Instalação por cima de bc9cf28 com paciente fictício preservado; 0a–15 aprovados. Instalador SHA-256 E857440AF91A2EB76D0B9A1841D60291167F8036D516E3ACB85F34772641EE93",
+   "evid": "https://github.com/well498/VYONIX-DICOMPRINT/actions/runs/41778895463",
+   "data": "2026-11-04"
+  }
+ ],
+ "passos": [
+  {
+   "passo": "Relatar cada critério das execuções em ad7434d",
+   "condicao": "Término de 40979557950 e 40979622943",
+   "feito": "Sim (2026-11-04)"
+  },
+  {
+   "passo": "Executar a CI Linux (platform) com as correções de segurança c725108",
+   "condicao": "Sem cancelar os runs Windows em andamento",
+   "feito": "Sim: platform run 41778888379 aprovado (a58edb6)"
+  },
+  {
+   "passo": "Entregar instalador de homologação e kit (versão, commit, limitações)",
+   "condicao": "2.10, 2.12, 2.13 e homologação aprovados no mesmo commit",
+   "feito": "Sim (2026-11-04): referência do instalador + kit com VERSAO.txt"
+  },
+  {
+   "passo": "Validação prática no computador do proprietário (checklist dos 5 pontos)",
+   "condicao": "Kit entregue; P0 só encerra após esta validação",
+   "feito": "Não"
+  },
+  {
+   "passo": "CI das alterações 7f6358e+ (regra técnico/laudo, prazos)",
+   "condicao": "Após o término do comercial a58edb6 (concluído)",
+   "feito": "Em andamento"
+  }
+ ]
 }

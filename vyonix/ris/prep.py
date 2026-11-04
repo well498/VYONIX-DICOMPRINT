@@ -358,9 +358,9 @@ def set_priority(s: Session, study_id: uuid.UUID, priority: str, *, reason: str 
     p.priority = priority
     hit = _assignment(s, study_id)
     if hit is not None:                                            # prazo do médico acompanha a nova prioridade
-        from vyonix.report.queue import SLA_HOURS
+        from vyonix.report.queue import sla_hours
         a = hit[0]
-        a.priority, a.due_at = priority, min(a.due_at, utcnow() + timedelta(hours=SLA_HOURS[priority]))
+        a.priority, a.due_at = priority, min(a.due_at, utcnow() + timedelta(hours=sla_hours(s)[priority]))
     for f in s.execute(select(ExamFlag).where(ExamFlag.study_id == study_id, ExamFlag.code == "priority_request",
                                               ExamFlag.status == "open")).scalars():
         f.status, f.resolved_by, f.resolved_at = "resolved", actor[:120], utcnow()
@@ -407,8 +407,11 @@ def forward(s: Session, study_id: uuid.UUID, *, actor: str, actor_id=None, ip=No
     s.flush()
     audit.record(s, actor=actor, actor_id=actor_id, ip=ip, action="ris.prep.forward", target_type="study",
                  target_id=study_id)
-    from vyonix.report import distribution
-    assigned = distribution.auto_assign(s, st, priority=priority_of(s, st, p), actor=actor, actor_id=actor_id, ip=ip)
+    from vyonix.report import distribution, lock
+    assigned = lock.restore_responsible(s, st, priority=priority_of(s, st, p), actor=actor, actor_id=actor_id, ip=ip)
+    if assigned is None:
+        assigned = distribution.auto_assign(s, st, priority=priority_of(s, st, p), actor=actor, actor_id=actor_id,
+                                            ip=ip)
     return {"status": stage(s, st, p), "assigned_to": assigned}
 
 

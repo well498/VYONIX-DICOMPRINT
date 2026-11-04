@@ -47,7 +47,23 @@ Abrir imagens, consultar a ficha, a linha do tempo ou os anteriores **não** ini
 4. O papel do aplicativo não consegue apagar nem alterar o registro de início.
 5. Alteração simultânea ao início do laudo espera e é recusada.
 
-## Pontos para o proprietário confirmar
+## Decisões confirmadas pelo proprietário (04/11/2026 03:21)
+- Primeira atribuição manual: exclusiva do Técnico em Radiologia. Distribuição automática continua (regras da
+  instituição).
+- O médico assume exame **sem atribuição**, com autorização na unidade e **sem laudo iniciado**; não assume exame
+  atribuído a outro (409 `already_assigned`). Implementado de forma estrita: exame com laudo iniciado não pode ser
+  assumido por ninguém. Se um exame com laudo iniciado for devolvido para correção e reencaminhado, o sistema
+  devolve a atribuição ao **mesmo** médico que iniciou (auditado), sem troca de responsável.
+- Atribuições e reservas auditadas (`report.assign`, `report.reservation`); atribuições simultâneas serializadas
+  por exame + índice único de atribuição aberta (teste de corrida).
+- Prazos iniciais: Rotina 48 h, Prioritário 4 h, Urgente 1 h. **Configuráveis por instituição** com a permissão
+  específica `report.sla.manage` (rota `PUT /report/sla`, justificativa obrigatória; a rota genérica de
+  configurações também exige essa permissão). Validação: Urgente ≤ Prioritário ≤ Rotina.
+- Sem efeito retroativo: prazos já calculados não mudam; só com a regra explícita `apply_to_open` (justificativa,
+  auditoria `report.sla.reapplied` com cada prazo anterior e novo). O painel de atraso usa o prazo gravado.
+- Testes: `tests_platform/test_report_sla_distribution.py` (3). Total local: 269 testes OK (3 skipped).
+
+## Pontos anteriores (resolvidos)
 - **Atribuição inicial manual**: tratada como "trocar médico" (só técnico). A distribuição automática do sistema e a
   reserva pelo próprio médico de exame livre continuam. Confirmar.
 - **Médico que desiste** de um exame depois de iniciar o laudo: bloqueado (seria troca de responsável).

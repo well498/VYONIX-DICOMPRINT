@@ -70,6 +70,31 @@ def ensure_unlocked(s: Session, study_id: uuid.UUID, *, action: str) -> None:
         raise Conflict(MESSAGE, code=CODE, details={"action": action, **info})
 
 
+def restore_responsible(s: Session, st, *, priority: str, actor: str, actor_id=None, ip=None) -> str | None:
+    """Exame devolvido para correção e reencaminhado depois do início do laudo: volta ao MESMO médico que iniciou
+    (o responsável não muda). Sem início, devolve ``None`` e a distribuição normal segue."""
+    from datetime import timedelta
+    from vyonix.audit import service as audit
+    from vyonix.report import queue
+    from vyonix.report.models import Assignment, ReportStart
+    serialize(s, st.id)
+    rs = s.execute(select(ReportStart).where(ReportStart.study_id == st.id)).scalar_one_or_none()
+    if rs is None or rs.physician_id is None:
+        return None
+    if s.execute(select(Assignment.id).where(Assignment.study_id == st.id, Assignment.status == "open")).first():
+        return rs.physician_name
+    a = Assignment(study_id=st.id, physician_id=rs.physician_id, priority=priority, status="open", kind="assigned",
+                   due_at=utcnow() + timedelta(hours=queue.sla_hours(s)[priority]),
+                   assigned_by="sistema: laudo já iniciado")
+    s.add(a)
+    s.flush()
+    audit.record(s, actor=actor, actor_id=actor_id, ip=ip, action="report.assign", target_type="study",
+                 target_id=st.id, details={"physician_id": str(rs.physician_id), "physician": rs.physician_name,
+                                           "previous": None, "priority": priority, "due_at": a.due_at.isoformat(),
+                                           "reason": "reencaminhado após correção: mantém o médico que iniciou o laudo"})
+    return rs.physician_name
+
+
 def mark_started(s: Session, study_id: uuid.UUID, report_id: uuid.UUID | None, *, actor: str, actor_id=None,
                  ip=None) -> None:
     """Grava o início (idempotente). Deve rodar na mesma transação que cria o rascunho."""

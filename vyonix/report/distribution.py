@@ -112,12 +112,6 @@ def claim(s: Session, study_id: uuid.UUID, user_id: uuid.UUID, *, actor: str, ip
     p = physicians.authorized(s, user_id, site_id=st.site_id, on=queue._today())
     from vyonix.report import lock
     lock.serialize(s, study_id)
-    info = lock.started(s, study_id)
-    if info is not None:
-        from vyonix.report.models import ReportStart
-        own = s.execute(select(ReportStart.physician_id).where(ReportStart.study_id == study_id)).scalar()
-        if own != p.id:
-            raise Conflict(lock.MESSAGE, code=lock.CODE, details={"action": "trocar_medico", **info})
     release_expired(s)
     cur = s.execute(select(Assignment).where(Assignment.study_id == study_id, Assignment.status == "open")
                     ).scalar_one_or_none()
@@ -125,13 +119,16 @@ def claim(s: Session, study_id: uuid.UUID, user_id: uuid.UUID, *, actor: str, ip
         if cur.physician_id == p.id:
             return cur
         raise Conflict("Este exame já está atribuído ou reservado por outro médico.", code="already_assigned")
+    info = lock.started(s, study_id)              # só assume exame livre cujo laudo ainda não foi iniciado
+    if info is not None:
+        raise Conflict(lock.MESSAGE, code=lock.CODE, details={"action": "assumir", **info})
     minutes = _settings(s)["reservation_minutes"]
     from vyonix.ris import prep as rprep
     pr = rprep.priority_of(s, st, prep)
 
     def mk():
         a = Assignment(study_id=study_id, physician_id=p.id, priority=pr, status="open", kind="claimed",
-                       due_at=utcnow() + timedelta(hours=queue.SLA_HOURS[pr]), assigned_by=actor[:120],
+                       due_at=utcnow() + timedelta(hours=queue.sla_hours(s)[pr]), assigned_by=actor[:120],
                        reserved_until=utcnow() + timedelta(minutes=minutes))
         s.add(a)
         s.flush()

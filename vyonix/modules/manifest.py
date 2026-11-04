@@ -19,6 +19,7 @@ class SettingSpec:
     model: type[BaseModel]
     description: str
     scope: str = "tenant"          # tenant | site
+    permission: str | None = None  # permissão específica exigida para alterar (além de core.settings.manage)
 
 
 @dataclass(frozen=True)
@@ -162,6 +163,20 @@ class Distribution(_Strict):
     reservation_minutes: int = Field(60, ge=10, le=720, description="Reserva do médico expira após (minutos)")
 
 
+class ReportSla(_Strict):
+    """Prazos de laudo por prioridade (horas). Valores iniciais aprovados pelo proprietário em 04/11/2026.
+    Valem para atribuições e alterações de prioridade feitas depois da mudança; não alteram prazos já calculados."""
+    routine: int = Field(48, ge=1, le=720, description="Rotina (horas)")
+    urgent: int = Field(4, ge=1, le=720, description="Prioritário (horas)")
+    stat: int = Field(1, ge=1, le=720, description="Urgente (horas)")
+
+    @model_validator(mode="after")
+    def _ordem(self):
+        if not (self.stat <= self.urgent <= self.routine):
+            raise ValueError("Urgente ≤ Prioritário ≤ Rotina (em horas).")
+        return self
+
+
 VERSION = "0.1.0"
 
 CORE = ModuleManifest(
@@ -256,9 +271,12 @@ REPORT = ModuleManifest(
                  "report.templates.own": "Criar e usar modelos pessoais (só o próprio médico vê)",
                  "report.phrases.own": "Criar e usar frases rápidas pessoais",
                  "report.phrases.manage": "Gerenciar as frases rápidas da instituição",
-                 "report.review": "Revisar laudos de outros médicos (segunda leitura): devolver ou liberar"},
+                 "report.review": "Revisar laudos de outros médicos (segunda leitura): devolver ou liberar",
+                 "report.sla.manage": "Configurar os prazos de laudo por prioridade da instituição"},
     settings=(SettingSpec("distribution", Distribution, "Distribuição dos exames aos médicos"),
-              SettingSpec("production", Production, "Valores de referência da produção médica (opcional)")),
+              SettingSpec("production", Production, "Valores de referência da produção médica (opcional)"),
+              SettingSpec("sla", ReportSla, "Prazos de laudo por prioridade (Rotina, Prioritário, Urgente)",
+                          permission="report.sla.manage")),
     publishes=("report.finalized.v1", "report.amended.v1", "report.critical.v1"),
 )
 

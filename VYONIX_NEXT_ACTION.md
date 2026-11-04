@@ -41,7 +41,7 @@ própria página (coleção `avaliacoes`). Ler as avaliações a cada retomada e
 
 ### P0 — CI de 04/11
 - 315c708: homologação APROVADA (40985609484); comercial 46 aprovados / 1 reprovado (2.13 reversão: `verificar` olhava a porta 8444 depois que 2.7 moveu a porta) / 1 não executado (2.8 impressora).
-- Correção a58edb6: `verificar`/`abrir` usam a porta gravada em ProgramData\VYONIX\Platform\config.json. CI comercial + homologação em andamento (41778888356 / 41778895463).
+- Correção a58edb6: `verificar`/`abrir` usam a porta gravada. **a58edb6 APROVADO na CI**: homologação 41778895463, comercial 41778888356 (47/0/1), plataforma, release. Instalador de homologação (SHA-256 E857440A…EE93) e kit (VERSAO.txt) entregues em 04/11. **P0 continua ABERTO até a validação no computador do proprietário.**
 
 ### Regra definitiva — Trocar médico e prioridade (04/11 02:56 e 02:59) — `docs/requisitos/Regra_Exclusividade_Tecnico_Inicio_Laudo.md`
 - IMPLEMENTADO: exclusivo do papel `tecnico`; bloqueado para todos após o início do laudo (`report.report_starts`, migração report_0012).

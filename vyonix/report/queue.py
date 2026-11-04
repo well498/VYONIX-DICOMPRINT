@@ -21,7 +21,17 @@ from vyonix.db.base import utcnow
 from vyonix.errors import Conflict, Forbidden, NotFound, ValidationFailed
 from vyonix.report.models import Assignment, Physician, PhysicianLink
 
-SLA_HOURS = {"stat": 1, "urgent": 4, "routine": 48}
+SLA_HOURS = {"stat": 1, "urgent": 4, "routine": 48}          # valores iniciais (padrão); a instituição configura
+
+
+def sla_hours(s: Session) -> dict[str, int]:
+    """Prazos vigentes da instituição (configuração ``report.sla``; padrão 48 h / 4 h / 1 h)."""
+    from vyonix.settings import service as settings
+    try:
+        v = settings.get(s, "report", "sla")
+        return {"routine": int(v["routine"]), "urgent": int(v["urgent"]), "stat": int(v["stat"])}
+    except Exception:                                               # noqa: BLE001 - sem configuração: padrão
+        return dict(SLA_HOURS)
 BRT = timezone(timedelta(hours=-3))
 
 
@@ -80,7 +90,7 @@ def assign(s: Session, study_id: uuid.UUID, physician_id: uuid.UUID, *, priority
         old.status, old.done_at = "cancelled", utcnow()                         # reatribuição
     s.flush()
     a = Assignment(study_id=study_id, physician_id=physician_id, priority=priority, status="open",
-                   due_at=due_at or (utcnow() + timedelta(hours=SLA_HOURS[priority])), assigned_by=actor[:120])
+                   due_at=due_at or (utcnow() + timedelta(hours=sla_hours(s)[priority])), assigned_by=actor[:120])
     s.add(a)
     s.flush()
     audit.record(s, actor=actor, actor_id=actor_id, ip=ip, action="report.assign", target_type="study",
@@ -89,6 +99,26 @@ def assign(s: Session, study_id: uuid.UUID, physician_id: uuid.UUID, *, priority
                                               "due_at": a.due_at.isoformat(),
                                               "reason": (reason or "").strip()[:300] or None})
     return a
+
+
+def reapply_sla(s: Session, *, reason: str, actor: str, actor_id=None, ip=None) -> int:
+    """Regra explícita (não automática): recalcula o prazo das atribuições abertas a partir do horário em que foram
+    criadas, com os prazos vigentes. Auditado com justificativa, quantidade e prazos anteriores/novos."""
+    reason = (reason or "").strip()
+    if len(reason) < 3:
+        raise ValidationFailed("Informe a justificativa para recalcular os prazos em andamento.")
+    hours = sla_hours(s)
+    changes = []
+    for a in s.execute(select(Assignment).where(Assignment.status == "open")).scalars():
+        new = a.created_at + timedelta(hours=hours.get(a.priority, hours["routine"]))
+        if new != a.due_at:
+            changes.append({"study_id": str(a.study_id), "from": a.due_at.isoformat(), "to": new.isoformat()})
+            a.due_at = new
+    s.flush()
+    audit.record(s, actor=actor, actor_id=actor_id, ip=ip, action="report.sla.reapplied", target_type="setting",
+                 target_id="report.sla", details={"reason": reason[:300], "hours": hours, "count": len(changes),
+                                                  "changes": changes[:500]})
+    return len(changes)
 
 
 def close_for_study(s: Session, study_id: uuid.UUID) -> None:
