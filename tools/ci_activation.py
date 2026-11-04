@@ -16,15 +16,42 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 
+IGNORED = {"time.vxs", "time.tmp"}           # horário confiável: o serviço do DICOM Print regrava periodicamente
+
+
 def snapshot(d: Path) -> dict[str, str]:
+    """Arquivos (SHA-256), ACL da pasta e valores do registro do cofre do DICOM Print — só leitura.
+    Arquivo ilegível NÃO é aceito como igual: vira marca que reprova a comparação."""
     out: dict[str, str] = {}
-    if not d.exists():
-        return out
-    for p in sorted(x for x in d.rglob("*") if x.is_file()):
+    if d.exists():
+        for p in sorted(x for x in d.rglob("*") if x.is_file()):
+            rel = str(p.relative_to(d))
+            if p.name.lower() in IGNORED:
+                continue
+            try:
+                out["arquivo:" + rel] = f"{p.stat().st_size}:{hashlib.sha256(p.read_bytes()).hexdigest()}"
+            except OSError as exc:
+                out["ILEGIVEL:" + rel] = type(exc).__name__
+        if sys.platform == "win32":
+            import subprocess
+            r = subprocess.run(["icacls", str(d)], capture_output=True, text=True, errors="replace")
+            out["acl"] = hashlib.sha256(r.stdout.encode()).hexdigest() if r.returncode == 0 else f"ILEGIVEL:{r.returncode}"
+    if sys.platform == "win32":
+        import winreg
         try:
-            out[str(p.relative_to(d))] = f"{p.stat().st_size}:{hashlib.sha256(p.read_bytes()).hexdigest()}"
-        except OSError as exc:
-            out[str(p.relative_to(d))] = f"ilegível:{type(exc).__name__}"
+            k = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\VYONIX\DICOM Print\State", 0,
+                               winreg.KEY_READ | winreg.KEY_WOW64_64KEY)
+            i = 0
+            while True:
+                try:
+                    name, val, _t = winreg.EnumValue(k, i)
+                except OSError:
+                    break
+                i += 1
+                if name.lower() != "time":
+                    out["registro:" + name] = hashlib.sha256(str(val).encode()).hexdigest()
+        except FileNotFoundError:
+            out["registro"] = "ausente"
     return out
 
 
@@ -62,7 +89,9 @@ def main() -> int:
             res["planned_module_message"] = str(exc)[:300]
         after_lic = snapshot(d.paths.licensing)
         res["licensing_files"] = len(before_lic)
-        res["licensing_untouched"] = before_lic == after_lic
+        unreadable = [k for k in list(before_lic) + list(after_lic) if k.startswith("ILEGIVEL")]
+        res["licensing_unreadable"] = unreadable
+        res["licensing_untouched"] = before_lic == after_lic and not unreadable
         if not res["licensing_untouched"]:
             res["licensing_diff"] = sorted(set(before_lic.items()) ^ set(after_lic.items()))[:20]
         if code == "pacs":

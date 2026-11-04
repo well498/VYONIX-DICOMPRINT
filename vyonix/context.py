@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from vyonix.config import Config
 from vyonix.db.session import Database
 from vyonix.events.bus import Bus
-from vyonix.licensing.service import Licensing
+if TYPE_CHECKING:                                  # legado: não importa o licenciamento do DICOM Print ao iniciar
+    from vyonix.licensing.service import Licensing
 from vyonix.secrets import SecretStore
 
 

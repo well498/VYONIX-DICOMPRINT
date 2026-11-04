@@ -228,13 +228,16 @@ jobs:
 
       - name: Instalador de homologação anterior (0.2.0, a58edb6 — liberado para validação do proprietário)
         if: ${{ inputs.flavor == 'homologacao' }}
-        continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
         shell: pwsh
         run: |
           gh run download 41778895463 -R ${{ github.repository }} -n homologacao-windows -D dist\previous
-          Get-ChildItem dist\previous -Recurse -Filter *.exe | ForEach-Object { Write-Host "::notice title=Versão anterior::$($_.FullName) SHA-256 $((Get-FileHash $_ -Algorithm SHA256).Hash)" }
+          $prev = Get-ChildItem dist\previous -Recurse -Filter VYONIX_Homologacao_Setup_x64.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $prev) { throw "Instalador 0.2.0 indisponível: a atualização 0.2.0 → atual não pode ser testada (não seguir com instalação nova)." }
+          $sha = (Get-FileHash $prev.FullName -Algorithm SHA256).Hash
+          if ($sha -ne "E857440AF91A2EB76D0B9A1841D60291167F8036D516E3ACB85F34772641EE93") { throw "Instalador 0.2.0 com SHA-256 diferente do liberado: $sha" }
+          Write-Host "::notice title=Versão anterior::$($prev.FullName) SHA-256 $sha (0.2.0 liberado ao proprietário)"
 
       - name: Homologação interna — roteiro do proprietário executado no instalador
         if: ${{ inputs.flavor == 'homologacao' }}

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from vyonix_deploy.engine import Context, Step
 from vyonix_deploy.steps import core, postgres as pg
-from vyonix_deploy.steps.files import ADMINS, SYSTEM, AclGrantStep, AclStep, DirectoryStep, FilesPresentStep
+from vyonix_deploy.steps.files import ADMINS, SYSTEM, AclStep, DirectoryStep, FilesPresentStep
 from vyonix_deploy.steps.firewall import FirewallRuleStep
 from vyonix_deploy.steps.network import StaticIpStep
 from vyonix_deploy.steps.services import ServiceRunningStep, ServiceStep
@@ -35,7 +35,6 @@ def install_steps(ctx: Context) -> list[Step]:
         DirectoryStep("pgroot", p.pg_data.parent, "do PostgreSQL do VYONIX"),
         DirectoryStep("backups", p.backups, "de backups"),
         DirectoryStep("reports", p.reports, "de relatórios técnicos"),
-        DirectoryStep("licensing", p.licensing, "de licenciamento"),
         TlsCertificateStep(p.data_dir, cfg.tls_pfx),
         pg.PgClusterStep(p.pg_bin, p.pg_data),
         ServiceStep(pg.SERVICE, "VYONIX PostgreSQL", "Banco de dados do VYONIX (somente conexões locais).",
@@ -49,8 +48,8 @@ def install_steps(ctx: Context) -> list[Step]:
                                                         (vsvc(WORKER_SVC), "M")]),
         AclStep("deploy", p.deploy_dir, "DEPLOY e relatórios", [(SYSTEM, "F"), (ADMINS, "F")]),
         AclStep("backups", p.backups, "backups", [(SYSTEM, "F"), (ADMINS, "F")]),
-        AclGrantStep("licensing.core", p.licensing, "licenciamento", vsvc(CORE_SVC), "M"),
-        AclGrantStep("licensing.worker", p.licensing, "licenciamento", vsvc(WORKER_SVC), "M"),
+        # pasta de licenciamento (ProgramData\VYONIX\Licensing) pertence ao DICOM Print: a plataforma não a cria nem
+        # concede permissões desde 0.3.0 (sem licença); permissões antigas não são revogadas (não tocar no cofre)
         ServiceRunningStep(pg.SERVICE, "VYONIX PostgreSQL", probe=pg.can_connect, timeout=330),
         core.CoreDatabaseStep(),
         FirewallRuleStep("core-https", "Core HTTPS", cfg.https_port, str(p.core_exe), cfg.firewall_sources),

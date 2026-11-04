@@ -227,6 +227,9 @@ def reports_of(run_id: str) -> tuple[Path, Path]:
 
 
 def installation_id() -> str:
+    """Installation ID do DICOM Print, só leitura: sem selo existente não cria nada no cofre."""
+    if not (PATHS.licensing / "seal.key").exists():
+        return "— (cofre do DICOM Print sem selo)"
     from app.licensing.installation import InstallationManager
     from app.licensing.vault import FileBackend, RegistryBackend, Vault, machine_sealer
     v = Vault([FileBackend(PATHS.licensing), RegistryBackend()], machine_sealer(PATHS.licensing))

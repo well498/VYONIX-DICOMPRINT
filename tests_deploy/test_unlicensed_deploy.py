@@ -40,6 +40,14 @@ class UnlicensedDeploy(unittest.TestCase):
         self.assertEqual(report._installation_id(self.paths), a)          # estável
         self.assertFalse(self.paths.licensing.exists())                    # cofre do DICOM Print não tocado
 
+    def test_install_plan_does_not_create_or_grant_licensing_folder(self):
+        """A01/A04 (04/11): a pasta de licenciamento é do DICOM Print; o plano não a cria nem concede permissões."""
+        from vyonix_deploy import plans
+        src = inspect.getsource(plans)
+        self.assertNotIn('DirectoryStep("licensing"', src)
+        self.assertNotIn("AclGrantStep(\"licensing", src)
+        self.assertNotIn("p.licensing", src)
+
 
 if __name__ == "__main__":
     unittest.main()

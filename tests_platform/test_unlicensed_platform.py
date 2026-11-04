@@ -79,7 +79,27 @@ class UnlicensedPlatform(unittest.TestCase):
         self.assertEqual(c.get("/api/v1/report/worklist").status_code, 200)
         self.assertEqual(c.get("/api/v1/report/sla").status_code, 200)
         self.assertEqual(c.get("/api/v1/report/assignable-physicians").status_code, 200)
-        self.assertIn(c.post("/api/v1/report/reports", json={"study_id": sid}).status_code, (200, 201, 403))
+        r = c.post("/api/v1/report/reports", json={"study_id": sid})          # administrador: escopo de todas
+        self.assertIn(r.status_code, (200, 201), r.text)                      # as unidades; laudo aberto sem licença
+
+    def test_only_module_managers_enable_or_disable(self):
+        """A07 (04/11): sem a barreira de licença, a permissão core.modules.manage é a única porta (403 por papel)."""
+        from tests_platform.test_pacs import ADMIN_PW  # noqa: F401
+        c = self.login()
+        for role in ("recepcionista", "tecnico", "medico", "supervisor"):
+            u = f"u_{role}"
+            self.assertEqual(c.post("/api/v1/users", json={"username": u, "display_name": u, "password": PW,
+                                                           "roles": [{"role": role}]}).status_code, 201)
+        from fastapi.testclient import TestClient
+        for role in ("recepcionista", "tecnico", "medico", "supervisor"):
+            t = TestClient(self.client.app)
+            r = t.post("/api/v1/auth/login", json={"username": f"u_{role}", "password": PW})
+            t.headers["X-CSRF-Token"] = r.json()["csrf"]
+            t.post("/api/v1/auth/password", json={"current": PW, "new": NEW})
+            r = t.post("/api/v1/auth/login", json={"username": f"u_{role}", "password": NEW})
+            t.headers["X-CSRF-Token"] = r.json()["csrf"]
+            self.assertEqual(t.post("/api/v1/modules/pacs/enable").status_code, 403, role)
+            self.assertEqual(t.post("/api/v1/modules/pacs/disable", json={"reason": "x"}).status_code, 403, role)
 
     def test_background_tasks_run_without_license(self):
         from vyonix.modules import registry
@@ -95,6 +115,34 @@ class UnlicensedPlatform(unittest.TestCase):
         h = c.get("/api/v1/health/detail").json()
         self.assertNotIn("license", h["components"])
         self.assertFalse(any("licen" in p.lower() for p in h["problems"]))
+
+
+class SystemInfoExposure(unittest.TestCase):
+    """A04 (04/11): /system no modo cloud não expõe dados do servidor compartilhado; mensagens sem caminhos."""
+
+    def test_message_paths_are_masked(self):
+        from vyonix.system_info import _clean
+        m = _clean("Falha: C:\\ProgramData\\VYONIX\\Deploy\\x.log e /var/lib/vyonix/a/b.txt\nsegunda linha")
+        self.assertNotIn("ProgramData", m)
+        self.assertNotIn("/var/lib", m)
+        self.assertNotIn("segunda", m)
+
+    def test_cloud_tenant_does_not_see_server_wide_data(self):
+        from types import SimpleNamespace
+        from vyonix import system_info
+        from vyonix.tenancy.models import Organization
+        t = new_org(db, "free-cloud-sys")
+        plat = SimpleNamespace(cfg=SimpleNamespace(mode="cloud", data_dir=Path("/nao/existe")))
+        with db.session(t) as s:
+            self.assertEqual(s.query(Organization).one().kind != "operator", True)
+            self.assertFalse(system_info._server_wide_allowed(plat, s))
+            ov = system_info.overview(plat, s)                    # rota inteira: sem dados do servidor
+            self.assertFalse(ov["updates"]["available"])
+            self.assertFalse(ov["backups"]["available"])
+            self.assertNotIn("server_version", ov["database"])
+        plat.cfg.mode = "edge"
+        with db.session(t) as s:
+            self.assertTrue(system_info._server_wide_allowed(plat, s))
 
 
 if __name__ == "__main__":

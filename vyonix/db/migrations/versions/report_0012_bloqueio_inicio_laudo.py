@@ -17,6 +17,25 @@ branch_labels = None
 depends_on = None
 
 TENANT_TABLES = ("report.report_starts",)
+
+# exames que já têm laudo: o início é o próprio laudo; médico = atribuição mais recente, senão o médico do usuário
+# autor do laudo (A08, 04/11/2026). Também usado pelo teste de migração.
+BACKFILL_SQL = """
+        WITH last_a AS (
+            SELECT DISTINCT ON (a.tenant_id, a.study_id) a.tenant_id, a.study_id, a.priority, a.physician_id
+              FROM report.assignments a
+             ORDER BY a.tenant_id, a.study_id, a.created_at DESC)
+        INSERT INTO report.report_starts (id, tenant_id, study_id, report_id, started_at, started_by, physician_id,
+                                          physician_name, priority, origin, row_version)
+        SELECT gen_random_uuid(), r.tenant_id, r.study_id, r.id, r.created_at, r.author,
+               COALESCE(la.physician_id, pa.id), COALESCE(pl.full_name, pa.full_name), la.priority, 'migracao', 1
+          FROM report.reports r
+          LEFT JOIN last_a la ON la.tenant_id = r.tenant_id AND la.study_id = r.study_id
+          LEFT JOIN report.physicians pl ON pl.id = la.physician_id
+          LEFT JOIN auth.users u ON u.tenant_id = r.tenant_id AND lower(u.username) = lower(r.author)
+          LEFT JOIN report.physicians pa ON pa.tenant_id = r.tenant_id AND pa.user_id = u.id
+         WHERE NOT EXISTS (SELECT 1 FROM report.report_starts x WHERE x.study_id = r.study_id
+                                                                 AND x.tenant_id = r.tenant_id)"""
 TENANT_EXPR = "nullif(current_setting('vyonix.tenant_id', true), '')::uuid"
 
 
@@ -43,15 +62,9 @@ def upgrade(role_prefix: str = "vyonix") -> None:
     op.create_index('uq_report_report_starts_study', 'report_starts', ['tenant_id', 'study_id'], unique=True,
                     schema='report')
     # exames que já têm laudo: o início é o próprio laudo (sem perder nada; nenhum dado existente é alterado)
-    op.execute("""
-        INSERT INTO report.report_starts (id, tenant_id, study_id, report_id, started_at, started_by, priority,
-                                          origin, row_version)
-        SELECT gen_random_uuid(), r.tenant_id, r.study_id, r.id, r.created_at, r.author,
-               (SELECT a.priority FROM report.assignments a WHERE a.study_id = r.study_id
-                 ORDER BY a.created_at DESC LIMIT 1), 'migracao', 1
-          FROM report.reports r
-         WHERE NOT EXISTS (SELECT 1 FROM report.report_starts x WHERE x.study_id = r.study_id
-                                                                 AND x.tenant_id = r.tenant_id)""")
+    # médico responsável = atribuição mais recente do exame (aberta ou não); sem atribuição, médico cujo usuário é o
+    # autor do laudo (A08, 04/11: sem médico, a devolução para correção viraria pendência para todo laudo antigo)
+    op.execute(BACKFILL_SQL)
     t = TENANT_TABLES[0]
     app, service = f"{role_prefix}_app", f"{role_prefix}_service"
     op.execute(f"ALTER TABLE {t} ENABLE ROW LEVEL SECURITY")

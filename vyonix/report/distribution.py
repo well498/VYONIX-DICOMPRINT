@@ -83,18 +83,29 @@ def auto_assign(s: Session, st, *, priority: str, actor: str, actor_id=None, ip=
 
 def release_expired(s: Session) -> int:
     """Reservas vencidas sem rascunho voltam à fila (auditado)."""
+    from sqlalchemy import update
+    from vyonix.report import lock
+    from vyonix.report.models import ReportStart
     now = utcnow()
     n = 0
-    for a in s.execute(select(Assignment).where(Assignment.status == "open", Assignment.kind == "claimed",
-                                                Assignment.reserved_until < now)).scalars():
-        if s.execute(select(Report.id).where(Report.study_id == a.study_id)).first():
+    cands = s.execute(select(Assignment.id, Assignment.study_id, Assignment.physician_id)
+                      .where(Assignment.status == "open", Assignment.kind == "claimed", Assignment.reserved_until < now)
+                      .order_by(Assignment.study_id)).all()                   # ordem fixa: sem deadlock entre chamadas
+    for aid, sid, pid in cands:
+        lock.serialize(s, sid)                                          # não concorre com a abertura do laudo
+        if s.execute(select(Report.id).where(Report.study_id == sid)).first() or \
+                s.execute(select(ReportStart.id).where(ReportStart.study_id == sid)).first():
             continue                                                    # já começou o laudo: mantém
-        a.status, a.done_at = "cancelled", now
+        res = s.execute(update(Assignment).where(Assignment.id == aid, Assignment.status == "open")
+                        .values(status="cancelled", done_at=now, row_version=Assignment.row_version + 1)
+                        .execution_options(synchronize_session=False))
+        if res.rowcount != 1:                                           # outra chamada já liberou: nada a fazer
+            continue
         n += 1
         audit.record(s, actor="distribuição", action="report.reservation.expired", target_type="study",
-                     target_id=a.study_id, details={"physician_id": str(a.physician_id)})
+                     target_id=sid, details={"physician_id": str(pid)})
     if n:
-        s.flush()
+        s.expire_all()
     return n
 
 
