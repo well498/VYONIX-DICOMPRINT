@@ -1,5 +1,5 @@
 {
- "atualizado": "2026-11-04 03:40",
+ "atualizado": "2026-11-04 08:20",
  "commit": "a58edb6 (P0, aprovado na CI) · 7f6358e+ (regra técnico/laudo, CI pendente)",
  "requisitos": [
   {
@@ -174,6 +174,24 @@
    "obs": "Instalação por cima de bc9cf28 com paciente fictício preservado; 0a–15 aprovados. Instalador SHA-256 E857440AF91A2EB76D0B9A1841D60291167F8036D516E3ACB85F34772641EE93",
    "evid": "https://github.com/well498/VYONIX-DICOMPRINT/actions/runs/41778895463",
    "data": "2026-11-04"
+  },
+  {
+   "run": "41816136962",
+   "versao": "comercial",
+   "commit": "3451197 (0.3.0)",
+   "situacao": "Aprovado",
+   "obs": "47 aprovados, 0 reprovados, 1 não executado (2.8 impressão). 2.9 sem licença com pasta de licenciamento do DICOM Print intocada; 2.8 Installation ID do Print preservado; 2.12 e 2.13 aprovados",
+   "evid": "https://github.com/well498/VYONIX-DICOMPRINT/actions/runs/41816136962",
+   "data": "2026-11-04"
+  },
+  {
+   "run": "41816154805",
+   "versao": "homologação",
+   "commit": "3451197 (0.3.0)",
+   "situacao": "Aprovado",
+   "obs": "Atualização por cima do instalador 0.2.0 (a58edb6, SHA-256 conferido) com paciente fictício preservado; passos 0a–15 aprovados. Instalador 0.3.0 SHA-256 C3C7DB6939655F44C8F865E6F07F57E8B2607E75271E967661051CB6D4D7F799",
+   "evid": "https://github.com/well498/VYONIX-DICOMPRINT/actions/runs/41816154805",
+   "data": "2026-11-04"
   }
  ],
  "passos": [
@@ -200,7 +218,7 @@
   {
    "passo": "CI das alterações 7f6358e+ (regra técnico/laudo, prazos)",
    "condicao": "Após o término do comercial a58edb6 (concluído)",
-   "feito": "Em andamento"
+   "feito": "Sim: 3451197 comercial 41816136962 e homologação 41816154805 aprovados (04/11)"
   }
  ]
 }

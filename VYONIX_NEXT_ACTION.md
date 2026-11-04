@@ -52,6 +52,12 @@ própria página (coleção `avaliacoes`). Ler as avaliações a cada retomada e
 - APROVADO 04/11 03:43. L1+L2 implementados (testes locais 274 OK). Próximo: L3 (DEPLOY/instalador sem ativação; CI 2.9 reescrito; atualização sobre 0.2.0) e L4. Não altera o instalador 0.2.0.
 - DICOM Print: licenciamento intocado. Instalador 0.2.0 em validação não muda.
 
+### 0.3.0 (3451197) — CI APROVADO em 04/11 (não homologada pelo proprietário)
+- Comercial 41816136962: 47/0/1 (2.9 sem licença, pasta do DICOM Print intocada; 2.8 Installation ID do Print preservado; 2.12, 2.13 OK).
+- Homologação 41816154805: atualização por cima da 0.2.0 (SHA conferido), passos 0a–15 aprovados. Instalador 0.3.0 SHA-256 C3C7DB69…D7F799.
+- Plataforma e Windows release aprovados. Validação no computador do proprietário: pendente (0.2.0 em validação).
+- Equipe de agentes: `docs/governanca/Equipe_Agentes_IA.md` (missão 1 concluída; pendências da A07).
+
 ## Correções de segurança da auditoria (29/10, `c725108`, testes locais; CI Linux pendente)
 A05-001, A05-002, A03-001, A04-002, A04-003. Aguardando aprovação do proprietário: A04-001 (papel por unidade vale
 para a organização — escalada de privilégio; P0), A05-003, A05-014, A05-015, A03-015, A04-007, A04-009.

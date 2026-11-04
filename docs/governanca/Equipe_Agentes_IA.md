@@ -55,3 +55,8 @@ Print `tests/` OK (uma falha intermitente não identificada numa das 4 rodadas, 
 ### Execuções anteriores (29/10/2026, tipo general-purpose, sem definição de agente)
 Auditoria PACS/Viewer, Auditoria QA/Segurança, Auditoria RIS/Telelaudos, UX Fase A, UX Fase B — resultados
 consolidados em `Registro_Aperfeicoamento.md` (A03/A04/A05) e `docs/ux/Fase_A_*`, `Fase_B_*`.
+
+### Verificação em CI das correções da missão 1 (commit 3451197, versão 0.3.0)
+Comercial 41816136962 aprovado (47/0/1), incluindo o 2.9 reescrito por A06; homologação 41816154805 aprovada com
+atualização a partir da 0.2.0. Pendências registradas: e2e da tela do técnico, `Barrier` no teste de corrida e
+comparação da pasta de licenciamento no 2.13 (A07); limpeza L4 dos resíduos (A01/A04).
