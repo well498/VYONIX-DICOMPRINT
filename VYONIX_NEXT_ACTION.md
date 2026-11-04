@@ -30,6 +30,16 @@ Documentos UX: `docs/ux/` (Fase A, Fase B, matriz de oportunidades, referência 
 Página "Revisão das Telas VYONIX" publicada com 24 capturas reais por perfil e avaliação do proprietário gravada na
 própria página (coleção `avaliacoes`). Ler as avaliações a cada retomada e levar ajustes aprovados ao backlog.
 
+### Referências fotográficas (04/11) — `docs/ux/Referencias_Fotos_Lote1.md`
+- Lote 1 (20 imagens) analisado: REF-01..14; quadro 1b publicado no canvas. Decisões novas D-06..D-09.
+- Fotos com dados reais de pacientes não são versionadas nem transcritas.
+- Próximos lotes: acrescentar como Lote 2, 3… e somar recomendações.
+- Protótipos 4–9 publicados (Apresentação 2 em `docs/ux/Telas_Apresentadas.md`).
+
+### P0 — CI de 04/11
+- 315c708: homologação APROVADA (40985609484); comercial 46 aprovados / 1 reprovado (2.13 reversão: `verificar` olhava a porta 8444 depois que 2.7 moveu a porta) / 1 não executado (2.8 impressora).
+- Correção a58edb6: `verificar`/`abrir` usam a porta gravada em ProgramData\VYONIX\Platform\config.json. CI comercial + homologação em andamento (41778888356 / 41778895463).
+
 ## Correções de segurança da auditoria (29/10, `c725108`, testes locais; CI Linux pendente)
 A05-001, A05-002, A03-001, A04-002, A04-003. Aguardando aprovação do proprietário: A04-001 (papel por unidade vale
 para a organização — escalada de privilégio; P0), A05-003, A05-014, A05-015, A03-015, A04-007, A04-009.

@@ -30,3 +30,23 @@ assinatura invisível (texto vermelho sobre fundo vermelho), commit `76c6754`.
 | Tela | Avaliação do proprietário | Ajustes aprovados → backlog |
 |---|---|---|
 | (todas) | aguardando | — |
+
+## Apresentação 2 — 04/11/2026 (protótipos reformulados, prompt mestre dos três perfis)
+Canvas "Protótipos VYONIX — Técnico, Radiologista e Paciente" (https://claude.ai/artifact/5WGSnzQ4JYijgwhy3qh32q).
+Classificação de todos os quadros: **PROTÓTIPO** (dados fictícios; nada implementado; nada testado no computador do proprietário).
+| Quadro | Perfil | Tela |
+|---|---|---|
+| 1 | Técnico | Exames recebidos |
+| 1b | Técnico | Exames recebidos v2 — ideias das fotos de referência, lote 1 (`Referencias_Fotos_Lote1.md`) |
+| 2 | Técnico | Conferência técnica com Prioridade e Trocar médico |
+| 3 | Radiologista | Fila de exames (prazo restante, filtros) |
+| 4 | Radiologista | Ambiente de laudo (Fila/Imagens/Laudo, 2º monitor, rascunho automático, Salvar/Revisar/Assinar, BLK-14) |
+| 5 | Radiologista | Preferências do visualizador (Automático/Weasis/Outro/Viewer Web; conector local com confirmação) |
+| 6 | Paciente | Início ("Olá, Ana Paula!") |
+| 7 | Paciente | Meus exames (estados em linguagem simples) |
+| 8 | Paciente | Resultado: Laudo / Imagens / Detalhes; compartilhamento temporário |
+| 9 | Paciente | Celular 390×844 com navegação inferior |
+
+| Quadro | Avaliação do proprietário | Ajustes aprovados → backlog |
+|---|---|---|
+| 1–9, 1b | aguardando | — |
