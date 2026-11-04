@@ -48,6 +48,10 @@ própria página (coleção `avaliacoes`). Ler as avaliações a cada retomada e
 - Testes locais: tests_platform 266 OK (3 skipped), tests_deploy OK; 5 testes novos. CI pendente (commit com [skip ci] porque o CI comercial a58edb6 ainda roda; disparar CI depois).
 - Protótipos 1b, 2, 3, 4 e 11 a atualizar com a regra; matriz de permissões atualizada (D-01, D-02 decididos).
 
+### Plataforma sem licença (decisão 04/11 03:35) — `docs/requisitos/Plataforma_Sem_Licenca_Analise_e_Plano.md`
+- Análise e plano L1–L4 entregues; implementação AGUARDA aprovação (4 pontos). Protótipo 12/12c já sem licença.
+- DICOM Print: licenciamento intocado. Instalador 0.2.0 em validação não muda.
+
 ## Correções de segurança da auditoria (29/10, `c725108`, testes locais; CI Linux pendente)
 A05-001, A05-002, A03-001, A04-002, A04-003. Aguardando aprovação do proprietário: A04-001 (papel por unidade vale
 para a organização — escalada de privilégio; P0), A05-003, A05-014, A05-015, A03-015, A04-007, A04-009.

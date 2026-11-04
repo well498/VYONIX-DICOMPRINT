@@ -41,7 +41,9 @@ FLAGS = {"missing_images": "Imagens ausentes", "incomplete_series": "Séries inc
          "identity_mismatch": "Identificação divergente", "artifacts": "Artefatos relevantes",
          "acquisition": "Problema de aquisição", "transmission": "Problema de transmissão",
          "duplicate": "Possível estudo duplicado", "doctor_change": "Solicitação de troca de médico",
-         "priority_request": "Solicitação de mudança de prioridade", "other": "Outro"}
+         "priority_request": "Solicitação de mudança de prioridade", "other": "Outro",
+         "physician_unavailable": "Pendência administrativa: médico responsável indisponível"}
+SYSTEM_FLAGS = ("physician_unavailable",)                        # criados só pelo sistema
 REQUESTS = ("doctor_change", "priority_request")                 # pedidos: não bloqueiam o encaminhamento
 PRIORITIES = ("routine", "urgent", "stat")
 MAX_DOC = 10 * 1024 * 1024
@@ -237,7 +239,7 @@ def unread(s: Session, user_id: uuid.UUID) -> dict[uuid.UUID, int]:
 # ------------------------------------------------------------------ suspeitas técnicas e pedidos
 def add_flag(s: Session, study_id: uuid.UUID, code: str, note: str | None, *, actor: str, actor_id=None,
              ip=None) -> ExamFlag:
-    if code not in FLAGS:
+    if code not in FLAGS or code in SYSTEM_FLAGS:
         raise ValidationFailed("Tipo de sinalização desconhecido.")
     _study(s, study_id)
     if code in REQUESTS:                                # pedido de troca de médico / prioridade
@@ -261,6 +263,14 @@ def resolve_flag(s: Session, flag_id: uuid.UUID, *, actor: str, actor_id=None, i
         raise NotFound("Sinalização não encontrada.")
     if f.status != "open":
         raise Conflict("Sinalização já resolvida.")
+    if f.code in SYSTEM_FLAGS:                     # médico voltou a ficar disponível? só então resolve
+        from vyonix.report import lock
+        st = _study(s, f.study_id)
+        back = lock.restore_responsible(s, st, priority=priority_of(s, st, _prep(s, f.study_id)), actor=actor,
+                                        actor_id=actor_id, ip=ip)
+        if back is not None and back["status"] != "assigned":
+            raise Conflict("O médico que iniciou o laudo continua indisponível: " + back["problem"],
+                           code="physician_unavailable")
     f.status, f.resolved_by, f.resolved_at = "resolved", actor[:120], utcnow()
     s.flush()
     audit.record(s, actor=actor, actor_id=actor_id, ip=ip, action="ris.prep.flag_resolved", target_type="study",
@@ -408,11 +418,15 @@ def forward(s: Session, study_id: uuid.UUID, *, actor: str, actor_id=None, ip=No
     audit.record(s, actor=actor, actor_id=actor_id, ip=ip, action="ris.prep.forward", target_type="study",
                  target_id=study_id)
     from vyonix.report import distribution, lock
-    assigned = lock.restore_responsible(s, st, priority=priority_of(s, st, p), actor=actor, actor_id=actor_id, ip=ip)
-    if assigned is None:
+    back = lock.restore_responsible(s, st, priority=priority_of(s, st, p), actor=actor, actor_id=actor_id, ip=ip)
+    if back is None:                               # laudo não iniciado: distribuição normal
         assigned = distribution.auto_assign(s, st, priority=priority_of(s, st, p), actor=actor, actor_id=actor_id,
                                             ip=ip)
-    return {"status": stage(s, st, p), "assigned_to": assigned}
+        return {"status": stage(s, st, p), "assigned_to": assigned}
+    out = {"status": stage(s, st, p), "assigned_to": back["physician"] if back["status"] == "assigned" else None}
+    if back["status"] == "pending":                # médico indisponível: pendência, sem redistribuir
+        out["pending"] = back["problem"]
+    return out
 
 
 def return_for_correction(s: Session, study_id: uuid.UUID, reason: str, *, actor: str, actor_id=None,
@@ -426,14 +440,18 @@ def return_for_correction(s: Session, study_id: uuid.UUID, reason: str, *, actor
         raise Conflict("Só estudo encaminhado pode ser devolvido.")
     r = _report(s, study_id)
     if r is not None and r.status == "final":
-        raise Conflict("Laudo já liberado.")
+        raise Conflict("Laudo já liberado: use retificação ou adendo.")
     p.status, p.reason = "returned", reason[:300]
     hit = _assignment(s, study_id)
     if hit is not None:
         hit[0].status, hit[0].done_at = "cancelled", utcnow()
     s.flush()
+    from vyonix.report import lock
+    started = lock.started(s, study_id)
     audit.record(s, actor=actor, actor_id=actor_id, ip=ip, action="ris.prep.return", target_type="study",
-                 target_id=study_id, details={"reason": reason[:300]})
+                 target_id=study_id, details={"reason": reason[:300],
+                                              "physician": hit[1].full_name if hit is not None else None,
+                                              "report_started_at": started["started_at"] if started else None})
     return p
 
 

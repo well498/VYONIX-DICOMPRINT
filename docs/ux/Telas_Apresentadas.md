@@ -47,7 +47,7 @@ Classificação de todos os quadros: **PROTÓTIPO** (dados fictícios; nada impl
 | 8 | Paciente | Resultado: Laudo / Imagens / Detalhes; compartilhamento temporário |
 | 9 | Paciente | Celular 390×844 com navegação inferior |
 | 10 | Recepção | Agenda do dia com check-in no painel lateral, pendências não impeditivas na urgência |
-| 12 / 12b | Administrador da clínica | Visão geral sem dados clínicos; Prazos de laudo configuráveis (sem efeito retroativo por padrão) |
+| 12 / 12b / 12c | Administrador da clínica | Visão geral sem dados clínicos e sem licença (v2, 04/11 03:35); Prazos de laudo; Sistema e atualizações (versão, instalação, atualizações, serviços) |
 | 11 | Coordenação do CDI (opcional) | Painel operacional, urgentes por prazo, aprovações (desconsiderar, prioridade, trocar médico), distribuição |
 
 | Quadro | Avaliação do proprietário | Ajustes aprovados → backlog |

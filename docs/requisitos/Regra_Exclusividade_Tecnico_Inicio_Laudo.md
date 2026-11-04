@@ -63,6 +63,16 @@ Abrir imagens, consultar a ficha, a linha do tempo ou os anteriores **não** ini
   auditoria `report.sla.reapplied` com cada prazo anterior e novo). O painel de atraso usa o prazo gravado.
 - Testes: `tests_platform/test_report_sla_distribution.py` (3). Total local: 269 testes OK (3 skipped).
 
+## Devolução para correção com laudo iniciado (aprovado 04/11/2026 03:35) — implementado
+- Volta automaticamente ao **mesmo** médico que iniciou, se continuar ativo e com vínculo na unidade.
+- Registro de início não é apagado nem reiniciado (tabela só INSERT); médico e prioridade continuam bloqueados.
+- Auditoria: `ris.prep.return` (motivo, quem devolveu, médico, início do laudo) e `report.assign` no reencaminhamento.
+- Médico indisponível/desabilitado: pendência administrativa `physician_unavailable` (só o sistema cria), auditoria
+  `report.responsible.unavailable`, **sem redistribuição**; resolver a pendência só funciona quando o mesmo médico
+  volta a estar disponível (e então o exame volta para ele).
+- Laudo assinado não pode ser devolvido por esse fluxo (409: "use retificação ou adendo").
+- Teste: `test_return_with_unavailable_physician_opens_pending_without_redistribution`.
+
 ## Pontos anteriores (resolvidos)
 - **Atribuição inicial manual**: tratada como "trocar médico" (só técnico). A distribuição automática do sistema e a
   reserva pelo próprio médico de exame livre continuam. Confirmar.

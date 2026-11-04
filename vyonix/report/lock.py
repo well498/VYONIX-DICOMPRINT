@@ -70,29 +70,58 @@ def ensure_unlocked(s: Session, study_id: uuid.UUID, *, action: str) -> None:
         raise Conflict(MESSAGE, code=CODE, details={"action": action, **info})
 
 
-def restore_responsible(s: Session, st, *, priority: str, actor: str, actor_id=None, ip=None) -> str | None:
-    """Exame devolvido para correção e reencaminhado depois do início do laudo: volta ao MESMO médico que iniciou
-    (o responsável não muda). Sem início, devolve ``None`` e a distribuição normal segue."""
+PENDING_FLAG = "physician_unavailable"
+
+
+def restore_responsible(s: Session, st, *, priority: str, actor: str, actor_id=None, ip=None) -> dict | None:
+    """Exame com laudo já iniciado, devolvido para correção e reencaminhado: volta ao MESMO médico que iniciou.
+
+    Decisão do proprietário (04/11/2026 03:35): o médico precisa continuar ativo e com vínculo na unidade; o
+    registro de início não é apagado nem reiniciado; médico e prioridade continuam bloqueados. Se o médico estiver
+    indisponível, abre uma pendência administrativa e NÃO redistribui. Sem início de laudo devolve ``None`` (a
+    distribuição normal segue)."""
     from datetime import timedelta
     from vyonix.audit import service as audit
-    from vyonix.report import queue
-    from vyonix.report.models import Assignment, ReportStart
+    from vyonix.errors import Forbidden
+    from vyonix.report import physicians, queue
+    from vyonix.report.models import Assignment, Physician, ReportStart
     serialize(s, st.id)
     rs = s.execute(select(ReportStart).where(ReportStart.study_id == st.id)).scalar_one_or_none()
-    if rs is None or rs.physician_id is None:
+    if rs is None:
         return None
     if s.execute(select(Assignment.id).where(Assignment.study_id == st.id, Assignment.status == "open")).first():
-        return rs.physician_name
-    a = Assignment(study_id=st.id, physician_id=rs.physician_id, priority=priority, status="open", kind="assigned",
+        return {"status": "assigned", "physician": rs.physician_name}
+    phys = s.get(Physician, rs.physician_id) if rs.physician_id else None
+    problem = None
+    if phys is None:
+        problem = "médico que iniciou o laudo não identificado"
+    else:
+        try:
+            physicians.authorized(s, phys.user_id, site_id=st.site_id, on=queue._today())
+        except Forbidden as e:
+            problem = str(e)
+    if problem is not None:
+        from vyonix.ris.models import ExamFlag
+        exists = s.execute(select(ExamFlag.id).where(ExamFlag.study_id == st.id, ExamFlag.code == PENDING_FLAG,
+                                                     ExamFlag.status == "open")).first()
+        if not exists:
+            s.add(ExamFlag(study_id=st.id, code=PENDING_FLAG, status="open", created_by="sistema",
+                           note=f"{rs.physician_name or 'Médico'}: {problem}"[:500]))
+            s.flush()
+        audit.record(s, actor=actor, actor_id=actor_id, ip=ip, action="report.responsible.unavailable",
+                     target_type="study", target_id=st.id,
+                     details={"physician": rs.physician_name, "problem": problem, "redistributed": False})
+        return {"status": "pending", "physician": rs.physician_name, "problem": problem}
+    a = Assignment(study_id=st.id, physician_id=phys.id, priority=priority, status="open", kind="assigned",
                    due_at=utcnow() + timedelta(hours=queue.sla_hours(s)[priority]),
                    assigned_by="sistema: laudo já iniciado")
     s.add(a)
     s.flush()
     audit.record(s, actor=actor, actor_id=actor_id, ip=ip, action="report.assign", target_type="study",
-                 target_id=st.id, details={"physician_id": str(rs.physician_id), "physician": rs.physician_name,
+                 target_id=st.id, details={"physician_id": str(phys.id), "physician": phys.full_name,
                                            "previous": None, "priority": priority, "due_at": a.due_at.isoformat(),
-                                           "reason": "reencaminhado após correção: mantém o médico que iniciou o laudo"})
-    return rs.physician_name
+                                           "reason": "reencaminhado após correção: volta ao médico que iniciou o laudo"})
+    return {"status": "assigned", "physician": phys.full_name}
 
 
 def mark_started(s: Session, study_id: uuid.UUID, report_id: uuid.UUID | None, *, actor: str, actor_id=None,

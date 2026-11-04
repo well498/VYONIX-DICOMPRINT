@@ -90,6 +90,41 @@ class SlaAndDistribution(_prep.Prep):
         r = bruno.post(f"/api/v1/report/queue/{sid}/claim")
         self.assertEqual((r.status_code, r.json()["error"]), (409, "already_assigned"))
 
+    def test_return_with_unavailable_physician_opens_pending_without_redistribution(self):
+        from sqlalchemy import select
+        from vyonix.report.models import Assignment, Physician, ReportStart
+        sid, u = self.ready(1)
+        ana, pid_ana, _ = self.docs["ana"]
+        self.admin.put("/api/v1/settings/report/distribution", json={"value": {"mode": "balanced"}})
+        self.tec.post(u + "/physician", json={"physician_id": pid_ana, "reason": "escala"})
+        ana.post("/api/v1/report/reports", json={"study_id": sid})
+        with _prep.db.session(self.t) as s:
+            started_at = s.execute(select(ReportStart.started_at)).scalar_one()
+        self.assertEqual(ana.post(u + "/return", json={"reason": "Falta a série coronal"}).status_code, 200)
+        with _prep.db.session(self.t) as s:                                 # médica desabilitada
+            s.get(Physician, uuid.UUID(pid_ana)).active = False
+        r = self.tec.post(u + "/forward").json()
+        self.assertIsNone(r["assigned_to"])                                  # sem redistribuição automática
+        self.assertIn("pending", r)
+        d = self.tec.get(u).json()
+        flag = next(f for f in d["flags"] if f["code"] == "physician_unavailable")
+        self.assertEqual(flag["status"], "open")
+        self.assertTrue(d["changes_locked"])                                 # continua bloqueado
+        with _prep.db.session(self.t) as s:
+            self.assertEqual(s.execute(select(Assignment).where(Assignment.study_id == uuid.UUID(sid),
+                                                                Assignment.status == "open")).first(), None)
+        # resolver sem a médica disponível: recusado
+        r = self.tec.post(f"/api/v1/ris/prep/flags/{flag['id']}/resolve")
+        self.assertEqual((r.status_code, r.json()["error"]), (409, "physician_unavailable"))
+        with _prep.db.session(self.t) as s:
+            s.get(Physician, uuid.UUID(pid_ana)).active = True
+        self.assertEqual(self.tec.post(f"/api/v1/ris/prep/flags/{flag['id']}/resolve").status_code, 200)
+        self.assertEqual(self.tec.get(u).json()["physician"], "Dra. Ana Sintetica")
+        with _prep.db.session(self.t) as s:                                  # início do laudo intacto
+            self.assertEqual(s.execute(select(ReportStart.started_at)).scalar_one(), started_at)
+        # o técnico não cria a pendência manualmente
+        self.assertEqual(self.tec.post(u + "/flags", json={"code": "physician_unavailable"}).status_code, 422)
+
     def test_concurrent_conflicting_assignments(self):
         from vyonix.report import queue
         sid, _u = self.ready(1)
