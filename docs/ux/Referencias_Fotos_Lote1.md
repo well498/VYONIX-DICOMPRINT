@@ -94,6 +94,11 @@ Ajustes adicionais aprovados: botão com o nome exato "Trocar médico"; justific
 
 Protótipos publicados após as decisões: quadro 10 (Recepção — Agenda do dia e check-in) e quadro 11 (Coordenação do CDI — painel operacional e aprovações), em 04/11.
 
+### Ajustes do proprietário aos quadros 10 e 11 (04/11 02:42) — desenho ainda NÃO aprovado
+- Recepção: check-in de urgência com pendência **não** autoriza a realização do exame; verificações de identificação, segurança clínica (alergia a contraste, gestação, função renal) e preparo continuam obrigatórias; pendências são encaminhadas ao profissional competente. Aplicado no quadro 10 (botão "Registrar chegada e encaminhar pendência" e aviso de urgência).
+- Coordenação: prioridade e troca de médico com laudo em elaboração seguem regra própria de autorização, transferência de responsabilidade (liberação do médico atual ou autorização da coordenação; rascunho só repassado com permissão; responsabilidade muda na aceitação) e auditoria. Laudo assinado: nunca alterado (correção só por retificação do médico). Desconsiderados: estudo preservado integralmente no PACS, recuperação só por pessoa autorizada. Aplicado no quadro 11.
+- Capturas individuais (2×) entregues: Quadro10_Recepcao_Agenda_PROTOTIPO.png, Quadro11_Coordenacao_CDI_PROTOTIPO.png.
+
 ## 6. Próximos lotes
 
 Novas fotos serão acrescentadas como Lote 2, 3… neste mesmo formato, com as recomendações somadas à tabela da seção 4.
