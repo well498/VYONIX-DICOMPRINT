@@ -81,6 +81,19 @@ Divergências com o que foi aprovado: a maquete põe no menu do técnico **Viewe
 - **D-08**: quem pode "desconsiderar" um estudo (técnico com justificativa, ou só coordenação)? Recomendação: técnico solicita, coordenação aprova.
 - **D-09**: os perfis 1–6 das maquetes entram no projeto de reformulação agora (protótipos) ou depois dos três perfis principais? Recomendação: protótipos de Recepção e Coordenação agora; Suporte/Admin global depois.
 
+## 5b. Decisões aprovadas pelo proprietário (04/11/2026 02:36)
+
+| ID | Decisão aprovada | Requisitos derivados |
+|---|---|---|
+| D-06 | Técnico mantém os 5 menus; barra lateral recolhível | Importação DICOM = ação contextual em "Exames recebidos", só para autorizados (permissão própria no backend). Ações visíveis: Abrir imagens, Conferência técnica, Prioridade, Trocar médico; sem excesso de ícones |
+| D-07 | Suporte e Admin global sem dados clínicos por padrão | Acesso excepcional: autorizado, mínimo necessário, temporário, auditável e vinculado à instituição. Priorizar diagnóstico/monitoramento sem dados de pacientes |
+| D-08 | Técnico **solicita** desconsideração (justificativa obrigatória); coordenador do CDI ou profissional autorizado **aprova** | Nunca apagar automaticamente do PACS; rastreabilidade, histórico e recuperação |
+| D-09 | Protótipos de Recepção e Coordenação agora; depois Admin da clínica, Médico solicitante, Suporte, Admin global | Coordenador é perfil **opcional**: as funções (aprovações, distribuição) podem ser atribuídas a outro perfil autorizado |
+
+Ajustes adicionais aprovados: botão com o nome exato "Trocar médico"; justificativa e auditoria em troca de médico e prioridade; nada altera laudo assinado; urgência sem bloqueio operacional injustificado (ex.: check-in e conferência com pendência registrada, não impeditiva); filtros individuais por usuário; CPF mascarado; só pacientes fictícios; telas apresentadas individualmente, identificando protótipo × implementado × testado.
+
+Protótipos publicados após as decisões: quadro 10 (Recepção — Agenda do dia e check-in) e quadro 11 (Coordenação do CDI — painel operacional e aprovações), em 04/11.
+
 ## 6. Próximos lotes
 
 Novas fotos serão acrescentadas como Lote 2, 3… neste mesmo formato, com as recomendações somadas à tabela da seção 4.

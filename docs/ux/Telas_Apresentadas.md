@@ -46,7 +46,10 @@ Classificação de todos os quadros: **PROTÓTIPO** (dados fictícios; nada impl
 | 7 | Paciente | Meus exames (estados em linguagem simples) |
 | 8 | Paciente | Resultado: Laudo / Imagens / Detalhes; compartilhamento temporário |
 | 9 | Paciente | Celular 390×844 com navegação inferior |
+| 10 | Recepção | Agenda do dia com check-in no painel lateral, pendências não impeditivas na urgência |
+| 11 | Coordenação do CDI (opcional) | Painel operacional, urgentes por prazo, aprovações (desconsiderar, prioridade, trocar médico), distribuição |
 
 | Quadro | Avaliação do proprietário | Ajustes aprovados → backlog |
 |---|---|---|
-| 1–9, 1b | aguardando | — |
+| 1–9, 1b | D-06..D-09 aprovadas em 04/11 02:36 (ver Referencias_Fotos_Lote1.md §5b) | REF-02, REF-05, REF-06 com regras de aprovação |
+| 10, 11 | aguardando | — |

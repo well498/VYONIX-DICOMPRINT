@@ -34,6 +34,9 @@ própria página (coleção `avaliacoes`). Ler as avaliações a cada retomada e
 - Lote 1 (20 imagens) analisado: REF-01..14; quadro 1b publicado no canvas. Decisões novas D-06..D-09.
 - Fotos com dados reais de pacientes não são versionadas nem transcritas.
 - Próximos lotes: acrescentar como Lote 2, 3… e somar recomendações.
+- D-06..D-09 APROVADAS (04/11 02:36), detalhes em §5b. Quadros 10 (Recepção) e 11 (Coordenação) publicados.
+- Próximos protótipos: Admin da clínica → Médico solicitante → Suporte → Admin global.
+- Implementação (após protótipos): permissão "pacs.import" contextual; fluxo solicitar/aprovar desconsideração (sem apagar); trava de prioridade/troca em laudo assinado ou em elaboração, com exceção de urgência registrada; filtros salvos por usuário.
 - Protótipos 4–9 publicados (Apresentação 2 em `docs/ux/Telas_Apresentadas.md`).
 
 ### P0 — CI de 04/11
