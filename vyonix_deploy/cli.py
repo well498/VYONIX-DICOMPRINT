@@ -147,12 +147,26 @@ def cmd_run(d: Deploy, a) -> int:
     return 0 if r["status"] == "succeeded" else 1
 
 
+def installed_https_port(default: int = 8444) -> int:
+    """Porta HTTPS gravada na configuração do Core (ProgramData\\VYONIX\\Platform\\config.json).
+    Uma atualização pode ter movido a porta (porta ocupada); o diagnóstico precisa olhar a porta real."""
+    from vyonix_deploy.paths import default_paths
+    try:
+        with open(default_paths().data_dir / "config.json", encoding="utf-8-sig") as f:
+            port = int(json.load(f).get("port") or default)
+        return port if 0 < port < 65536 else default
+    except (OSError, ValueError, TypeError, AttributeError):
+        return default
+
+
 def cmd_startup(a) -> int:
     """``abrir``: sistema funcionando → navegador em https://localhost:PORTA; senão relatório HTML com o que falhou.
     ``verificar``: só o diagnóstico (texto, JSON ou HTML)."""
     import os
     import tempfile
     from vyonix_deploy import startup
+    if a.porta is None:
+        a.porta = installed_https_port()
     if a.cmd == "abrir":
         _print("Verificando o VYONIX…")
     res = startup.wait_until_ready(a.porta, pg_port=a.porta_banco, timeout=a.esperar or (90 if a.cmd == "abrir" else 0))
@@ -210,7 +224,7 @@ def main(argv: list[str] | None = None) -> int:
     for name, hlp in (("abrir", "abre o VYONIX no navegador ou, se não estiver funcionando, o diagnóstico"),
                       ("verificar", "diagnóstico de inicialização (somente leitura, sem administrador)")):
         v = sub.add_parser(name, help=hlp)
-        v.add_argument("--porta", type=int, default=8444)
+        v.add_argument("--porta", type=int, default=None, help="padrão: a porta configurada na instalação (8444)")
         v.add_argument("--porta-banco", type=int, default=5544)
         v.add_argument("--esperar", type=int, default=0, help="segundos para aguardar o sistema iniciar")
         v.add_argument("--json", action="store_true")
