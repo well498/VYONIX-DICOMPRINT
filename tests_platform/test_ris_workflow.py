@@ -56,7 +56,7 @@ class Timeline(_prep.Prep):
             self.tec.post(u + "/check", json={"code": code})
         self.assertEqual(self.tec.post(u + "/forward").status_code, 200)
         _, pid, _ = self.docs["ana"]
-        r = self.admin.post("/api/v1/report/assignments", json={"study_id": sid, "physician_id": pid})
+        r = self.tec.post(f"/api/v1/ris/prep/{sid}/physician", json={"physician_id": pid, "reason": "escala do dia"})
         self.assertIn(r.status_code, (200, 201), r.text)
         t = self.tec.get(f"/api/v1/ris/studies/{sid}/timeline")
         self.assertEqual(t.status_code, 200, t.text)
@@ -66,7 +66,7 @@ class Timeline(_prep.Prep):
         self.assertEqual(d["current"], "distribution")
         texts = [(e["text"], e["by"]) for e in d["events"]]
         self.assertIn(("Encaminhado para laudo", "tec1"), texts)
-        self.assertIn(("Atribuído a médico", "admin"), texts)
+        self.assertIn(("Atribuído a médico", "tec1"), texts)
         self.assertEqual(d["events"][0]["text"], "Primeiras imagens recebidas no PACS")
         self.assertNotIn("Texto clínico sintético", t.text)
         r = self.tec.get("/api/v1/ris/studies/00000000-0000-0000-0000-000000000000/timeline")

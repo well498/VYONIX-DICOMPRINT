@@ -240,6 +240,9 @@ def add_flag(s: Session, study_id: uuid.UUID, code: str, note: str | None, *, ac
     if code not in FLAGS:
         raise ValidationFailed("Tipo de sinalização desconhecido.")
     _study(s, study_id)
+    if code in REQUESTS:                                # pedido de troca de médico / prioridade
+        from vyonix.report import lock
+        lock.ensure_unlocked(s, study_id, action="trocar_medico" if code == "doctor_change" else "prioridade")
     p = _prep(s, study_id)
     if p.status == "cancelled":
         raise Conflict("Exame cancelado.")
@@ -342,7 +345,9 @@ def set_priority(s: Session, study_id: uuid.UUID, priority: str, *, reason: str 
                  ip=None) -> str:
     if priority not in PRIORITIES:
         raise ValidationFailed("Prioridade inválida (rotina, urgente, imediato).")
+    from vyonix.report import lock
     st = _study(s, study_id)
+    lock.ensure_unlocked(s, study_id, action="prioridade")
     p = _prep(s, study_id)
     if p.status == "cancelled":
         raise Conflict("Exame cancelado.")
@@ -504,6 +509,8 @@ def queue(s: Session, user_id: uuid.UUID, *, date_from=None, date_to=None, modal
         PacsInstance, PacsInstance.study_id == PacsStudy.id).where(PacsStudy.study_uid.in_(uids))
         .group_by(PacsStudy.study_uid)).all())
     unread_by = unread(s, user_id)
+    from vyonix.report import lock
+    locks = lock.started_map(s, ids)
     items, totals = [], dict.fromkeys(list(STAGES) + ["incomplete", "urgent", "awaiting"], 0)
     from vyonix.pacs import service as pacs
     for st, pat in rows:
@@ -539,8 +546,11 @@ def queue(s: Session, user_id: uuid.UUID, *, date_from=None, date_to=None, modal
                       "station": src, "images": counts.get(st.study_instance_uid, 0), "incomplete": incomplete,
                       "stage": stg, "priority": pr, "flags": flags.get(st.id, []),
                       "attachments": int(att.get(st.id, 0)), "unread_comments": unread_by.get(st.id, 0),
-                      "physician": hit[1].full_name if hit else None,
-                      "due_at": hit[0].due_at.isoformat() if hit else None})
+                      "physician": hit[1].full_name if hit else (locks[st.id]["physician"] if st.id in locks else None),
+                      "due_at": hit[0].due_at.isoformat() if hit else None,
+                      "report_started_at": locks[st.id]["started_at"] if st.id in locks else None,
+                      "changes_locked": st.id in locks,
+                      "lock_message": lock.MESSAGE if st.id in locks else None})
     return {"items": items, "totals": totals, "stages": STAGES}
 
 
@@ -563,6 +573,8 @@ def detail(s: Session, study_id: uuid.UUID, user_id: uuid.UUID) -> dict[str, Any
     site = s.get(Site, st.site_id) if st.site_id else None
     org = s.execute(select(Organization)).scalar_one_or_none()
     hit = _assignment(s, study_id)
+    from vyonix.report import lock
+    started = lock.started(s, study_id)
     done = (p.checklist if p else None) or {}
     comments = list(s.execute(select(ExamComment).where(ExamComment.study_id == study_id)
                               .order_by(ExamComment.created_at)).scalars())
@@ -575,7 +587,11 @@ def detail(s: Session, study_id: uuid.UUID, user_id: uuid.UUID) -> dict[str, Any
                     "sex": pat.sex if pat else None},
         "encounter": enc, "accession": st.accession or (o.accession if o else None), "modality": st.modality,
         "description": st.description, "institution": org.name if org else None, "site": site.name if site else None,
-        "physician": hit[1].full_name if hit else None, "due_at": hit[0].due_at.isoformat() if hit else None,
+        "physician": hit[1].full_name if hit else (started["physician"] if started else None),
+        "due_at": hit[0].due_at.isoformat() if hit else None,
+        "report_started_at": started["started_at"] if started else None,
+        "report_started_by": started["started_by"] if started else None,
+        "changes_locked": started is not None, "lock_message": lock.MESSAGE if started else None,
         "priority": priority_of(s, st, p), "stage": stage(s, st, p), "stage_label": STAGES[stage(s, st, p)],
         "reason": p.reason if p else None,
         "checklist": [{**i, "done": bool((done.get(i["code"]) or {}).get("done")),

@@ -27,10 +27,11 @@ Contratar ficam com quem tem `core.license.manage`); nenhuma permissão muda sem
 | Ver exames recebidos / agenda | `ris.schedule.read`, `pacs.studies.read` | escopo por instituição (e por vínculo quando configurado) |
 | Conferência técnica (checklist, informações técnicas, encaminhar) | `ris.exam.prepare` | encaminhar respeita checklist obrigatório; pendência impeditiva bloqueia (INT-01) |
 | Abrir imagens | `pacs.studies.read` + escopo do estudo | auditoria `pacs.study.open` |
-| Prioridade — alterar | `ris.exam.priority` | registra anterior, nova, justificativa, usuário, data (já auditado em `prep.set_priority`) |
-| Prioridade — solicitar | `ris.exam.prepare` (pedido `priority_request`) | aprovação por quem tem `ris.exam.priority` |
-| **Trocar médico** — efetuar | `report.assign` | elegíveis: instituição, unidade/vínculo, modalidade (habilitação: matriz #7, DEC); nunca laudo assinado ou bloqueado |
-| Trocar médico — solicitar | `ris.exam.prepare` (pedido `doctor_change`) | aprovação por `report.assign` |
+| Prioridade — alterar | **papel `tecnico` (Técnico em Radiologia) na unidade do exame** — nenhuma permissão de outro papel concede (nem `*`) | só antes do início do laudo; justificativa obrigatória; auditoria `ris.prep.priority` (anterior, nova, justificativa, usuário, horário) |
+| Prioridade — solicitar | — (removido) | outros perfis não alteram nem autorizam; após o início do laudo, pedido também é recusado |
+| **Trocar médico** — efetuar | **papel `tecnico`** na unidade do exame (rotas `/ris/prep/{id}/physician` e `/report/assignments`) | só antes do início do laudo; elegíveis: médicos com vínculo na unidade; justificativa; auditoria `report.assign` (anterior, novo, justificativa) |
+| Trocar médico — solicitar | — (removido) | coordenação, administrador e médico não trocam nem autorizam |
+| Início do laudo (bloqueio) | médico ao abrir o laudo (`report.write`) | grava `report.report_starts` (permanente, só INSERT); bloqueia as duas ações para todos, inclusive o técnico; rascunho, revisão e assinado |
 | Elaborar / continuar laudo | `report.write` + escopo; trava de autoria (A05-003, DEC) | |
 | Revisar | `report.review` | |
 | Assinar e finalizar | `report.sign` (+ senha; ICP-Brasil = BLK-14) | publicação só com laudo assinado e sem pendência (INT-01) |
@@ -65,8 +66,8 @@ dados: **Rotina** = `routine`, **Prioritário** = `urgent`, **Urgente** = `stat`
 ## 6. Decisões do proprietário a registrar
 | ID | Decisão | Situação |
 |---|---|---|
-| D-01 | Rótulos de prioridade Rotina / Prioritário / Urgente sobre routine/urgent/stat | Pendente |
-| D-02 | Técnico efetua ou só solicita "Trocar médico" e mudança de prioridade (por papel) | Pendente (hoje: solicita; efetua com permissão) |
+| D-01 | Rótulos de prioridade Rotina / Prioritário / Urgente sobre routine/urgent/stat | Aplicado em 04/11 (routine=Rotina, urgent=Prioritário, stat=Urgente); confirmar prazos |
+| D-02 | Técnico efetua ou só solicita "Trocar médico" e mudança de prioridade (por papel) | **Decidido 04/11 02:59**: exclusivo do Técnico em Radiologia, só antes do início do laudo (ver `docs/requisitos/Regra_Exclusividade_Tecnico_Inicio_Laudo.md`) |
 | D-03 | Campos técnicos estruturados da conferência (protocolo, contraste, intercorrências, qualidade) — lista e obrigatoriedade por instituição | Pendente |
 | D-04 | Portal do Paciente: protótipo autorizado; uso real só após BLK-06 | Registrado (pedido) |
 | D-05 | Visualizador local: Weasis como primeira integração; detecção pela busca do manifesto | Proposto |

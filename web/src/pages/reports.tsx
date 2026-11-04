@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { del, fmtDate, get, post, put, upload, type Me } from "../api";
 import { asHtml, RichEditor, RichView, type Phrase } from "../richtext";
 import { OpenImages } from "../viewer";
@@ -10,7 +10,8 @@ import { MySignaturePanel, PhysiciansPanel } from "./physicians";
 type Row = { study_id: string; study_instance_uid: string; accession: string | null; modality: string | null;
   study_date: string | null; description: string | null; patient_name: string | null; report_id: string | null;
   report_status: "pending" | "draft" | "review" | "final"; critical: boolean;
-  assignment: null | { physician: string; priority: string; due_at: string; overdue: boolean } };
+  assignment: null | { physician: string; priority: string; due_at: string; overdue: boolean };
+  report_started_at?: string | null; changes_locked?: boolean };
 type Version = { version: number; kind: "final" | "addendum"; body: string; critical: boolean; signed_by: string;
   signed_at: string; sha256: string; signature_mode?: "password" | "handwritten_image"; body_format?: string;
   author?: string | null; reviewer?: string | null;
@@ -28,7 +29,7 @@ type Alert = { id: string; report_id: string; version: number; note: string | nu
   signed_by: string | null };
 type Template = { id: string; name: string; modality: string | null; body: string; active: boolean };
 
-const PRIORITY: Record<string, string> = { routine: "rotina", urgent: "urgente", stat: "imediato" };
+const PRIORITY: Record<string, string> = { routine: "Rotina", urgent: "Prioritário", stat: "Urgente" };
 const STATUS: Record<string, string> = { pending: "Sem laudo", draft: "Rascunho", review: "Em revisão", final: "Liberado" };
 const MODE: Record<string, string> = { password: "Liberado com confirmação de senha",
   handwritten_image: "Senha + imagem da assinatura manuscrita (visual; não é assinatura digital)" };
@@ -42,9 +43,6 @@ function day(d: string | null) { return d ? fmtDate(d + "T12:00:00", false) : "�
 export function ReportsPage({ me }: { me: Me }) {
   const can = (p: string) => me.permissions.includes(p);
   const [filters, setFilters] = useState({ status: "pending", modality: "", mine: false });
-  const [assignFor, setAssignFor] = useState<{ study: string; physician: string; priority: string } | null>(null);
-  const docs = useLoad(async () => (can("report.assign") && assignFor ? (await get<{ items: { id: string; name: string }[] }>("/report/assignable-physicians")).items : []),
-    [assignFor?.study]);   // recarrega ao abrir a atribuição (médicos recém-cadastrados aparecem)
   const [query, setQuery] = useState(filters);
   const [open, setOpen] = useState<{ row: Row; report: Report | null } | null>(null);
   const [showTemplates, setShowTemplates] = useState(false);
@@ -64,15 +62,10 @@ export function ReportsPage({ me }: { me: Me }) {
     if (query.mine) q.set("mine", "true");
     return (await get<{ items: Row[] }>(`/report/worklist?${q}`)).items;
   }, [query]);
-
-  async function assign() {
-    if (!assignFor) return;
-    const ok = await act.run(async () => {
-      await post("/report/assignments", { study_id: assignFor.study, physician_id: assignFor.physician, priority: assignFor.priority });
-      await list.reload();
-    }, "Exame atribuído.");
-    if (ok) setAssignFor(null);
-  }
+  useEffect(() => {
+    const t = window.setInterval(() => { if (document.visibilityState === "visible") void list.reload(); }, 20000);
+    return () => window.clearInterval(t);
+  }, [list.reload]);
 
   async function finalizeBatch(e: FormEvent) {
     e.preventDefault();
@@ -157,15 +150,8 @@ export function ReportsPage({ me }: { me: Me }) {
                 <td>{STATUS[r.report_status]}{r.critical && <span className="tag tag-warn">Achado crítico</span>}</td>
                 <td>{r.assignment ? <>{r.assignment.physician} · {PRIORITY[r.assignment.priority] ?? r.assignment.priority} · até {fmtDate(r.assignment.due_at)}
                   {r.assignment.overdue && <span className="tag tag-warn">Atrasado</span>}</> : "—"}
-                  {can("report.assign") && r.report_status !== "final" && (assignFor?.study === r.study_id ? (
-                    <form className="filters" aria-label="Atribuir exame" onSubmit={(e) => { e.preventDefault(); void assign(); }}>
-                      <select aria-label="Médico" required value={assignFor.physician} onChange={(e) => setAssignFor({ ...assignFor, physician: e.target.value })}>
-                        <option value="">Médico…</option>{(docs.data ?? []).map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select>
-                      <select aria-label="Prioridade" value={assignFor.priority} onChange={(e) => setAssignFor({ ...assignFor, priority: e.target.value })}>
-                        <option value="routine">Rotina (48 h)</option><option value="urgent">Urgente (4 h)</option><option value="stat">Imediato (1 h)</option></select>
-                      <button className="primary" disabled={act.busy}>Atribuir</button>
-                    </form>) : <> <button className="link" onClick={() => setAssignFor({ study: r.study_id, physician: "", priority: "routine" })}>
-                      {r.assignment ? "Reatribuir" : "Atribuir"}</button></>)}</td>
+                  {r.report_started_at && <span className="lock-note-inline" title="Alteração indisponível: laudo já iniciado">
+                    {" "}Laudo iniciado em {fmtDate(r.report_started_at)} · médico e prioridade bloqueados</span>}</td>
                 <td className="actions"><div className="row-actions">
                   {(r.report_id || can("report.write")) &&
                     <button onClick={() => void openRow(r)}>{r.report_status === "final" ? "Ver laudo" : "Laudar"}</button>}

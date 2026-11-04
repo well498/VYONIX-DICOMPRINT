@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { fmtDate, get, patch, type Me } from "../api";
 import { Notice, Page, useAction, useLoad } from "../ui";
 import { OpenImages } from "../viewer";
@@ -7,7 +7,8 @@ import { PRIORITY, PrepSheet } from "./prep";
 type PrepItem = { study_id: string; patient_name: string | null; accession: string | null; modality: string | null;
   description: string | null; received_at: string; station: string | null; images: number; incomplete: boolean;
   stage: string; priority: string; flags: string[]; attachments: number; unread_comments: number;
-  physician: string | null; due_at: string | null; site_id: string | null };
+  physician: string | null; due_at: string | null; site_id: string | null;
+  report_started_at?: string | null; changes_locked?: boolean };
 type PrepQueue = { items: PrepItem[]; totals: Record<string, number>; stages: Record<string, string> };
 
 const CARDS: [string, string][] = [["", "Recebidos"], ["awaiting", "Aguardando preparação"], ["incomplete", "Incompletos"],
@@ -25,6 +26,10 @@ export function PrepQueuePanel() {
     const p = new URLSearchParams(Object.entries(q).filter(([, v]) => v) as [string, string][]);
     return await get<PrepQueue>(`/ris/prep?${p}`);
   }, [q]);
+  useEffect(() => {                       // situação, médico, prioridade e início do laudo atualizados sozinhos
+    const t = window.setInterval(() => { if (document.visibilityState === "visible") void list.reload(); }, 20000);
+    return () => window.clearInterval(t);
+  }, [list.reload]);
   const d = list.data;
   const total = d ? Object.entries(d.totals).filter(([k]) => k in d.stages).reduce((a, [, v]) => a + v, 0) : 0;
   const pick = (stage: string) => { const n = { ...f, stage }; setF(n); setQ(n); };
@@ -59,9 +64,10 @@ export function PrepQueuePanel() {
             <button type="button" className="study" onClick={() => setOpen(x.study_id)} aria-label={`Preparar ${x.patient_name ?? "estudo"}`}>
               <span className="study-main"><strong>{x.patient_name ?? "Paciente não identificado"}</strong>
                 <span className="sub">{[x.modality, x.description].filter(Boolean).join(" · ")} · {x.images} imagem(ns){x.station ? ` · ${x.station}` : ""}</span>
-                <span className="sub">Recebido {fmtDate(x.received_at)}{x.accession ? ` · ${x.accession}` : ""}{x.physician ? ` · ${x.physician}` : ""}</span></span>
+                <span className="sub">Recebido {fmtDate(x.received_at)}{x.accession ? ` · ${x.accession}` : ""} · Médico: {x.physician ?? "não atribuído"}</span>
+                {x.report_started_at && <span className="sub lock-note-inline">Laudo iniciado em {fmtDate(x.report_started_at)} · médico e prioridade bloqueados</span>}</span>
               <span className="study-tags">
-                {x.priority !== "routine" && <span className={`pill pill-${x.priority}`}>{PRIORITY[x.priority]}</span>}
+                <span className={`pill pill-${x.priority}`}>{PRIORITY[x.priority] ?? x.priority}</span>
                 <span className={`pill stage-${x.stage}`}>{d?.stages[x.stage]}</span>
                 {x.incomplete && <span className="pill pill-warn">incompleto</span>}
                 {x.flags.length > 0 && <span className="pill pill-warn">{x.flags.length} pendência(s)</span>}

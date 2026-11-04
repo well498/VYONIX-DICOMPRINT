@@ -72,11 +72,14 @@ def open_report(s: Session, study_id: uuid.UUID, *, template_id: uuid.UUID | Non
                 actor: str, actor_id=None, ip=None) -> Report:
     """Abre o laudo do estudo (cria o rascunho, a partir do modelo informado ou — ``auto`` — do selecionado pelas
     regras de prioridade do TELELAUDO T4); se já existe, devolve-o."""
+    from vyonix.report import lock
     st = s.get(Study, study_id)
     if st is None:
         raise NotFound("Estudo não encontrado.")
+    lock.serialize(s, study_id)                    # concorre com troca de médico/prioridade do mesmo exame
     r = s.execute(select(Report).where(Report.study_id == study_id)).scalar_one_or_none()
     if r is not None:
+        lock.mark_started(s, study_id, r.id, actor=actor, actor_id=actor_id, ip=ip)
         return r
     body, tver = "", None
     if auto and not template_id:
@@ -106,6 +109,7 @@ def open_report(s: Session, study_id: uuid.UUID, *, template_id: uuid.UUID | Non
     s.flush()
     audit.record(s, actor=actor, actor_id=actor_id, ip=ip, action="report.open", target_type="report", target_id=r.id,
                  details={"study_id": str(st.id), "template_id": str(template_id) if template_id else None})
+    lock.mark_started(s, st.id, r.id, actor=actor, actor_id=actor_id, ip=ip)
     return r
 
 
@@ -554,6 +558,9 @@ def worklist(s: Session, *, status: str | None = None, modality: str | None = No
         q = q.join(ExamPrep, ExamPrep.study_id == Study.id).where(ExamPrep.status == "forwarded")
     rows = s.execute(q.order_by(Study.study_date.desc().nullslast(), Study.created_at.desc()).limit(min(limit, 500)))
     assigned = queue.open_by_study(s)
+    rows = list(rows)
+    from vyonix.report import lock
+    locks = lock.started_map(s, [st.id for st, _p, _r in rows])
     out = []
     for st, p, r in rows:
         a = assigned.get(st.id)
@@ -565,5 +572,8 @@ def worklist(s: Session, *, status: str | None = None, modality: str | None = No
                     "description": st.description, "patient_name": p.name if p else None,
                     "report_id": str(r.id) if r else None, "report_status": r.status if r else "pending",
                     "critical": bool(r.critical) if r else False,
-                    "shared": bool(shared and st.id in shared)})
+                    "shared": bool(shared and st.id in shared),
+                    "report_started_at": locks[st.id]["started_at"] if st.id in locks else None,
+                    "changes_locked": st.id in locks,
+                    "lock_message": lock.MESSAGE if st.id in locks else None})
     return out

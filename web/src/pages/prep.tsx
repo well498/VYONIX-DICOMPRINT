@@ -18,10 +18,14 @@ export type PrepDetail = {
   flags: { id: string; code: string; label: string; note: string | null; status: string; by: string; at: string; resolved_by: string | null }[];
   shares: { id: string; user_id: string; scope: string; expires_at: string }[];
   flag_types: Record<string, string>;
-  can: Record<"prepare" | "priority" | "cancel" | "share" | "assign" | "return" | "viewer", boolean>;
+  can: Record<"prepare" | "priority" | "cancel" | "share" | "assign" | "return" | "viewer" | "change_physician" | "technician", boolean>;
+  report_started_at: string | null; report_started_by: string | null; changes_locked: boolean; lock_message: string | null;
 };
 
-export const PRIORITY: Record<string, string> = { routine: "Rotina", urgent: "Urgente", stat: "Imediato" };
+/** Mensagem única do bloqueio (regra do proprietário): igual em todas as telas. */
+export const LOCK_MESSAGE = "Alteração indisponível: laudo já iniciado";
+
+export const PRIORITY: Record<string, string> = { routine: "Rotina", urgent: "Prioritário", stat: "Urgente" };
 const TECH_FLAGS = ["missing_images", "incomplete_series", "identity_mismatch", "artifacts", "acquisition", "transmission", "duplicate", "other"];
 
 /** Ícones de traço simples (desenho próprio do VYONIX). */
@@ -46,10 +50,12 @@ function Icon({ name }: { name: string }) {
   return <svg viewBox="0 0 24 24" aria-hidden="true" className="ico"><path d={ICON[name]} /></svg>;
 }
 
-function Row({ icon, label, badge, tone, onClick, href }: { icon: string; label: string; badge?: ReactNode; tone?: "warn" | "danger";
-  onClick?: () => void; href?: string }) {
-  const inner = <><span className="act-ico"><Icon name={icon} /></span><span className="act-label">{label}</span>
-    {badge}<span className="act-go" aria-hidden="true">›</span></>;
+function Row({ icon, label, badge, tone, onClick, href, disabledText }: { icon: string; label: string; badge?: ReactNode; tone?: "warn" | "danger";
+  onClick?: () => void; href?: string; disabledText?: string }) {
+  const inner = <><span className="act-ico"><Icon name={icon} /></span>
+    <span className="act-label">{label}{disabledText && <span className="act-off-note">{disabledText}</span>}</span>
+    {badge}{!disabledText && <span className="act-go" aria-hidden="true">›</span>}</>;
+  if (disabledText) return <button type="button" className="act act-off" disabled aria-disabled="true">{inner}</button>;
   return href
     ? <a className={`act ${tone ?? ""}`} href={href} target="_blank" rel="noopener">{inner}</a>
     : <button type="button" className={`act ${tone ?? ""}`} onClick={onClick}>{inner}</button>;
@@ -61,6 +67,10 @@ export function PrepSheet({ studyId, onClose, onChanged }: { studyId: string; on
   const [tool, setTool] = useState<string | null>(null);
   const act = useAction();
   const x = d.data;
+  useEffect(() => {                       // status atualizado sem recarregar a página (início do laudo, médico, prioridade)
+    const t = window.setInterval(() => { if (document.visibilityState === "visible") void d.reload(); }, 15000);
+    return () => window.clearInterval(t);
+  }, [d.reload]);
   async function reload() { await d.reload(); onChanged(); }
   async function run(fn: () => Promise<unknown>, ok: string, close = true) {
     const done = await act.run(async () => { await fn(); await reload(); }, ok);
@@ -83,12 +93,14 @@ export function PrepSheet({ studyId, onClose, onChanged }: { studyId: string; on
             <p>{[x.modality, x.description].filter(Boolean).join(" · ") || "Exame"}</p>
             <p className="sub">{[x.patient.identifier, x.encounter && `Atendimento ${x.encounter}`, x.accession && `Acesso ${x.accession}`].filter(Boolean).join(" · ")}</p>
             <p className="sub">{[x.institution, x.site && `Unidade: ${x.site}`].filter(Boolean).join(" · ")}</p>
-            <p className="sub">Médico: {x.physician ?? "não atribuído"}</p>
+            <p className="sub">Médico responsável: {x.physician ?? "não atribuído"}</p>
+            <p className="sub">Laudo: {x.report_started_at ? `iniciado em ${fmtDate(x.report_started_at)}${x.report_started_by ? ` por ${x.report_started_by}` : ""}` : "não iniciado"}</p>
             <div className="sheet-tags">
               <span className={`pill pill-${x.priority}`}>{PRIORITY[x.priority] ?? x.priority}</span>
               <span className={`pill stage-${x.stage}`}>{x.stage_label}</span>
               {x.due_at && <span className="pill">Prazo: {fmtDate(x.due_at)}</span>}
             </div>
+            {x.changes_locked && <p className="lock-note" role="status">{LOCK_MESSAGE}. Médico responsável e prioridade não podem mais ser alterados.</p>}
             {x.reason && <Notice kind="warn">{x.stage === "returned" ? "Devolvido: " : "Motivo: "}{x.reason}</Notice>}
           </header>
           {act.view}
@@ -102,12 +114,14 @@ export function PrepSheet({ studyId, onClose, onChanged }: { studyId: string; on
               <Row icon="comment" label="Comentários" onClick={() => { setTool("comment"); void post(`/ris/prep/${studyId}/read`).then(reload); }}
                 badge={<>{unread > 0 && <span className="count count-new" title="Não lidos">{unread} novo(s)</span>}
                   {x.comments.length > 0 && <span className="count">{x.comments.length}</span>}</>} />
-              <Row icon="priority" label={x.can.priority ? "Alterar prioridade" : "Solicitar mudança de prioridade"} onClick={() => setTool("priority")} />
+              {x.can.technician && <Row icon="priority" label="Prioridade" onClick={() => setTool("priority")}
+                disabledText={x.changes_locked ? LOCK_MESSAGE : undefined} />}
               {x.can.prepare && <Row icon="checklist" label="Preparação do estudo" onClick={() => setTool("checklist")}
                 badge={<span className={`count ${ready ? "count-ok" : ""}`}>{ready ? "pronto" : `${x.checklist.filter((i) => i.done).length}/${x.checklist.length}`}</span>} />}
               {x.can.prepare && <Row icon="duplicate" label="Duplicidade de exame" onClick={() => setTool("duplicate")}
                 badge={x.duplicates.length > 0 && !x.duplicate_checked ? <span className="count count-warn">{x.duplicates.length} possível</span> : undefined} />}
-              <Row icon="doctor" label={x.can.assign ? "Trocar médico" : "Solicitar troca de médico"} onClick={() => setTool("doctor")} />
+              {x.can.technician && <Row icon="doctor" label="Trocar médico" onClick={() => setTool("doctor")}
+                disabledText={x.changes_locked ? LOCK_MESSAGE : undefined} />}
               {x.can.share && <Row icon="share" label="Compartilhar exame" onClick={() => setTool("share")}
                 badge={x.shares.length ? <span className="count">{x.shares.length}</span> : undefined} />}
               {x.can.prepare && <Row icon="flag" label="Sinalizar suspeita técnica" tone="warn" onClick={() => setTool("flag")}
@@ -125,9 +139,8 @@ export function PrepSheet({ studyId, onClose, onChanged }: { studyId: string; on
           {tool === "photo" && <FileTool studyId={studyId} kind="photo" capture onSaved={() => run(async () => undefined, "Foto anexada.")} />}
           {tool === "attach" && <Attachments d={x} studyId={studyId} onSaved={() => run(async () => undefined, "Anexo incluído.", false)} />}
           {tool === "comment" && <Comments d={x} studyId={studyId} onSaved={() => run(async () => undefined, "Comentário registrado.", false)} />}
-          {tool === "priority" && <PriorityTool d={x} onDo={(p, why) => x.can.priority
-            ? run(() => post(`/ris/prep/${studyId}/priority`, { priority: p, reason: why || null }), "Prioridade alterada.")
-            : run(() => post(`/ris/prep/${studyId}/flags`, { code: "priority_request", note: `${PRIORITY[p]}: ${why}` }), "Solicitação registrada para a coordenação.")} />}
+          {tool === "priority" && <PriorityTool d={x} onDo={(p, why) =>
+            run(() => post(`/ris/prep/${studyId}/priority`, { priority: p, reason: why }), "Prioridade alterada.")} />}
           {tool === "checklist" && <Checklist d={x} studyId={studyId} run={run} />}
           {tool === "duplicate" && <Duplicates d={x} studyId={studyId} run={run} />}
           {tool === "doctor" && <DoctorTool d={x} studyId={studyId} run={run} />}
@@ -303,15 +316,18 @@ function Comments({ d, studyId, onSaved }: { d: PrepDetail; studyId: string; onS
 function PriorityTool({ d, onDo }: { d: PrepDetail; onDo: (p: string, why: string) => void }) {
   const [p, setP] = useState(d.priority);
   const [why, setWhy] = useState("");
+  if (!d.can.priority) return <div className="tool"><h3>Prioridade</h3><p>Atual: <strong>{PRIORITY[d.priority] ?? d.priority}</strong></p>
+    <p className="lock-note">{d.changes_locked ? LOCK_MESSAGE : "Somente o Técnico em Radiologia altera a prioridade."}</p></div>;
   return (
-    <form className="tool" onSubmit={(e) => { e.preventDefault(); onDo(p, why); }} aria-label="Prioridade">
-      <h3>{d.can.priority ? "Alterar prioridade" : "Solicitar mudança de prioridade"}</h3>
+    <form className="tool" onSubmit={(e) => { e.preventDefault(); onDo(p, why.trim()); }} aria-label="Prioridade">
+      <h3>Prioridade</h3>
+      <p className="field-hint">Atual: {PRIORITY[d.priority] ?? d.priority}. Permitido só antes do início do laudo; a alteração fica registrada (anterior, nova, justificativa, usuário e horário).</p>
       <div className="segmented" role="radiogroup" aria-label="Prioridade">
         {Object.entries(PRIORITY).map(([k, v]) => <label key={k} className={p === k ? "on" : ""}>
           <input type="radio" name="prio" checked={p === k} onChange={() => setP(k)} /> {v}</label>)}
       </div>
-      <input aria-label="Motivo" placeholder="Motivo" maxLength={250} required={!d.can.priority} value={why} onChange={(e) => setWhy(e.target.value)} />
-      <button className="primary">{d.can.priority ? "Alterar" : "Enviar solicitação"}</button>
+      <input aria-label="Justificativa" placeholder="Justificativa (obrigatória)" minLength={3} maxLength={300} required value={why} onChange={(e) => setWhy(e.target.value)} />
+      <button className="primary" disabled={p === d.priority}>Alterar prioridade</button>
     </form>
   );
 }
@@ -354,23 +370,21 @@ function Duplicates({ d, studyId, run }: { d: PrepDetail; studyId: string; run: 
 }
 
 function DoctorTool({ d, studyId, run }: { d: PrepDetail; studyId: string; run: Run }) {
-  const docs = useLoad(async () => (d.can.assign ? (await get<{ items: { id: string; name: string }[] }>("/report/assignable-physicians")).items : []), []);
+  const docs = useLoad(async () => (d.can.change_physician
+    ? (await get<{ items: { id: string; name: string }[] }>(`/ris/prep/${studyId}/eligible-physicians`)).items : []), [d.can.change_physician]);
   const [pid, setPid] = useState("");
   const [why, setWhy] = useState("");
-  return d.can.assign ? (
+  if (!d.can.change_physician) return <div className="tool"><h3>Trocar médico</h3><p>Médico responsável: <strong>{d.physician ?? "não atribuído"}</strong></p>
+    <p className="lock-note">{d.changes_locked ? LOCK_MESSAGE : "Somente o Técnico em Radiologia troca o médico."}</p></div>;
+  return (
     <form className="tool" aria-label="Trocar médico" onSubmit={(e) => { e.preventDefault();
-      void run(() => post("/report/assignments", { study_id: studyId, physician_id: pid, priority: d.priority }), "Exame atribuído ao médico."); }}>
+      void run(() => post(`/ris/prep/${studyId}/physician`, { physician_id: pid, reason: why.trim() }), "Médico trocado."); }}>
       <h3>Trocar médico</h3>
-      <select required aria-label="Médico" value={pid} onChange={(e) => setPid(e.target.value)}>
+      <p className="field-hint">Atual: {d.physician ?? "não atribuído"}. Só médicos habilitados na unidade do exame; permitido só antes do início do laudo.</p>
+      <select required aria-label="Novo médico" value={pid} onChange={(e) => setPid(e.target.value)}>
         <option value="">Selecione…</option>{(docs.data ?? []).map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select>
-      <button className="primary">Atribuir</button>
-    </form>) : (
-    <form className="tool" aria-label="Solicitar troca de médico" onSubmit={(e) => { e.preventDefault();
-      void run(() => post(`/ris/prep/${studyId}/flags`, { code: "doctor_change", note: why }), "Solicitação enviada à coordenação."); }}>
-      <h3>Solicitar troca de médico</h3>
-      <p className="field-hint">A reatribuição é feita pela coordenação, conforme as regras de distribuição.</p>
-      <input required maxLength={300} aria-label="Motivo da troca" placeholder="Motivo" value={why} onChange={(e) => setWhy(e.target.value)} />
-      <button className="primary">Enviar solicitação</button>
+      <input required minLength={3} maxLength={300} aria-label="Justificativa" placeholder="Justificativa (obrigatória)" value={why} onChange={(e) => setWhy(e.target.value)} />
+      <button className="primary">Trocar médico</button>
     </form>);
 }
 

@@ -177,7 +177,12 @@ class FlagIn(BaseModel):
 
 class PriorityIn(BaseModel):
     priority: str
-    reason: str | None = Field(None, max_length=300)
+    reason: str = Field(min_length=3, max_length=300)          # justificativa obrigatória
+
+
+class PhysicianChangeIn(BaseModel):
+    physician_id: uuid.UUID
+    reason: str = Field(min_length=3, max_length=300)
 
 
 class ReasonIn(BaseModel):
@@ -260,6 +265,15 @@ def prep_detail(study_id: uuid.UUID, c: Ctx = Depends(ctx_any)):
                                                    ("cancel", "ris.exam.cancel"), ("share", "ris.exam.share"),
                                                    ("assign", "report.assign"), ("return", "report.write"),
                                                    ("viewer", "pacs.studies.read"))}
+        from vyonix.clinical.models import Study
+        from vyonix.ris import exclusive
+        tech = exclusive.is_technician(c.p, s.get(Study, study_id).site_id)
+        locked = bool(out.get("changes_locked"))
+        # trocar médico / prioridade: exclusivo do Técnico em Radiologia e só antes do início do laudo
+        out["can"]["priority"] = out["can"]["change_physician"] = tech and not locked
+        out["can"]["assign"] = False
+        out["can"]["technician"] = tech
+        out["can"]["request_change"] = False
         return out
 
 
@@ -349,12 +363,49 @@ def prep_attachment(attachment_id: uuid.UUID, c: Ctx = Depends(ctx_any)):
         "X-Content-Type-Options": "nosniff", "Content-Security-Policy": "default-src 'none'; sandbox"})
 
 
+def _tech_study(c: Ctx, s, study_id: uuid.UUID, action: str):
+    """Exclusivo do Técnico em Radiologia (papel ``tecnico`` na unidade do exame); outros papéis não concedem."""
+    from vyonix.clinical.models import Study
+    from vyonix.errors import NotFound
+    from vyonix.ris import exclusive
+    st = s.get(Study, study_id)
+    if st is None:
+        raise NotFound("Exame não encontrado.")
+    exclusive.require(c.p, st.site_id, action=action)
+    _prep_scope(c, s, study_id)
+    return st
+
+
 @router.post("/prep/{study_id}/priority")
-def prep_priority(study_id: uuid.UUID, body: PriorityIn, c: Ctx = Depends(needs("ris.exam.priority"))):
+def prep_priority(study_id: uuid.UUID, body: PriorityIn, c: Ctx = Depends(ctx_any)):
     from vyonix.ris import prep
     with c.session() as s:
         _require(c, s)                     # módulo RIS habilitado e licenciado
+        _tech_study(c, s, study_id, "prioridade")
         return {"priority": prep.set_priority(s, study_id, body.priority, reason=body.reason, **c.actor)}
+
+
+@router.get("/prep/{study_id}/eligible-physicians")
+def prep_eligible(study_id: uuid.UUID, c: Ctx = Depends(ctx_any)):
+    """Médicos habilitados na unidade do exame (para o Técnico em Radiologia trocar o médico)."""
+    from vyonix.report import distribution
+    with c.session() as s:
+        _require(c, s)
+        st = _tech_study(c, s, study_id, "trocar_medico")
+        return {"items": [{"id": str(p.id), "name": p.full_name} for p in distribution.eligible(s, st)]}
+
+
+@router.post("/prep/{study_id}/physician")
+def prep_change_physician(study_id: uuid.UUID, body: PhysicianChangeIn, c: Ctx = Depends(ctx_any)):
+    """Trocar médico — só o Técnico em Radiologia, só antes do início do laudo, com justificativa (auditado)."""
+    from vyonix.ris import prep
+    from vyonix.report import queue
+    with c.session() as s:
+        _require(c, s)
+        st = _tech_study(c, s, study_id, "trocar_medico")
+        pr = prep.priority_of(s, st, prep._prep(s, study_id, create=False))
+        a = queue.assign(s, study_id, body.physician_id, priority=pr, reason=body.reason, **c.actor)
+        return {"assignment_id": str(a.id), "due_at": a.due_at.isoformat()}
 
 
 @router.post("/prep/{study_id}/duplicate")

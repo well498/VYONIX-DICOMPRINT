@@ -60,18 +60,23 @@ def require(s: Session, sc, study_id: uuid.UUID) -> None:
 
 
 def assign(s: Session, study_id: uuid.UUID, physician_id: uuid.UUID, *, priority: str = "routine",
-           due_at=None, actor: str, actor_id=None, ip=None) -> Assignment:
+           due_at=None, reason: str | None = None, actor: str, actor_id=None, ip=None) -> Assignment:
     from vyonix.clinical.models import Study
     from vyonix.report import physicians
     if priority not in SLA_HOURS:
         raise ValidationFailed(f"Prioridade inválida (use: {', '.join(SLA_HOURS)}).")
+    from vyonix.report import lock
     st = s.get(Study, study_id)
     p = s.get(Physician, physician_id)
     if st is None or p is None:
         raise NotFound("Exame ou médico não encontrado.")
+    lock.ensure_unlocked(s, study_id, action="trocar_medico")
     physicians.authorized(s, p.user_id, site_id=st.site_id, on=_today())      # médico precisa poder laudar ali
+    previous = None
     for old in s.execute(select(Assignment).where(Assignment.study_id == study_id,
                                                   Assignment.status == "open")).scalars():
+        prev_p = s.get(Physician, old.physician_id)
+        previous = {"physician_id": str(old.physician_id), "physician": prev_p.full_name if prev_p else None}
         old.status, old.done_at = "cancelled", utcnow()                         # reatribuição
     s.flush()
     a = Assignment(study_id=study_id, physician_id=physician_id, priority=priority, status="open",
@@ -79,8 +84,10 @@ def assign(s: Session, study_id: uuid.UUID, physician_id: uuid.UUID, *, priority
     s.add(a)
     s.flush()
     audit.record(s, actor=actor, actor_id=actor_id, ip=ip, action="report.assign", target_type="study",
-                 target_id=study_id, details={"physician_id": str(physician_id), "priority": priority,
-                                              "due_at": a.due_at.isoformat()})
+                 target_id=study_id, details={"physician_id": str(physician_id), "physician": p.full_name,
+                                              "previous": previous, "priority": priority,
+                                              "due_at": a.due_at.isoformat(),
+                                              "reason": (reason or "").strip()[:300] or None})
     return a
 
 

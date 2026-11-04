@@ -143,10 +143,11 @@ class Prep(ApiBase):
         self.assertEqual(self.tec.get(u).json()["stage"], "pending")
         self.assertEqual(self.tec.post(u + "/forward").status_code, 422)
         self.tec.post(f"/api/v1/ris/prep/flags/{fid}/resolve")
-        # prioridade: técnico não altera (só solicita); coordenação altera, auditado
-        self.assertEqual(self.tec.post(u + "/priority", json={"priority": "stat"}).status_code, 403)
-        self.assertEqual(self.tec.post(u + "/flags", json={"code": "priority_request"}).status_code, 201)
-        self.assertEqual(self.coord.post(u + "/priority", json={"priority": "urgent", "reason": "clínica"}).json(),
+        # prioridade (regra de 04/11/2026): exclusiva do Técnico em Radiologia, com justificativa; coordenação não altera
+        r = self.coord.post(u + "/priority", json={"priority": "urgent", "reason": "clínica"})
+        self.assertEqual((r.status_code, r.json()["error"]), (403, "technician_only"))
+        self.assertEqual(self.tec.post(u + "/priority", json={"priority": "stat"}).status_code, 422)   # sem justificativa
+        self.assertEqual(self.tec.post(u + "/priority", json={"priority": "urgent", "reason": "clínica"}).json(),
                          {"priority": "urgent"})
         # encaminhado; distribuição manual (padrão): sem médico; o médico reserva
         r = self.tec.post(u + "/forward")

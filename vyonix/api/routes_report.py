@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from vyonix.api.app import Ctx, needs
+from vyonix.api.app import ctx as ctx_any
 from vyonix.auth import service as auth
 from vyonix.errors import Forbidden, NotLicensed
 from vyonix.modules import registry
@@ -868,13 +869,30 @@ class AssignIn(BaseModel):
     study_id: uuid.UUID
     physician_id: uuid.UUID
     priority: str = "routine"
+    reason: str = Field(min_length=3, max_length=300)          # justificativa obrigatória
 
 
 @router.post("/assignments", status_code=201)
-def assign(body: AssignIn, c: Ctx = Depends(needs("report.assign"))):
+def assign(body: AssignIn, c: Ctx = Depends(ctx_any)):
+    """Atribuição manual = trocar médico: exclusiva do Técnico em Radiologia (antes do início do laudo).
+    A coordenação e os demais perfis só consultam; a distribuição automática continua com o sistema."""
+    from vyonix.clinical.models import Study
+    from vyonix.errors import NotFound
     from vyonix.report import queue
+    from vyonix.ris import exclusive
     with c.session() as s:
-        a = queue.assign(s, body.study_id, body.physician_id, priority=body.priority, **c.actor)
+        st = s.get(Study, body.study_id)
+        if st is None:
+            raise NotFound("Exame não encontrado.")
+        exclusive.require(c.p, st.site_id, action="trocar_medico")
+        if body.priority not in queue.SLA_HOURS:
+            from vyonix.errors import ValidationFailed
+            raise ValidationFailed("Prioridade inválida.")
+        from vyonix.ris import prep as rprep
+        current = rprep.priority_of(s, st, rprep._prep(s, st.id, create=False))
+        if body.priority != current:          # mesma regra da alteração de prioridade (auditada com anterior/nova)
+            rprep.set_priority(s, st.id, body.priority, reason=body.reason, **c.actor)
+        a = queue.assign(s, body.study_id, body.physician_id, priority=body.priority, reason=body.reason, **c.actor)
         return {"id": str(a.id), "due_at": a.due_at.isoformat()}
 
 

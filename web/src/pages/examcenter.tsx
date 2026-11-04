@@ -18,7 +18,7 @@ const STAGE: [string, string][] = [["requested", "Pedido"], ["scheduled", "Agend
 const STAGE_NAME = Object.fromEntries(STAGE);
 const FLAG: Record<string, string> = { not_scheduled: "urgente sem agendamento", late_acquisition: "aquisição atrasada",
   late_report: "laudo fora do prazo", incomplete_images: "imagens incompletas", schedule_cancelled: "agendamento cancelado" };
-const PRIORITY: Record<string, string> = { routine: "rotina", urgent: "urgente", stat: "imediato" };
+const PRIORITY: Record<string, string> = { routine: "Rotina", urgent: "Prioritário", stat: "Urgente" };
 
 function iso(d: Date) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; }
 function dur(m: number | null) {

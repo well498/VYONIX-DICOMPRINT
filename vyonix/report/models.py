@@ -235,3 +235,22 @@ class DraftRevision(TenantMixin, Base):
     body_format: Mapped[str] = mapped_column(String(8), nullable=False, default="text")
     author: Mapped[str] = mapped_column(String(120), nullable=False)
     event: Mapped[str] = mapped_column(String(20), nullable=False, default="save")   # save|review_request|return
+
+
+class ReportStart(TenantMixin, Base):
+    """Início efetivo da elaboração do laudo (um por exame, permanente).
+
+    A partir deste registro, médico responsável e prioridade do exame ficam bloqueados em todos os perfis e APIs.
+    A tabela só recebe INSERT do aplicativo (sem UPDATE/DELETE): fechar o editor, mudar o status do laudo ou
+    assinar não removem o bloqueio. Abrir as imagens no visualizador não cria este registro."""
+    __tablename__ = "report_starts"
+    __table_args__ = (Index("uq_report_report_starts_study", "tenant_id", "study_id", unique=True), SCHEMA)
+    study_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("clinical.studies.id"), nullable=False)
+    report_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("report.reports.id"))
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    started_by: Mapped[str] = mapped_column(String(120), nullable=False)
+    started_by_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
+    physician_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
+    physician_name: Mapped[str | None] = mapped_column(String(160))
+    priority: Mapped[str | None] = mapped_column(String(10))           # prioridade vigente no início
+    origin: Mapped[str] = mapped_column(String(12), nullable=False, default="editor")   # editor | migracao

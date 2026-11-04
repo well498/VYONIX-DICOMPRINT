@@ -362,3 +362,9 @@ fieldset.plain legend { font-weight: 600; margin-bottom: .3rem; }
 .open-images-menu select { width: 100%; margin: .2rem 0; }
 .open-images-help { display: block; }
 .act-images { display: flex; align-items: center; gap: .5rem; }
+
+/* bloqueio de troca de médico/prioridade após início do laudo: texto, não só cor */
+.lock-note { margin: 6px 0 0; padding: 8px 10px; border-radius: 8px; background: #fff6e8; color: #6b3d00; border: 1px solid #f0d9b5; font-weight: 600; }
+.act.act-off { cursor: not-allowed; opacity: 1; background: #f4f6f8; color: #4a5b68; }
+.act-off-note { display: block; font-size: .85em; font-weight: 600; color: #6b3d00; }
+.lock-note-inline { display: block; font-size: .85em; font-weight: 600; color: #6b3d00; }

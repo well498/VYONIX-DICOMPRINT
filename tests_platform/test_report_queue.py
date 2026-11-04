@@ -55,6 +55,12 @@ class Queue(ApiBase):
             self.admin.post(f"/api/v1/report/physicians/{pid}/links",
                             json={"site_id": str(link) if link else None, "valid_from": "2026-01-01"})
             self.users[name] = (self.login(name, "Senha-Nova-9876!"), pid, uuid.UUID(uid))
+        # troca de médico / prioridade: exclusivas do Técnico em Radiologia (regra de 04/11/2026)
+        self.admin.post("/api/v1/users", json={"username": "tec_fila", "display_name": "tec_fila",
+                                               "password": "Senha-Teste-1234", "roles": [{"role": "tecnico"}]})
+        c = self.login("tec_fila", "Senha-Teste-1234")
+        c.post("/api/v1/auth/password", json={"current": "Senha-Teste-1234", "new": "Senha-Nova-9876!"})
+        self.tec = self.login("tec_fila", "Senha-Nova-9876!")
 
     def ids(self, c, **params):
         return {x["study_id"] for x in c.get("/api/v1/report/worklist", params=params).json()["items"]}
@@ -76,16 +82,21 @@ class Queue(ApiBase):
         from datetime import datetime
         norte, pid_n, _ = self.users["dra_norte"]
         todas, pid_t, _ = self.users["dr_todas"]
-        r = self.admin.post("/api/v1/report/assignments", json={"study_id": str(self.st["s"]), "physician_id": pid_n})
+        r = self.admin.post("/api/v1/report/assignments", json={"study_id": str(self.st["n"]), "physician_id": pid_n,
+                                                                 "reason": "teste"})
+        self.assertEqual((r.status_code, r.json()["error"]), (403, "technician_only"))      # administrador não troca
+        r = self.tec.post("/api/v1/report/assignments", json={"study_id": str(self.st["s"]), "physician_id": pid_n,
+                                                               "reason": "teste"})
         self.assertEqual((r.status_code, r.json()["error"]), (403, "physician_not_linked"))
         self.assertEqual(norte.post("/api/v1/report/assignments", json={
-            "study_id": str(self.st["n"]), "physician_id": pid_n}).status_code, 403)         # médico não distribui
-        r = self.admin.post("/api/v1/report/assignments", json={"study_id": str(self.st["n"]), "physician_id": pid_t,
-                                                                 "priority": "stat"})
+            "study_id": str(self.st["n"]), "physician_id": pid_n, "reason": "teste"}).status_code, 403)   # médico não
+        r = self.tec.post("/api/v1/report/assignments", json={"study_id": str(self.st["n"]), "physician_id": pid_t,
+                                                               "priority": "stat", "reason": "urgência clínica"})
         due = datetime.fromisoformat(r.json()["due_at"])
         self.assertAlmostEqual((due - datetime.now(due.tzinfo)).total_seconds(), 3600, delta=120)
         self.assertEqual(self.ids(todas, mine=True), {str(self.st["n"])})
-        self.admin.post("/api/v1/report/assignments", json={"study_id": str(self.st["n"]), "physician_id": pid_n})
+        self.tec.post("/api/v1/report/assignments", json={"study_id": str(self.st["n"]), "physician_id": pid_n,
+                                                           "priority": "routine", "reason": "escala"})
         self.assertEqual(self.ids(todas, mine=True), set())                   # reatribuído
         item = next(x for x in norte.get("/api/v1/report/worklist", params={"mine": True}).json()["items"])
         self.assertEqual((item["assignment"]["priority"], item["assignment"]["overdue"]), ("routine", False))

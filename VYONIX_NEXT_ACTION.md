@@ -43,6 +43,11 @@ própria página (coleção `avaliacoes`). Ler as avaliações a cada retomada e
 - 315c708: homologação APROVADA (40985609484); comercial 46 aprovados / 1 reprovado (2.13 reversão: `verificar` olhava a porta 8444 depois que 2.7 moveu a porta) / 1 não executado (2.8 impressora).
 - Correção a58edb6: `verificar`/`abrir` usam a porta gravada em ProgramData\VYONIX\Platform\config.json. CI comercial + homologação em andamento (41778888356 / 41778895463).
 
+### Regra definitiva — Trocar médico e prioridade (04/11 02:56 e 02:59) — `docs/requisitos/Regra_Exclusividade_Tecnico_Inicio_Laudo.md`
+- IMPLEMENTADO: exclusivo do papel `tecnico`; bloqueado para todos após o início do laudo (`report.report_starts`, migração report_0012).
+- Testes locais: tests_platform 266 OK (3 skipped), tests_deploy OK; 5 testes novos. CI pendente (commit com [skip ci] porque o CI comercial a58edb6 ainda roda; disparar CI depois).
+- Protótipos 1b, 2, 3, 4 e 11 a atualizar com a regra; matriz de permissões atualizada (D-01, D-02 decididos).
+
 ## Correções de segurança da auditoria (29/10, `c725108`, testes locais; CI Linux pendente)
 A05-001, A05-002, A03-001, A04-002, A04-003. Aguardando aprovação do proprietário: A04-001 (papel por unidade vale
 para a organização — escalada de privilégio; P0), A05-003, A05-014, A05-015, A03-015, A04-007, A04-009.

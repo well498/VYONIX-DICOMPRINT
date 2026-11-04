@@ -563,15 +563,23 @@ class WebE2E(unittest.TestCase):
         panel.get_by_role("form", name="Vínculo de Marta Médica").get_by_role("button", name="Incluir vínculo").click()
         expect(panel.get_by_text("toda a organização: desde")).to_be_visible()
         self.shot(pg, "13-medicos")
-        # fila: coordenação atribui o exame à médica
+        # fila: a coordenação/administração NÃO troca médico nem prioridade (exclusivo do Técnico em Radiologia,
+        # regra de 04/11/2026); a atribuição aqui é feita pelo técnico (serviço), e a fila mostra o resultado
         arow = pg.get_by_role("row", name="Helena Laudo Sintetica")
-        arow.get_by_role("button", name="Atribuir").click()
-        af = arow.get_by_role("form", name="Atribuir exame")
-        af.get_by_label("Médico").select_option(label="Marta Médica — CRM 12345/CE — RQE 6789")
-        af.get_by_label("Prioridade").select_option("urgent")
-        af.get_by_role("button", name="Atribuir").click()
-        expect(pg.get_by_text("Exame atribuído.")).to_be_visible()
-        expect(pg.get_by_role("row", name="Helena Laudo Sintetica").get_by_text("urgente")).to_be_visible()
+        expect(arow.get_by_role("button", name="Atribuir")).to_have_count(0)
+        expect(arow.get_by_role("button", name="Reatribuir")).to_have_count(0)
+        from sqlalchemy import select as _sel
+        from vyonix.clinical.models import Study as _Study
+        from vyonix.report import queue as _queue
+        from vyonix.report.models import Physician as _Phys
+        from vyonix.ris import prep as _rprep
+        with db.session(self.tenant) as s:
+            sid_ = s.execute(_sel(_Study.id).where(_Study.description == "RM de joelho")).scalar_one()
+            pid_ = s.execute(_sel(_Phys.id).where(_Phys.crm == "12345")).scalar_one()
+            _rprep.set_priority(s, sid_, "urgent", reason="prioridade clínica", actor="tecnico_e2e")
+            _queue.assign(s, sid_, pid_, priority="urgent", reason="escala", actor="tecnico_e2e")
+        pg.reload()
+        expect(pg.get_by_role("row", name="Helena Laudo Sintetica").get_by_text("Prioritário")).to_be_visible()
         # identidade visual (administrador): logomarca, rodapé, nova versão e pré-visualização A4
         import io as _io
         from PIL import Image

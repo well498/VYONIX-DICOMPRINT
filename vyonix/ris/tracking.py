@@ -118,6 +118,8 @@ def exam_center(s: Session, *, date_from: date, date_to: date, modality: str | N
                 "report_id": str(r.id) if r is not None else None,
                 "reported_at": r.finalized_at.isoformat() if r is not None and r.finalized_at else None,
                 "critical": bool(r is not None and r.critical),
+                "report_started_at": r.created_at.isoformat() if r is not None else None,
+                "changes_locked": r is not None,
                 "minutes_to_images": t_img, "minutes_to_report": t_rep})
 
     def med(xs: list[int]) -> int | None:

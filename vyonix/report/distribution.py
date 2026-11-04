@@ -60,6 +60,9 @@ def auto_assign(s: Session, st, *, priority: str, actor: str, actor_id=None, ip=
         return None
     if s.execute(select(Assignment).where(Assignment.study_id == st.id, Assignment.status == "open")).first():
         return None                                                     # já atribuído: não duplica
+    from vyonix.report import lock
+    if lock.started(s, st.id) is not None:
+        return None                                                     # laudo iniciado: responsável não muda
     cands = eligible(s, st)
     target = None
     if cfg["mode"] == "fixed" and cfg.get("physician_id"):
@@ -107,6 +110,14 @@ def claim(s: Session, study_id: uuid.UUID, user_id: uuid.UUID, *, actor: str, ip
     if prep is not None and prep.status in ("cancelled", "returned"):
         raise Conflict("Exame cancelado ou devolvido para correção.")
     p = physicians.authorized(s, user_id, site_id=st.site_id, on=queue._today())
+    from vyonix.report import lock
+    lock.serialize(s, study_id)
+    info = lock.started(s, study_id)
+    if info is not None:
+        from vyonix.report.models import ReportStart
+        own = s.execute(select(ReportStart.physician_id).where(ReportStart.study_id == study_id)).scalar()
+        if own != p.id:
+            raise Conflict(lock.MESSAGE, code=lock.CODE, details={"action": "trocar_medico", **info})
     release_expired(s)
     cur = s.execute(select(Assignment).where(Assignment.study_id == study_id, Assignment.status == "open")
                     ).scalar_one_or_none()
@@ -138,6 +149,8 @@ def release(s: Session, study_id: uuid.UUID, user_id: uuid.UUID, *, actor: str, 
                   ).scalar_one_or_none()
     if p is None or a is None or a.physician_id != p.id or a.kind != "claimed":
         raise NotFound("Você não tem reserva neste exame.")
+    from vyonix.report import lock
+    lock.ensure_unlocked(s, study_id, action="trocar_medico")
     a.status, a.done_at = "cancelled", utcnow()
     s.flush()
     audit.record(s, actor=actor, actor_id=user_id, ip=ip, action="report.reservation.released",
