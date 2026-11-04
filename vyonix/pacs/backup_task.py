@@ -67,7 +67,6 @@ class PacsBackupTask:
         return not (st and st.get("ok") and st.get("local_date") == now.date().isoformat())
 
     def __call__(self) -> dict:
-        from vyonix.errors import NotLicensed
         from vyonix.modules import registry
         from vyonix.pacs import backend_for, backup
         from vyonix.tenancy import service as tenancy
@@ -88,10 +87,6 @@ class PacsBackupTask:
         with self.plat.db.session(tid) as s:
             if not registry.is_enabled(s, "pacs"):
                 return self._skip("módulo PACS não habilitado")
-            try:
-                self.plat.licensing.require_module(s, "pacs")
-            except NotLicensed:
-                pass            # sem licença o PACS não recebe, mas as imagens já guardadas continuam protegidas
         self._why = None
         started = self.now()
         st: dict[str, Any] = {"started_at": started.isoformat(timespec="seconds"),

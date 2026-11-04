@@ -195,11 +195,12 @@ def disk_check(paths: dict[str, str], usage=None, exists=None) -> dict[str, Any]
     return out
 
 
-def _license(plat, s: Session) -> dict[str, Any]:
-    st = plat.licensing.status(s)
-    mods = {code: {"licensed": v.licensed, "state": v.state} for code, v in st.items() if v.licensed or code == "core"}
-    problems = [] if st.get("core") and st["core"].licensed else ["Sem licença vigente do VYONIX Core."]
-    return {"modules": mods, "problems": problems}
+def _modules(plat, s: Session) -> dict[str, Any]:
+    """Módulos habilitados por configuração. A plataforma não depende de licença (decisão de 04/11/2026)."""
+    from vyonix.modules import registry
+    st = registry.states(s)
+    mods = {code: {"enabled": status == "enabled"} for code, status in st.items()}
+    return {"modules": mods, "problems": []}
 
 
 def health_detail(plat, s: Session) -> dict[str, Any]:
@@ -212,14 +213,13 @@ def health_detail(plat, s: Session) -> dict[str, Any]:
         return {"status": "falha", "components": comps, "problems": comps["database"]["problems"]}
     for name, fn in (("events", lambda: _events(s)), ("pacs", lambda: _pacs(plat, s)), ("dicom_qr", lambda: _qr(plat)),
                      ("pacs_backup", lambda: _backup(plat)), ("pacs_integrity", lambda: _integrity(plat)),
-                     ("license", lambda: _license(plat, s)), ("disk", lambda: disk_check(_disk_paths(plat)))):
+                     ("modules", lambda: _modules(plat, s)), ("disk", lambda: disk_check(_disk_paths(plat)))):
         try:
             comps[name] = fn()
         except Exception as exc:  # noqa: BLE001 - um componente com erro não esconde os demais
             comps[name] = {"problems": [f"Não foi possível verificar ({type(exc).__name__})."]}
     problems = [p for c in comps.values() for p in c.get("problems", [])]
     fail = (comps.get("pacs", {}).get("engine", {}).get("reachable") is False
-            or not comps.get("license", {}).get("modules", {}).get("core", {}).get("licensed", True)
             or bool(comps.get("pacs_integrity", {}).get("failures"))
             or bool(comps.get("disk", {}).get("critical")))
     status = "falha" if fail else ("atenção" if problems else "ok")

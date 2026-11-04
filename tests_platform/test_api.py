@@ -105,34 +105,28 @@ class Api(unittest.TestCase):
         self.assertEqual(audit[0]["actor"], "recep")
         self.assertTrue(c.get("/api/v1/audit/verify").json()["ok"])
 
-    def test_unlicensed_limits_and_license_flow(self):
+    def test_platform_works_without_license(self):
+        """Decisão de 04/11/2026: sem License Manager, Hardware ID, ativação ou limites de licença na plataforma."""
         c, _ = self.login()
-        r = c.post("/api/v1/sites", json={"name": "Segunda unidade"})
-        self.assertEqual((r.status_code, r.json()["error"]), (402, "not_licensed"))
-        st = c.get("/api/v1/license").json()
-        self.assertIsNone(st["license"])
-        req = c.post("/api/v1/license/request", json={"modules": ["core", "print"], "demo_days": 15,
-                                                      "contact_name": "Ana", "contact_email": "ana@exemplo.com"})
-        self.assertEqual(req.status_code, 200, req.text)
-        self.assertTrue(req.json()["code"].startswith("VYXR2-"))
-        info = self.lm.import_request(self.lm_admin, req.json()["code"])
-        lic = self.lm.issue(self.lm_admin, info.request_id, self.cid, ltype="annual", edition="Profissional",
-                            modules={"core": {"kind": "contract", "limits": {"sites": 2}}})
-        r = c.post("/api/v1/license/install", json={"document": lic["document"]})
-        self.assertEqual(r.status_code, 200, r.text)
-        self.assertEqual(c.post("/api/v1/sites", json={"name": "Segunda unidade"}).status_code, 201)
-        r = c.post("/api/v1/sites", json={"name": "Terceira"})
-        self.assertEqual(r.status_code, 402)
+        for i in range(4):                                                 # sem limite de unidades
+            self.assertEqual(c.post("/api/v1/sites", json={"name": f"Unidade {i}"}).status_code, 201)
+        for i in range(5):                                                 # sem limite de usuários
+            r = c.post("/api/v1/users", json={"username": f"u{i}", "display_name": f"U {i}",
+                                              "password": "Senha-Teste-1234", "roles": [{"role": "recepcionista"}]})
+            self.assertEqual(r.status_code, 201, r.text)
+        self.assertEqual(c.get("/api/v1/license").status_code, 404)        # rotas de licença retiradas
+        self.assertIn(c.post("/api/v1/license/install", json={"document": "x"}).status_code, (404, 405))
         mods = {m["code"]: m for m in c.get("/api/v1/modules").json()}
-        self.assertTrue(mods["print"]["licensed"])
-        self.assertFalse(mods["notify"]["available"])                   # planejado
-        self.assertTrue(mods["pacs"]["available"])
-        self.assertFalse(mods["pacs"]["licensed"])
-        self.assertEqual(c.post("/api/v1/modules/print/enable").status_code, 200)
+        self.assertFalse(mods["notify"]["available"])                      # planejado
+        for code in ("pacs", "ris", "report", "print"):                    # habilita por configuração
+            self.assertEqual(c.post(f"/api/v1/modules/{code}/enable").status_code, 200, code)
         self.assertEqual(c.post("/api/v1/modules/notify/enable").status_code, 422)
-        self.assertEqual(c.post("/api/v1/modules/pacs/enable").status_code, 402)     # entregue, sem licença
-        bad = c.post("/api/v1/license/install", json={"document": lic["document"][:-30] + "x" * 30})
-        self.assertEqual(bad.status_code, 422)
+        sysinfo = c.get("/api/v1/system").json()
+        self.assertFalse(sysinfo["licensing"]["required"])
+        self.assertEqual({m["code"]: m["status"] for m in sysinfo["modules"]}["pacs"], "enabled")
+        self.assertIn("VYONIX DICOM Print", [p["name"] for p in sysinfo["separate_products"]])
+        self.assertEqual(c.post("/api/v1/modules/pacs/disable", json={"reason": "teste"}).status_code, 200)
+        self.assertNotEqual({m["code"]: m["status"] for m in c.get("/api/v1/modules").json()}["pacs"], "enabled")
 
     def test_validation_errors_are_structured(self):
         c, _ = self.login()

@@ -128,7 +128,7 @@ class WebE2E(unittest.TestCase):
         pg = self.page()
         self.login(pg, "admin", ADMIN_PW)
         expect(pg.get_by_role("heading", name="Olá, Administrador")).to_be_visible()
-        expect(pg.get_by_text("Nenhuma licença instalada")).to_be_visible()
+        expect(pg.get_by_text("Nenhuma licença instalada")).to_have_count(0)        # plataforma sem licença
         cookie = [c for c in pg.context.cookies() if c["name"] == "vyx_session"][0]
         self.assertTrue(cookie["httpOnly"] and cookie["secure"])
         self.assertEqual(cookie["sameSite"], "Strict")
@@ -159,29 +159,14 @@ class WebE2E(unittest.TestCase):
         expect(form.get_by_label("Papel").locator("option", has_text="Coordenador do CDI")).to_have_count(1)
         form.get_by_role("button", name="Cancelar").click()
 
-        # pedido de demonstração (painel comercial)
-        nav.get_by_role("link", name="Contratar e demonstrar").click()
-        form = pg.get_by_role("form", name="Solicitar demonstração")
-        form.get_by_label("15 dias").check()
-        form.get_by_label("E-mail para resposta").fill("ti@clinica.example")
-        form.get_by_role("button", name="Gerar pedido").click()
-        code = pg.get_by_label("Código do pedido").input_value()
-        self.assertTrue(code.startswith("VYXR2-"))
-        self.shot(pg, "03-pedido-demonstracao")
-
-        # o fornecedor emite a demonstração no License Manager (real) a partir do pedido
-        info = self.lm.import_request(self.lm_admin, code)
-        self.assertEqual(info.data["platform"]["demo_days"], 15)
-        lic = self.lm.issue(self.lm_admin, info.request_id, self.cid, ltype="annual", edition="Profissional",
-                            features=[], modules={"core": {"kind": "demo", "days": 15},
-                                                  "ris": {"kind": "demo", "days": 15}})
-        type(self).license_id = lic["license_id"]
-        nav.get_by_role("link", name="Licença e módulos").click()
-        pg.get_by_label("Conteúdo do documento").fill(lic["document"])
-        pg.get_by_role("button", name="Aplicar licença").click()
-        expect(pg.get_by_text("Licença aplicada.")).to_be_visible()
-        expect(pg.get_by_role("row", name="VYONIX Core").get_by_text("restantes")).to_be_visible()
-        self.shot(pg, "04-licenca-demo")
+        # sem licença (04/11/2026): "Licença" e "Contratar" saíram; módulos por configuração em Sistema e atualizações
+        expect(nav.get_by_role("link", name="Licença e módulos")).to_have_count(0)
+        expect(nav.get_by_role("link", name="Contratar e demonstrar")).to_have_count(0)
+        nav.get_by_role("link", name="Sistema e atualizações").click()
+        expect(pg.get_by_text("A plataforma não usa licença, ativação nem identificação do computador.")).to_be_visible()
+        pg.get_by_role("row", name="VYONIX RIS").get_by_role("button", name="Habilitar").click()
+        expect(pg.get_by_text("VYONIX RIS habilitado.")).to_be_visible()
+        self.shot(pg, "04-sistema-e-atualizacoes")
 
         # configurações com histórico
         nav.get_by_role("link", name="Configurações").click()
@@ -195,7 +180,7 @@ class WebE2E(unittest.TestCase):
         nav.get_by_role("link", name="Auditoria").click()
         pg.get_by_role("button", name="Verificar integridade").click()
         expect(pg.get_by_text("Cadeia íntegra")).to_be_visible()
-        expect(pg.get_by_role("cell", name="license.apply")).to_be_visible()
+        expect(pg.get_by_role("cell", name="module.enable")).to_be_visible()
         self.shot(pg, "05-auditoria")
 
     def test_2_reception_flow(self):
@@ -238,7 +223,7 @@ class WebE2E(unittest.TestCase):
         expect(pg.get_by_role("heading", name="Pedidos")).to_be_visible()
         expect(pg.get_by_role("button", name="Novo paciente")).to_have_count(0)
         expect(pg.get_by_role("button", name="Novo pedido")).to_have_count(0)
-        expect(nav.get_by_role("link", name="Licença e módulos")).to_be_visible()
+        expect(nav.get_by_role("link", name="Sistema e atualizações")).to_have_count(0)      # só administração
         expect(nav.get_by_role("link", name="Configurações")).to_have_count(0)
         self.shot(pg, "07-tecnico")
         pg.get_by_role("button", name="Sair").click()
@@ -250,13 +235,8 @@ class WebE2E(unittest.TestCase):
         from tests_platform.pacs_support import make_dicom, uid
         from vyonix.modules import registry
         from vyonix.pacs import service as pacs
-        amended = self.lm.amend_modules(self.lm_admin, self.license_id,
-                                        {"core": {"kind": "demo", "days": 15}, "ris": {"kind": "demo", "days": 15},
-                                         "pacs": {"kind": "demo", "days": 15}}, reason="teste do PACS")
-        type(self).license_id = amended["license_id"]
         with db.session(self.tenant) as s:
-            self.plat.licensing.install(s, amended["document"], actor="admin")
-            registry.enable(s, "pacs", actor="admin", license_check=self.plat.licensing.module_ok)
+            registry.enable(s, "pacs", actor="admin")
             for i in (1, 2, 4):                                    # falta a imagem 3
                 pacs.ingest(s, self.pacs_backend, make_dicom(sop=uid(1, 1, i), instance_number=i,
                                                              patient_name="SILVA^MARIA SINTETICA", accession="AC-77"),
@@ -336,7 +316,7 @@ class WebE2E(unittest.TestCase):
         from vyonix.clinical import service as clinical
         from vyonix.modules import registry
         with db.session(self.tenant) as s:
-            registry.enable(s, "ris", actor="admin", license_check=self.plat.licensing.module_ok)
+            registry.enable(s, "ris", actor="admin")
             p = clinical.create_patient(s, name="Carlos Agenda Sintetico", birth_date=date(1975, 5, 6), sex="M",
                                         identifiers=[("DICOM", "AG-901")], actor="t")
             proc = clinical.save_procedure(s, code="RX-TORAX", name="RX de tórax", modality="CR", actor="t")
@@ -516,13 +496,8 @@ class WebE2E(unittest.TestCase):
         from vyonix.clinical import service as clinical
         from vyonix.modules import registry
         from vyonix.report import service as rep
-        amended = self.lm.amend_modules(self.lm_admin, self.license_id,
-                                        {"core": {"kind": "demo", "days": 15}, "ris": {"kind": "demo", "days": 15},
-                                         "pacs": {"kind": "demo", "days": 15}, "report": {"kind": "demo", "days": 15}},
-                                        reason="teste do REPORT")
         with db.session(self.tenant) as s:
-            self.plat.licensing.install(s, amended["document"], actor="admin")
-            registry.enable(s, "report", actor="admin", license_check=self.plat.licensing.module_ok)
+            registry.enable(s, "report", actor="admin")
             p = clinical.create_patient(s, name="Helena Laudo Sintetica", birth_date=date(1980, 1, 1), sex="F",
                                         identifiers=[("DICOM", "LD-777")], actor="t")
             o = clinical.create_order(s, patient_id=p.id, actor="t")

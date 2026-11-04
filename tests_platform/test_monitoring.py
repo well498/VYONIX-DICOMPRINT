@@ -64,7 +64,7 @@ class HealthDetail(ApiBase):
         self.assertEqual(h["status"], "ok", h["problems"])
         self.assertEqual(h["components"]["pacs"]["engine"]["reachable"], True)
         self.assertEqual(h["components"]["pacs"]["index"]["instances"], 1)
-        self.assertTrue(h["components"]["license"]["modules"]["pacs"]["licensed"])
+        self.assertTrue(h["components"]["modules"]["modules"]["pacs"]["enabled"])
         self.assertNotIn("PAC-0001", str(h))                                  # sem dados de paciente
         self.b.down = True
         h = self.c.get(self.URL).json()
@@ -97,10 +97,11 @@ class HealthDetail(ApiBase):
         self.assertFalse(h["components"]["dicom_qr"]["listening"])
         self.assertTrue(any(f"porta {port}" in p for p in h["problems"]))
 
-    def test_without_license_is_failure(self):
+    def test_without_license_is_not_a_problem(self):
+        """Plataforma sem licença (04/11/2026): a falta de licença não é falha nem aviso."""
         h = self.c.get(self.URL).json()
-        self.assertEqual(h["status"], "falha")
-        self.assertIn("Sem licença vigente do VYONIX Core.", h["problems"])
+        self.assertNotIn("license", h["components"])
+        self.assertFalse(any("licen" in p.lower() for p in h["problems"]), h["problems"])
 
     def test_requires_permission(self):
         from fastapi.testclient import TestClient

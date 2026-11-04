@@ -224,7 +224,6 @@ class QRServer:
         estação, data (ou intervalo), paciente e número de acesso."""
         from datetime import date
         from vyonix.audit import service as audit
-        from vyonix.errors import NotLicensed
         from vyonix.modules import registry
         from vyonix.ris import service as ris
 
@@ -239,11 +238,6 @@ class QRServer:
         with self.plat.db.session(info["tenant"]) as s:
             if not registry.is_enabled(s, "ris"):
                 yield 0xC001, None                                   # worklist indisponível nesta organização
-                return
-            try:
-                self.plat.licensing.require_module(s, "ris")
-            except NotLicensed:
-                yield 0xC001, None
                 return
             if not ris.workflow(s)["worklist"]:
                 yield 0xC001, None                                   # worklist desligada no fluxo da instituição
@@ -273,15 +267,8 @@ class QRServer:
 
     # ------------------------------------------------------------------ MPPS (RIS)
     def _ris_ok(self, s) -> bool:
-        from vyonix.errors import NotLicensed
         from vyonix.modules import registry
-        if not registry.is_enabled(s, "ris"):
-            return False
-        try:
-            self.plat.licensing.require_module(s, "ris")
-        except NotLicensed:
-            return False
-        return True
+        return registry.is_enabled(s, "ris")
 
     def _on_n_create(self, event):
         """MPPS N-CREATE: exame iniciado na modalidade (vincula ao agendamento pelo SPS ID ou Study Instance UID)."""

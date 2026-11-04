@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from vyonix.audit import service as audit
 from vyonix.db.base import utcnow
-from vyonix.errors import Conflict, NotFound, NotLicensed, ValidationFailed
+from vyonix.errors import Conflict, NotFound, ValidationFailed
 from vyonix.events.bus import publish
 from vyonix.modules.manifest import MANIFESTS, ModuleManifest
 from vyonix.modules.models import ModuleState
@@ -51,17 +51,20 @@ def is_enabled(s: Session, code: str) -> bool:
     return states(s).get(code) == "enabled"
 
 
-def listing(s: Session, license_check: LicenseCheck) -> list[dict]:
+def listing(s: Session, license_check: LicenseCheck | None = None) -> list[dict]:
+    """Módulos e situação. A plataforma não depende de licença (decisão de 04/11/2026): habilitar é configuração
+    administrativa; ``license_check`` é ignorado (mantido só por compatibilidade de assinatura)."""
     st = states(s)
     out = []
     for m in MANIFESTS.values():
-        lic_ok, lic_msg = (True, "") if not m.requires_license else license_check(s, m.code)
         out.append({**m.public(), "status": "enabled" if m.always_enabled else st.get(m.code, "installed"),
-                    "licensed": lic_ok, "license_message": lic_msg})
+                    "licensed": True, "license_message": ""})
     return out
 
 
-def enable(s: Session, code: str, *, actor: str, license_check: LicenseCheck, actor_id=None, ip=None) -> None:
+def enable(s: Session, code: str, *, actor: str, license_check: LicenseCheck | None = None, actor_id=None,
+           ip=None) -> None:
+    """Habilita por configuração administrativa (permissão ``core.modules.manage`` na rota). Sem licença."""
     m = manifest(code)
     if not m.available:
         raise ValidationFailed(f"O módulo {m.name} ainda não está disponível nesta versão.")
@@ -71,10 +74,6 @@ def enable(s: Session, code: str, *, actor: str, license_check: LicenseCheck, ac
     missing = [d for d in m.depends if not (MANIFESTS[d].always_enabled or st.get(d) == "enabled")]
     if missing:
         raise Conflict(f"Habilite antes: {', '.join(missing)}.", details={"missing": missing})
-    if m.requires_license:
-        ok, msg = license_check(s, code)
-        if not ok:
-            raise NotLicensed(msg or f"Sem licença vigente para {m.name}.")
     row = s.execute(select(ModuleState).where(ModuleState.code == code)).scalar_one()
     if row.status == "enabled":
         return

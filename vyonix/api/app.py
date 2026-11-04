@@ -107,9 +107,9 @@ def create_app(plat: Platform, *, cookie_secure: bool = True, web_dist: Path | N
         return JSONResponse({"error": "internal", "message": "Erro interno. O detalhe foi registrado no servidor.",
                              "details": {}}, status_code=500)
 
-    from vyonix.api import (routes_admin, routes_auth, routes_clinical, routes_license, routes_pacs, routes_platform,
+    from vyonix.api import (routes_admin, routes_auth, routes_clinical, routes_pacs, routes_platform,
                             routes_report, routes_ris)
-    for mod in (routes_auth, routes_admin, routes_license, routes_clinical, routes_pacs, routes_ris, routes_report,
+    for mod in (routes_auth, routes_admin, routes_clinical, routes_pacs, routes_ris, routes_report,
                 routes_platform):
         app.include_router(mod.router, prefix="/api/v1")
 

@@ -11,7 +11,6 @@ from pydantic import BaseModel, Field
 from vyonix.api.app import Ctx, needs
 from vyonix.audit import service as audit
 from vyonix.auth import service as auth
-from vyonix.licensing.service import count_active_users, count_sites
 from vyonix.modules import registry
 from vyonix.modules.manifest import MANIFESTS, all_permissions
 from vyonix.settings import service as settings
@@ -84,7 +83,6 @@ def users(c: Ctx = Depends(needs("core.users.read"))):
 def create_user(body: UserIn, c: Ctx = Depends(needs("core.users.manage"))):
     from vyonix.auth import directory
     with directory.Reservation(c.plat.db, body.username, c.p.tenant_id, not c.plat.edge) as uid, c.session() as s:
-        c.plat.licensing.enforce_limit(s, "core", "users", count_active_users(s) + 1)
         auth.check_grant(s, c.p, [r.role for r in body.roles])
         u = auth.create_user(s, username=body.username, display_name=body.display_name, email=body.email,
                              password=body.password, roles=[(r.role, r.site_id) for r in body.roles],
@@ -107,10 +105,6 @@ def login_available(login: str, c: Ctx = Depends(needs("core.users.manage"))):
 @router.patch("/users/{user_id}")
 def update_user(user_id: uuid.UUID, body: UserPatch, c: Ctx = Depends(needs("core.users.manage"))):
     with c.session() as s:
-        from vyonix.auth.models import User
-        u = s.get(User, user_id)
-        if body.active and u is not None and not u.active:
-            c.plat.licensing.enforce_limit(s, "core", "users", count_active_users(s) + 1)
         auth.check_grant(s, c.p, [], user_id=user_id)          # não mexe em conta mais privilegiada
         auth.update_user(s, user_id, **body.model_dump(exclude_unset=True), **c.actor)
     return {"ok": True}
@@ -221,17 +215,12 @@ def sites(c: Ctx = Depends(needs("core.settings.read"))):
 @router.post("/sites", status_code=201)
 def create_site(body: SiteIn, c: Ctx = Depends(needs("core.sites.manage"))):
     with c.session() as s:
-        c.plat.licensing.enforce_limit(s, "core", "sites", count_sites(s) + 1)
         return _site(tenancy.save_site(s, **body.model_dump(), **c.actor))
 
 
 @router.patch("/sites/{site_id}")
 def update_site(site_id: uuid.UUID, body: SiteIn, c: Ctx = Depends(needs("core.sites.manage"))):
     with c.session() as s:
-        from vyonix.tenancy.models import Site
-        cur = s.get(Site, site_id)
-        if body.active and cur is not None and not cur.active:
-            c.plat.licensing.enforce_limit(s, "core", "sites", count_sites(s) + 1)
         return _site(tenancy.save_site(s, site_id=site_id, **body.model_dump(), **c.actor))
 
 
@@ -276,16 +265,24 @@ def setting_history(module: str, key: str, c: Ctx = Depends(needs("core.settings
 
 # ------------------------------------------------------------------- módulos
 
-@router.get("/modules")
-def modules(c: Ctx = Depends(needs("core.license.read"))):
+@router.get("/system")
+def system_overview(c: Ctx = Depends(needs("core.settings.read"))):
+    """Sistema e atualizações: versão, serviços, banco, cópias, atualizações, módulos e diagnóstico (só leitura)."""
+    from vyonix import system_info
     with c.session() as s:
-        return registry.listing(s, c.plat.licensing.module_ok)
+        return system_info.overview(c.plat, s)
+
+
+@router.get("/modules")
+def modules(c: Ctx = Depends(needs("core.settings.read"))):
+    with c.session() as s:
+        return registry.listing(s)
 
 
 @router.post("/modules/{code}/enable")
 def module_enable(code: str, c: Ctx = Depends(needs("core.modules.manage"))):
     with c.session() as s:
-        registry.enable(s, code, license_check=c.plat.licensing.module_ok, **c.actor)
+        registry.enable(s, code, **c.actor)
     return {"ok": True}
 
 

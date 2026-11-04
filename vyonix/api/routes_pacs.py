@@ -142,7 +142,6 @@ def _stow_sync(c: Ctx, parts: list[bytes], only_study: str | None, base: str):
     with c.session() as s:
         if not registry.is_enabled(s, "pacs"):
             raise NotLicensed("O módulo VYONIX PACS não está habilitado nesta organização.", code="module_disabled")
-        c.plat.licensing.require_module(s, "pacs")
         for data in parts:
             try:
                 if only_study:
@@ -477,8 +476,8 @@ def decide_holds(body: HoldDecisionIn, c: Ctx = Depends(needs("pacs.admin"))):
     from vyonix.pacs import nodes as dnodes
     b = _backend(c)
     with c.session() as s:
-        if body.decision == "release":
-            c.plat.licensing.require_module(s, "pacs")
+        if body.decision == "release" and not registry.is_enabled(s, "pacs"):
+            raise NotLicensed("O módulo VYONIX PACS não está habilitado nesta organização.", code="module_disabled")
         return _wrap(lambda: dnodes.decide_holds(s, b, remote_aet=body.remote_aet, decision=body.decision,
                                                  note=body.note, **c.actor))
 
@@ -563,7 +562,6 @@ def sync(c: Ctx = Depends(needs("pacs.admin"))):
     with c.session() as s:
         if not registry.is_enabled(s, "pacs"):
             raise NotLicensed("O módulo VYONIX PACS não está habilitado nesta organização.", code="module_disabled")
-        c.plat.licensing.require_module(s, "pacs")
         return _wrap(lambda: pacs.sync(s, b))
 
 

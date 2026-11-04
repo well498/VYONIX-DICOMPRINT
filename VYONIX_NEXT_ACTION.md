@@ -49,7 +49,7 @@ própria página (coleção `avaliacoes`). Ler as avaliações a cada retomada e
 - Protótipos 1b, 2, 3, 4 e 11 a atualizar com a regra; matriz de permissões atualizada (D-01, D-02 decididos).
 
 ### Plataforma sem licença (decisão 04/11 03:35) — `docs/requisitos/Plataforma_Sem_Licenca_Analise_e_Plano.md`
-- Análise e plano L1–L4 entregues; implementação AGUARDA aprovação (4 pontos). Protótipo 12/12c já sem licença.
+- APROVADO 04/11 03:43. L1+L2 implementados (testes locais 274 OK). Próximo: L3 (DEPLOY/instalador sem ativação; CI 2.9 reescrito; atualização sobre 0.2.0) e L4. Não altera o instalador 0.2.0.
 - DICOM Print: licenciamento intocado. Instalador 0.2.0 em validação não muda.
 
 ## Correções de segurança da auditoria (29/10, `c725108`, testes locais; CI Linux pendente)

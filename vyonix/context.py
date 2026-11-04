@@ -8,7 +8,7 @@ from typing import Any
 from vyonix.config import Config
 from vyonix.db.session import Database
 from vyonix.events.bus import Bus
-from vyonix.licensing.service import Licensing, Machine
+from vyonix.licensing.service import Licensing
 from vyonix.secrets import SecretStore
 
 
@@ -16,9 +16,9 @@ from vyonix.secrets import SecretStore
 class Platform:
     cfg: Config
     db: Database
-    licensing: Licensing
     bus: Bus
     mfa_key: bytes
+    licensing: Licensing | None = None    # legado: sem uso pela plataforma (mantido para compatibilidade)
     options: dict[str, Any] = field(default_factory=dict)
 
     @property
@@ -42,7 +42,6 @@ def build(cfg: Config, *, licensing: Licensing | None = None, db: Database | Non
         raise RuntimeError("Banco de dados não configurado (database_url). Execute 'vyonix-core init'.")
     db = db or Database(cfg.database_url, service_url=cfg.service_database_url)
     store = SecretStore(cfg.data_dir)
-    if licensing is None:
-        licensing = Licensing(Machine.build(cfg.licensing_state_dir), mode=cfg.mode,
-                              settings=lambda k: cfg.extra.get(k))
+    # A plataforma não depende de licença (decisão de 04/11/2026): não monta o licenciamento nem lê/grava o cofre,
+    # o Installation ID, o Hardware ID ou o horário confiável compartilhados com o VYONIX DICOM Print.
     return Platform(cfg=cfg, db=db, licensing=licensing, bus=build_bus(), mfa_key=store.get_or_create("mfa_key", 32))

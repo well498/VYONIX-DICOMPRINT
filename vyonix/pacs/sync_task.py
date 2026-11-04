@@ -29,7 +29,6 @@ class PacsSyncTask:
         return {"skipped": why}
 
     def __call__(self) -> dict:
-        from vyonix.errors import NotLicensed
         from vyonix.modules import registry
         from vyonix.pacs import backend_for
         from vyonix.pacs import service as pacs
@@ -48,10 +47,6 @@ class PacsSyncTask:
             if not registry.is_enabled(s, "pacs"):
                 return self._skip("módulo PACS não habilitado")
             try:
-                self.plat.licensing.require_module(s, "pacs")
-            except NotLicensed as exc:
-                return self._skip(f"sem licença vigente do PACS ({exc})")
-            try:
                 out = pacs.sync(s, backend)
             except BackendUnavailable as exc:
                 return self._skip(f"motor DICOM indisponível ({exc})")
@@ -59,19 +54,12 @@ class PacsSyncTask:
 
     def _cloud(self, backend) -> dict:
         """Modo cloud: cada instância vai para a organização dona do AE Title chamado (rotas do PACS)."""
-        from vyonix.errors import NotLicensed
         from vyonix.modules import registry
         from vyonix.pacs import service as pacs
         from vyonix.pacs.backend import BackendUnavailable
 
         def allowed(s) -> bool:
-            if not registry.is_enabled(s, "pacs"):
-                return False
-            try:
-                self.plat.licensing.require_module(s, "pacs")
-            except NotLicensed:
-                return False
-            return True
+            return registry.is_enabled(s, "pacs")
         try:
             out = pacs.cloud_sync(self.plat.db, backend, allowed=allowed)
         except BackendUnavailable as exc:

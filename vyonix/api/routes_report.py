@@ -27,7 +27,6 @@ router = APIRouter(prefix="/report")
 def _require(c: Ctx, s) -> None:
     if not registry.is_enabled(s, "report"):
         raise NotLicensed("O módulo VYONIX REPORT não está habilitado nesta organização.", code="module_disabled")
-    c.plat.licensing.require_module(s, "report")
 
 
 def _scope(c: Ctx, s):

@@ -35,7 +35,6 @@ class StatusIn(BaseModel):
 def _require(c: Ctx, s) -> None:
     if not registry.is_enabled(s, "ris"):
         raise NotLicensed("O módulo VYONIX RIS não está habilitado nesta organização.", code="module_disabled")
-    c.plat.licensing.require_module(s, "ris")
 
 
 @router.post("/schedules", status_code=201)

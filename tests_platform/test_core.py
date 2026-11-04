@@ -312,16 +312,18 @@ class SettingsAndModules(unittest.TestCase):
             self.assertEqual(h[0]["reason"], "política")
 
     def test_module_enable_rules(self):
-        from vyonix.errors import Conflict, NotLicensed, ValidationFailed
+        from vyonix.errors import Conflict, ValidationFailed
         from vyonix.modules import registry
         no = lambda s, c: (False, "sem licença")        # noqa: E731
         yes = lambda s, c: (True, "")                   # noqa: E731
         with db.session(self.t) as s:
             self.assertTrue(registry.is_enabled(s, "core"))
             self.assertFalse(registry.is_enabled(s, "print"))
-        with self.assertRaises(NotLicensed):
-            with db.session(self.t) as s:
-                registry.enable(s, "print", actor="t", license_check=no)
+        # plataforma sem licença (04/11/2026): habilitar é configuração; a verificação de licença é ignorada
+        with db.session(self.t) as s:
+            registry.enable(s, "print", actor="t", license_check=no)
+            self.assertTrue(registry.is_enabled(s, "print"))
+            registry.disable(s, "print", actor="t")
         with self.assertRaises(ValidationFailed):
             with db.session(self.t) as s:
                 registry.enable(s, "notify", actor="t", license_check=yes)    # planejado

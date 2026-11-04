@@ -2,11 +2,10 @@ import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { ApiError, get, post, setCsrf, type Me } from "./api";
 import { AccessGate, Login } from "./pages/access";
 import { AuditPage } from "./pages/audit";
-import { CommercialPage } from "./pages/commercial";
 import { Dashboard } from "./pages/dashboard";
 import { ExamCenterPage } from "./pages/examcenter";
 import { ImagesPage } from "./pages/images";
-import { LicensePage } from "./pages/license";
+import { SystemPage } from "./pages/system";
 import { PatientsPage } from "./pages/patients";
 import { PlatformPage } from "./pages/platform";
 import { ReconcilePage } from "./pages/reconcile";
@@ -39,9 +38,7 @@ const ROUTES: Route[] = [
   { id: "usuarios", label: "Usuários e papéis", perm: "core.users.read", view: (me) => <UsersPage me={me} /> },
   { id: "unidades", label: "Unidades", perm: "core.settings.read", view: (me) => <SitesPage me={me} /> },
   { id: "configuracoes", label: "Configurações", perm: "core.settings.read", view: (me) => <SettingsPage me={me} /> },
-  { id: "licenca", label: "Licença e módulos", perm: "core.license.read", view: (me) => <LicensePage me={me} /> },
-  { id: "comercial", label: "Contratar e demonstrar", perm: "core.license.read",
-    view: (me) => <CommercialPage me={me} /> },
+  { id: "sistema", label: "Sistema e atualizações", perm: "core.settings.read", view: (me) => <SystemPage me={me} /> },
   { id: "auditoria", label: "Auditoria", perm: "core.audit.read", view: () => <AuditPage /> },
 ];
 
