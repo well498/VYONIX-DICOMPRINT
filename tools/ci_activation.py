@@ -1,20 +1,31 @@
-"""CI (Windows, após a instalação): ativação de módulo pelo DEPLOY com direito assinado.
+"""CI (Windows, após a instalação): ativação de módulo pelo DEPLOY SEM licença (decisão de 04/11/2026).
 
-A licença é emitida por um License Manager de teste (chave descartável); o objeto de licenciamento
-com essa chave pública é injetado no fluxo de ativação — o executável instalado continua aceitando
-somente as chaves oficiais. Resultado em <out>/activation.json."""
+Confere: módulo desabilitado antes e habilitado depois, todas as etapas aprovadas; módulo planejado (indisponível)
+continua recusado; e a pasta de licenciamento compartilhada com o VYONIX DICOM Print não é alterada pela ativação
+(nomes, tamanhos e SHA-256 dos arquivos antes e depois). Resultado em <out>/activation[-<módulo>].json."""
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
-import shutil
 import sys
-import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+
+
+def snapshot(d: Path) -> dict[str, str]:
+    out: dict[str, str] = {}
+    if not d.exists():
+        return out
+    for p in sorted(x for x in d.rglob("*") if x.is_file()):
+        try:
+            out[str(p.relative_to(d))] = f"{p.stat().st_size}:{hashlib.sha256(p.read_bytes()).hexdigest()}"
+        except OSError as exc:
+            out[str(p.relative_to(d))] = f"ilegível:{type(exc).__name__}"
+    return out
 
 
 def main() -> int:
@@ -24,53 +35,47 @@ def main() -> int:
     a = ap.parse_args()
     out, code = Path(a.out), a.module
     res: dict = {}
-    tmp = Path(tempfile.mkdtemp(prefix="vyx-act-"))
     try:
-        from tests.licensing_support import make_manager
-        from vyonix.licensing.service import Licensing, Machine
+        from vyonix.modules import registry
         from vyonix_deploy.modules import _core, activate
         from vyonix_deploy.service import Deploy
-        from vyonix_protocol import formats as F
         d = Deploy()
         cfg = d.saved_config()
-        lm, admin, keys, cid = make_manager(tmp / "lm")
-        lic = Licensing(Machine.build(d.paths.licensing), public_keys=keys,
-                        key_scopes={k: F.ALL_SCOPES for k in keys})
         ctx = d.context(cfg)
+        before_lic = snapshot(d.paths.licensing)
         db, tid = _core(ctx)
-        from vyonix.modules import registry
         with db.session(tid) as s:
             res["before_enabled"] = registry.is_enabled(s, code)
-        r0 = activate(d, code, approve_all=True, licensing=lic)
-        res["refused_without_license"] = r0["status"] != "succeeded"
-        res["without_license"] = {"status": r0["status"], "message": r0["message"]}
-        req = lic.request(modules=sorted({"core", "print", code}), demo_days=None, organization="Clínica CI",
-                          contact={"name": "CI", "email": "ci@exemplo.com"})
-        info = lm.import_request(admin, req["code"])
-        doc = lm.issue(admin, info.request_id, cid, ltype="annual", edition="Profissional",
-                       modules={"core": {"kind": "contract"},
-                                **({code: {"kind": "contract"}} if code != "print" else {})})["document"]
-        with db.session(tid) as s:
-            lic.install(s, doc, actor="CI")
-        r = activate(d, code, approve_all=True, licensing=lic)
+        r = activate(d, code, approve_all=True)
         res.update(status=r["status"], message=r["message"], run_id=r["run_id"], report=r["report"]["pdf"])
         steps = d.db.steps(r["run_id"])
         res["steps"] = [(s["step_id"], s["status"], s.get("verify_msg")) for s in steps]
+        res["activated_without_license"] = (r["status"] == "succeeded"
+                                            and not any("entitlement" in s["step_id"] for s in steps))
         with db.session(tid) as s:
             res["after_enabled"] = registry.is_enabled(s, code)
+        try:                                                  # planejado: continua recusado (segurança mantida)
+            r2 = activate(d, "notify", approve_all=True)
+            res["planned_module_refused"] = r2["status"] != "succeeded"
+        except Exception as exc:                              # noqa: BLE001 - recusa por exceção também vale
+            res["planned_module_refused"] = True
+            res["planned_module_message"] = str(exc)[:300]
+        after_lic = snapshot(d.paths.licensing)
+        res["licensing_files"] = len(before_lic)
+        res["licensing_untouched"] = before_lic == after_lic
+        if not res["licensing_untouched"]:
+            res["licensing_diff"] = sorted(set(before_lic.items()) ^ set(after_lic.items()))[:20]
         if code == "pacs":
             from vyonix_deploy.steps.pacs import engine_probe
             res["engine_probe"] = engine_probe(ctx)
         db.dispose()
-        lm.close()
         d.close()
-    except Exception as exc:  # noqa: BLE001
+    except Exception:  # noqa: BLE001
         import traceback
         res["status"] = "error"
         res["error"] = traceback.format_exc()
-    finally:
-        shutil.rmtree(tmp, ignore_errors=True)
-    (out / f"activation-{code}.json" if code != "print" else out / "activation.json").write_text(json.dumps(res, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+    (out / f"activation-{code}.json" if code != "print" else out / "activation.json").write_text(
+        json.dumps(res, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
     print(json.dumps(res, ensure_ascii=False, indent=2, default=str))
     return 0 if res.get("status") == "succeeded" else 1
 

@@ -56,3 +56,12 @@ modificá-lo." Estado: **APROVADO pelo proprietário em 04/11/2026 03:43 (4 pont
   administração, tarefas, monitoração, cofre intocado); ajustados os que dependiam do comportamento antigo
   (`test_api`, `test_core`, `test_monitoring`, `test_e2e_web`). tests_platform 274 OK; tests_deploy OK;
   testes do DICOM Print (`tests/`) OK sem alteração.
+
+## L3 — implementado (testes locais; CI pendente)
+- DEPLOY: ativação de módulos sem etapa "direito assinado"; não monta o licenciamento; o identificador da instalação
+  nos relatórios do DEPLOY passa a ficar na pasta do DEPLOY (`VYXP-…`), sem ler/gravar o cofre do DICOM Print.
+- CI 2.9 reescrito: ativação sem licença + módulo planejado recusado + pasta de licenciamento do DICOM Print
+  idêntica antes/depois (SHA-256 de cada arquivo). O 2.8 (Installation ID do DICOM Print preservado) continua.
+- Homologação: atualização a partir do instalador 0.2.0 (a58edb6, run 41778895463); passo 4 confere
+  `GET /system` (licença não exigida). Versão da plataforma e do DEPLOY: 0.3.0.
+- Testes: `tests_deploy/test_unlicensed_deploy.py` (2). Locais: tests_platform 274 OK, tests_deploy OK.

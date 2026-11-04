@@ -1,5 +1,8 @@
-"""Ativação de módulo sem reinstalar (seção 9.5): direito assinado → dependências → preparo do que
-falta → teste → habilitação → relatório complementar. Mesmo motor (plano, aprovação, reversão)."""
+"""Ativação de módulo sem reinstalar (seção 9.5): dependências → preparo do que falta → teste → habilitação →
+relatório complementar. Mesmo motor (plano, aprovação, reversão).
+
+A plataforma não depende de licença (decisão do proprietário de 04/11/2026): não há etapa de "direito assinado" e o
+DEPLOY não monta o licenciamento nem lê/grava o cofre compartilhado com o VYONIX DICOM Print."""
 
 from __future__ import annotations
 
@@ -25,52 +28,6 @@ def _core(ctx: Context):
         db.dispose()
         raise DeployError("Organização do VYONIX não encontrada no banco: execute o reparo.")
     return db, tid
-
-
-def _licensing(ctx: Context):
-    lic = ctx.extra.get("licensing")
-    if lic is None:
-        from vyonix.licensing.service import Licensing, Machine
-        lic = Licensing(Machine.build(ctx.paths.licensing))
-        ctx.extra["licensing"] = lic
-    return lic
-
-
-class EntitlementStep(Step):
-    category = "modulo"
-    reversible = False
-
-    def __init__(self, code: str) -> None:
-        self.code = code
-        self.id = f"module.{code}.entitlement"
-        self.title = f"Direito assinado para o módulo {code}"
-
-    def _status(self, ctx: Context) -> tuple[bool, str]:
-        db, tid = _core(ctx)
-        try:
-            with db.session(tid) as s:
-                return _licensing(ctx).module_ok(s, self.code)
-        finally:
-            db.dispose()
-
-    def observe(self, ctx: Context) -> dict:
-        ok, msg = self._status(ctx)
-        return {"module": self.code, "licensed": ok, "message": msg}
-
-    def desired(self, ctx: Context) -> dict:
-        return {"module": self.code, "licensed": True}
-
-    def describe(self, ctx: Context) -> dict:
-        return {"current": self.observe(ctx), "proposed": self.desired(ctx),
-                "impact": "Somente conferência da licença aplicada no VYONIX (assinatura do fornecedor).",
-                "undo": "—"}
-
-    def check(self, ctx: Context) -> bool:
-        return self._status(ctx)[0]
-
-    def apply(self, ctx: Context) -> None:
-        raise DeployError(f"Sem direito vigente para o módulo {self.code}: {self._status(ctx)[1]} "
-                          "Aplique a licença em Licença e módulos e tente de novo.")
 
 
 class DependenciesStep(Step):
@@ -186,7 +143,7 @@ class ModuleEnableStep(Step):
         db, tid = _core(ctx)
         try:
             with db.session(tid) as s:
-                registry.enable(s, self.code, actor="VYONIX DEPLOY", license_check=_licensing(ctx).module_ok)
+                registry.enable(s, self.code, actor="VYONIX DEPLOY")
         finally:
             db.dispose()
 
@@ -207,7 +164,7 @@ def activation_steps(ctx: Context, code: str) -> list[Step]:
     if code == "pacs":
         from vyonix_deploy.steps.pacs import engine_steps
         prepare = engine_steps(ctx)
-    return [EntitlementStep(code), DependenciesStep(code),
+    return [DependenciesStep(code),
             DirectoryStep(f"module.{code}", ctx.paths.data_dir / "modules" / code, f"do módulo {code}"),
             *prepare, ModuleTestStep(code), ModuleEnableStep(code)]
 
@@ -218,7 +175,7 @@ def activate(d, code: str, *, approve_all: bool = False, silent: bool = False, l
     cfg = cfg or d.saved_config()
     if cfg is None:
         raise DeployError("Nenhuma instalação registrada pelo DEPLOY neste servidor.")
-    extra = {"licensing": licensing} if licensing is not None else {}
+    extra: dict = {}                       # ``licensing`` ignorado: a plataforma não usa licença (04/11/2026)
 
     def build(ctx: Context, kind: str) -> list[Step]:
         return activation_steps(ctx, code)

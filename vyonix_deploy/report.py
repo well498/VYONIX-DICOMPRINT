@@ -40,12 +40,23 @@ def sha256_file(p: Path) -> str:
 
 
 def _installation_id(paths) -> str:
+    """Identificador da instalação da PLATAFORMA, guardado na pasta do DEPLOY. Não lê nem grava o cofre de
+    licenciamento (compartilhado com o VYONIX DICOM Print) — decisão de 04/11/2026."""
+    import uuid
+    f = Path(paths.deploy_dir) / "installation_id.txt"
     try:
-        from vyonix.licensing.service import Machine
-        return Machine.build(paths.licensing, isolated=bool(os.environ.get("VYONIX_DEPLOY_ROOT"))) \
-            .installation.current().installation_id
-    except Exception:  # noqa: BLE001 - relatório sai mesmo sem o cofre
-        return "VYXI-INDISPONIVEL"
+        v = f.read_text(encoding="utf-8").strip()
+        if v:
+            return v
+    except OSError:
+        pass
+    v = "VYXP-" + uuid.uuid4().hex[:16].upper()
+    try:
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(v, encoding="utf-8")
+    except OSError:
+        return "VYXP-INDISPONIVEL"
+    return v
 
 
 def build_tests(run: dict, steps: list[dict], extra: list[dict] | None = None) -> list[dict]:

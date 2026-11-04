@@ -162,7 +162,7 @@ def main() -> int:
 
     prev = Path(a.previous_setup).resolve() if a.previous_setup and Path(a.previous_setup).exists() else None
     if prev:
-        @step("0a. Instalar a versão anterior (instalador de homologação bc9cf28)")
+        @step("0a. Instalar a versão anterior (instalador de homologação 0.2.0, a58edb6)")
         def _():
             run([prev, "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", f"/DEPLOYCONFIG={cfg}",
                  f"/LOG={OUT / 'setup-anterior.log'}"], env={"VYONIX_ADMIN_PASSWORD": ADMIN_PW})
@@ -236,13 +236,13 @@ def main() -> int:
             out.append(f"{m}: {json.loads(p.stdout[p.stdout.index('{'):])['status']}")
         return "; ".join(out)
 
-    @step("4. Gestor da clínica fictícia entra só com usuário e senha; módulos em homologação")
+    @step("4. Gestor da clínica fictícia entra só com usuário e senha; módulos habilitados sem licença")
     def _():
         c = Client()
         me = c.login(ADMIN, ADMIN_PW)
-        lic = c.call("GET", "/license")
-        states = {m["module"]: m["state"] for m in lic["modules"] if m["module"] in ("pacs", "ris", "report")}
-        assert set(states.values()) == {"homologacao"}, states
+        info = c.call("GET", "/system")                       # "Sistema e atualizações": plataforma sem licença
+        assert info["licensing"]["required"] is False, info["licensing"]
+        assert info["version"], info
         mods = {m["code"]: m["status"] for m in c.call("GET", "/modules")}
         assert all(mods.get(x) == "enabled" for x in ("pacs", "ris", "report")), mods
         s["admin"] = c

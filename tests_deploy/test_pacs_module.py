@@ -137,7 +137,7 @@ class PacsModuleTest(unittest.TestCase):
     def test_activation_plan_order(self):
         from vyonix_deploy.modules import activation_steps
         ids = [s.id for s in activation_steps(self.ctx, "pacs")]
-        for a, b in (("module.pacs.entitlement", "pacs.engine.config"), ("pacs.engine.config", "service.VyonixPacsEngine"),
+        for a, b in (("module.pacs.dependencies", "pacs.engine.config"), ("pacs.engine.config", "service.VyonixPacsEngine"),
                      ("service.VyonixPacsEngine", "acl.pacs.storage"),
                      ("service.VyonixPacsEngine", "running.VyonixPacsEngine"), ("running.VyonixPacsEngine",
                                                                                   "pacs.core.settings"),

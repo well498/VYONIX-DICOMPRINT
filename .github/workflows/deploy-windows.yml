@@ -226,14 +226,14 @@ jobs:
             throw "critérios reprovados"
           }
 
-      - name: Instalador de homologação anterior (bc9cf28, o que está no computador do proprietário)
+      - name: Instalador de homologação anterior (0.2.0, a58edb6 — liberado para validação do proprietário)
         if: ${{ inputs.flavor == 'homologacao' }}
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
         shell: pwsh
         run: |
-          gh run download 40896631587 -R ${{ github.repository }} -n homologacao-windows -D dist\previous
+          gh run download 41778895463 -R ${{ github.repository }} -n homologacao-windows -D dist\previous
           Get-ChildItem dist\previous -Recurse -Filter *.exe | ForEach-Object { Write-Host "::notice title=Versão anterior::$($_.FullName) SHA-256 $((Get-FileHash $_ -Algorithm SHA256).Hash)" }
 
       - name: Homologação interna — roteiro do proprietário executado no instalador

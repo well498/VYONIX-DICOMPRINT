@@ -654,13 +654,16 @@ $ap = $r | Get-NetFirewallApplicationFilter
             lp.kill()
 
     # ---------------------------------------------------------------- 2.9 ativação de módulo
-    @check("2.9", "Ativação do módulo PRINT: direito assinado → dependências → preparo → teste → habilitação")
+    @check("2.9", "Ativação do módulo PRINT sem licença: dependências → preparo → teste → habilitação; módulo "
+                  "planejado recusado; pasta de licenciamento do DICOM Print intocada")
     def _():
         p = sh([sys.executable, ROOT / "tools" / "ci_activation.py", "--out", OUT], timeout=900, ok=None)
         r = json.loads((OUT / "activation.json").read_text(encoding="utf-8"))
         assert r["status"] == "succeeded", r
         assert r["before_enabled"] is False and r["after_enabled"] is True, r
-        assert r["refused_without_license"], "habilitou sem licença"
+        assert r["activated_without_license"], "a ativação ainda passou por etapa de licença"
+        assert r["planned_module_refused"], "módulo planejado foi habilitado"
+        assert r["licensing_untouched"], f"pasta de licenciamento alterada: {r.get('licensing_diff')}"
         return json.dumps(r, ensure_ascii=False)[:800]
 
     @check("2.5", "VYONIX VIEWER (OHIF) servido pelo Core instalado, com política de conteúdo própria")
@@ -676,14 +679,15 @@ $ap = $r | Get-NetFirewallApplicationFilter
         n = csp.count("'sha256-")
         return f"/viewer/ 200; CSP com {n} hash(es) de script"
 
-    @check("2.9", "Ativação do módulo PACS: motor DICOM (Orthanc sem plugins) como serviço, Core configurado e habilitado")
+    @check("2.9", "Ativação do módulo PACS sem licença: motor DICOM (Orthanc sem plugins) como serviço, Core "
+                  "configurado e habilitado")
     def _():
         sh([sys.executable, ROOT / "tools" / "ci_activation.py", "--out", OUT, "--module", "pacs"], timeout=900,
            ok=None)
         r = json.loads((OUT / "activation-pacs.json").read_text(encoding="utf-8"))
         assert r["status"] == "succeeded", r
         assert r["before_enabled"] is False and r["after_enabled"] is True, r
-        assert r["refused_without_license"], "habilitou sem licença"
+        assert r["activated_without_license"] and r["licensing_untouched"], r
         ok, msg = r["engine_probe"]
         assert ok, msg
         q = query_service("VyonixPacsEngine")
