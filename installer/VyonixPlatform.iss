@@ -97,8 +97,10 @@ Filename: "{app}\{#DeployExe}"; Parameters: "update --approve-all --silent"; Fla
 ; Atualização sobre uma instalação existente (dados em ProgramData\VYONIX): marcado por padrão, conclui a atualização
 ; (backup, migração e serviços) com o progresso visível — sem desinstalar nada nem passar pelo assistente.
 Filename: "{app}\Atualizar_VYONIX.cmd"; Description: "Concluir a atualização agora (backup do banco, migração e reinício dos serviços; dados preservados)"; Flags: postinstall skipifsilent waituntilterminated; Check: IsUpgrade
-Filename: "{app}\{#DeployExe}"; Parameters: "wizard"; Description: "Abrir o assistente do VYONIX DEPLOY"; Flags: nowait postinstall skipifsilent runhidden; Check: not IsUpgrade
-Filename: "{app}\{#DeployExe}"; Parameters: "wizard"; Description: "Abrir o assistente do VYONIX DEPLOY"; Flags: nowait postinstall skipifsilent runhidden unchecked; Check: IsUpgrade
+; runascurrentuser: no Inno, entradas "postinstall" rodam por padrão como o usuário ORIGINAL (sem elevação); o
+; assistente então recusava com "Execute o DEPLOY como administrador" (relato do proprietário, 05/11/2026 07:18).
+Filename: "{app}\{#DeployExe}"; Parameters: "wizard"; Description: "Abrir o assistente do VYONIX DEPLOY"; Flags: nowait postinstall skipifsilent runhidden runascurrentuser; Check: not IsUpgrade
+Filename: "{app}\{#DeployExe}"; Parameters: "wizard"; Description: "Abrir o assistente do VYONIX DEPLOY"; Flags: nowait postinstall skipifsilent runhidden unchecked runascurrentuser; Check: IsUpgrade
 
 [UninstallRun]
 ; Remove serviços, regra de firewall e atalhos. Dados (ProgramData\VYONIX) e o DICOM Print são preservados.

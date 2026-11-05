@@ -36,6 +36,13 @@
 * **Nada implementado nem contratado.** Aguardando decisões D1–D9. Fase 0 (P1) pronta para iniciar quando aprovada.
 * Prioridade P2 (cloud/gateway); não interrompe Missão 2 nem a homologação Windows P0 da 0.3.1.
 
+## Achado na homologação do proprietário (05/11 07:18) — P0 instalação
+* Instalação nova: o assistente aberto pela última tela do instalador rodava SEM elevação (Inno executa entradas
+  `postinstall` como o usuário original) → "Execute o DEPLOY como administrador". Contorno: Menu Iniciar → VYONIX →
+  "VYONIX - Assistente de instalacao" (o .cmd pede administrador). Correção: flag `runascurrentuser` no
+  `installer/VyonixPlatform.iss` (commit desta data) — entra na 0.3.2; falta critério de CI que abra o assistente pela
+  tela final (os testes atuais são silenciosos e não passam por esse caminho).
+
 ## Em execução
 | Pri | Tarefa | Situação |
 |---|---|---|
