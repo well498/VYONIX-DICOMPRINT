@@ -5,4 +5,4 @@ plano de mudanças, aprovação, aplicação passo a passo (``check``/``apply``/
 relatório PDF e manifesto JSON. Nada é alterado antes da aprovação.
 """
 
-__version__ = "0.3.0"
+__version__ = "0.3.1"
