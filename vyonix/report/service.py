@@ -558,7 +558,10 @@ def worklist(s: Session, *, status: str | None = None, modality: str | None = No
     if scope is not None:
         whole, sites = scope
         if not whole:
-            cond = Study.site_id.in_(sites or {uuid.UUID(int=0)})
+            real = {x for x in sites if x is not None}
+            cond = Study.site_id.in_(real or {uuid.UUID(int=0)})
+            if None in sites:                                  # papel por unidade alcança exame sem unidade (V-03)
+                cond = cond | Study.site_id.is_(None)
             q = q.where(cond | Study.id.in_(shared)) if shared else q.where(cond)   # compartilhados com o usuário
     if require_forward:                    # a instituição exige a preparação do técnico antes do laudo
         from vyonix.ris.models import ExamPrep

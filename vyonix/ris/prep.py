@@ -512,7 +512,7 @@ def queue(s: Session, user_id: uuid.UUID, *, date_from=None, date_to=None, modal
     from vyonix.pacs.models import PacsInstance, PacsStudy
     q = select(Study, Patient).outerjoin(Patient, Patient.id == Study.patient_id)
     if sites is not None:
-        q = q.where(Study.site_id.in_(list(sites) or [uuid.uuid4()]))
+        q = q.where(Study.site_id.in_(list(sites) or [uuid.uuid4()]) | Study.site_id.is_(None))   # V-03
     if date_from:
         q = q.where(Study.created_at >= datetime.combine(date_from, datetime.min.time()).astimezone())
     if date_to:

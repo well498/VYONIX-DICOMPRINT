@@ -65,7 +65,8 @@ class _Sniff(asyncio.Protocol):
 
     def _tls(self) -> None:
         app = self.make_app()
-        sp = sslproto.SSLProtocol(self.loop, app, self.sslctx, None, server_side=True, ssl_handshake_timeout=60)
+        sp = sslproto.SSLProtocol(self.loop, app, self.sslctx, None, server_side=True,
+                                  ssl_handshake_timeout=SNIFF_TIMEOUT_S)          # A07 V-07: 10 s, não 60
         self.t.set_protocol(sp)
         sp.connection_made(self.t)
         mv, self.buf = memoryview(self.buf), b""

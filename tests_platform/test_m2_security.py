@@ -131,11 +131,12 @@ class M2Security(_prep.Prep):
         self.assertEqual(tec_a.post(u + "/forward").status_code, 403)
         self.assertEqual(tec_a.post(u + "/priority", json={"priority": "stat", "reason": "teste"}).status_code, 403)
         self.assertNotIn(sid, [x["study_id"] for x in tec_a.get("/api/v1/ris/prep").json()["items"]])
-        # exame sem unidade: papel restrito a uma unidade não basta
+        # exame sem unidade (os recebidos pelo PACS chegam assim): alcançado por papel de qualquer unidade — exigir
+        # papel global deixava a instituição com papéis por unidade sem nenhum exame (A07 V-03)
         sid2 = self.study(2)
         self.set_site(sid2, None)
-        r = tec_a.post(f"/api/v1/ris/prep/{sid2}/priority", json={"priority": "stat", "reason": "teste"})
-        self.assertEqual(r.status_code, 403)
+        self.assertEqual(tec_a.get(f"/api/v1/ris/prep/{sid2}").status_code, 200)
+        self.assertIn(sid2, [x["study_id"] for x in tec_a.get("/api/v1/ris/prep").json()["items"]])
         # na própria unidade continua funcionando
         sid3 = self.study(3)
         self.set_site(sid3, a)
@@ -194,6 +195,35 @@ class M2Security(_prep.Prep):
         self.assertEqual(ga.get("/api/v1/audit").status_code, 403)
         r = ga.put("/api/v1/settings/core/security", json={"value": {}, "reason": "teste sintético"})
         self.assertEqual(r.status_code, 403)
+
+    def test_v01_v02_site_admin_and_coordination_limited(self):
+        a, b = self.site("Unidade A Sintética"), self.site("Unidade B Sintética")
+        ga, _ = self.site_user("gerente_a3", "administrador", a)
+        coord, _ = self.site_user("coord_a", "coordenador_cdi", a)
+        pid = self.docs["bruno"][1]
+        r = ga.post(f"/api/v1/report/physicians/{pid}/links", json={"valid_from": "2026-01-01", "site_id": b})
+        self.assertEqual((r.status_code, r.json()["error"]), (403, "global_required"))
+        self.assertEqual(ga.put("/api/v1/report/sla", json={"routine": 48, "urgent": 4, "stat": 1,
+                                                             "apply_to_open": True, "reason": "teste"}).status_code, 403)
+        self.assertEqual(ga.post("/api/v1/pacs/nodes", json={"name": "X", "ae_title": "X_SINT"}).status_code, 403)
+        sid = self.ready()[0]
+        self.set_site(sid, b)
+        for who in (coord, ga):
+            ids = [x["study_id"] for x in who.get("/api/v1/report/worklist").json()["items"]]
+            self.assertNotIn(sid, ids)
+        self.assertIn(sid, [x["study_id"] for x in self.admin.get("/api/v1/report/worklist").json()["items"]])
+
+    def test_v05_site_admin_cannot_take_over_account_without_role(self):
+        b = self.site("Filial B Sintética")
+        gb, _ = self.site_user("gerente_b5", "administrador", b)
+        r = self.admin.post("/api/v1/users", json={"username": "sem_papel", "display_name": "x", "password": PW,
+                                                   "roles": []})
+        self.assertEqual(r.status_code, 201, r.text)
+        uid = r.json()["id"]
+        self.assertEqual(gb.post(f"/api/v1/users/{uid}/reset-password", json={"password": "Outra-Senha-12345"}
+                                 ).status_code, 403)
+        self.assertEqual(gb.put(f"/api/v1/users/{uid}/roles",
+                                json={"roles": [{"role": "administrador", "site_id": b}]}).status_code, 403)
 
     # ------------------------------------------------------------------ S-04
     def test_s04_logout_revokes_viewer_credentials(self):

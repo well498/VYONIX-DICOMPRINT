@@ -23,7 +23,7 @@ from pydantic import BaseModel, Field
 from fastapi.responses import JSONResponse, Response
 from starlette.concurrency import run_in_threadpool
 
-from vyonix.api.app import Ctx, needs
+from vyonix.api.app import Ctx, needs, needs_global
 from vyonix.errors import NotLicensed, Unavailable, ValidationFailed
 from vyonix.modules import registry
 from vyonix.pacs import backend_for
@@ -352,19 +352,19 @@ class RouteIn(BaseModel):
 
 
 @router.get("/routes")
-def list_routes(c: Ctx = Depends(needs("pacs.admin"))):
+def list_routes(c: Ctx = Depends(needs_global("pacs.admin"))):
     with c.session() as s:
         return {"routes": pacs.routes(s), "mode": c.plat.cfg.mode}
 
 
 @router.post("/routes", status_code=201)
-def add_route(body: RouteIn, c: Ctx = Depends(needs("pacs.admin"))):
+def add_route(body: RouteIn, c: Ctx = Depends(needs_global("pacs.admin"))):
     with c.session() as s:
         return pacs.add_route(s, body.called_aet, description=body.description, **c.actor)
 
 
 @router.delete("/routes/{route_id}", status_code=204)
-def remove_route(route_id: uuid.UUID, c: Ctx = Depends(needs("pacs.admin"))):
+def remove_route(route_id: uuid.UUID, c: Ctx = Depends(needs_global("pacs.admin"))):
     with c.session() as s:
         pacs.remove_route(s, route_id, **c.actor)
     return Response(status_code=204)
@@ -410,7 +410,7 @@ def _qr(c: Ctx) -> dict:
 
 
 @router.get("/nodes")
-def list_nodes(c: Ctx = Depends(needs("pacs.admin"))):
+def list_nodes(c: Ctx = Depends(needs_global("pacs.admin"))):
     from vyonix.pacs import nodes as dnodes
     with c.session() as s:
         return {"nodes": pacs.nodes(s), "qr": _qr(c), "policy": dnodes.reception_policy(s),
@@ -418,13 +418,13 @@ def list_nodes(c: Ctx = Depends(needs("pacs.admin"))):
 
 
 @router.post("/nodes", status_code=201)
-def add_node(body: NodeIn, c: Ctx = Depends(needs("pacs.admin"))):
+def add_node(body: NodeIn, c: Ctx = Depends(needs_global("pacs.admin"))):
     with c.session() as s:
         return pacs.add_node(s, body.ae_title, **body.model_dump(exclude={"ae_title"}), **c.actor)
 
 
 @router.patch("/nodes/{node_id}")
-def update_node(node_id: uuid.UUID, body: NodePatch, c: Ctx = Depends(needs("pacs.admin"))):
+def update_node(node_id: uuid.UUID, body: NodePatch, c: Ctx = Depends(needs_global("pacs.admin"))):
     from vyonix.pacs import nodes as dnodes
     ch = body.model_dump(exclude_unset=True)
     rv = ch.pop("row_version", None)
@@ -433,14 +433,14 @@ def update_node(node_id: uuid.UUID, body: NodePatch, c: Ctx = Depends(needs("pac
 
 
 @router.delete("/nodes/{node_id}", status_code=204)
-def remove_node(node_id: uuid.UUID, c: Ctx = Depends(needs("pacs.admin"))):
+def remove_node(node_id: uuid.UUID, c: Ctx = Depends(needs_global("pacs.admin"))):
     with c.session() as s:
         pacs.remove_node(s, node_id, **c.actor)
     return Response(status_code=204)
 
 
 @router.post("/nodes/{node_id}/echo")
-async def echo_node(node_id: uuid.UUID, c: Ctx = Depends(needs("pacs.admin"))):
+async def echo_node(node_id: uuid.UUID, c: Ctx = Depends(needs_global("pacs.admin"))):
     """Teste de associação DICOM (C-ECHO) do VYONIX para o equipamento."""
     from vyonix.pacs import nodes as dnodes
 
@@ -451,21 +451,21 @@ async def echo_node(node_id: uuid.UUID, c: Ctx = Depends(needs("pacs.admin"))):
 
 
 @router.get("/nodes/{node_id}/events")
-def node_events(node_id: uuid.UUID, c: Ctx = Depends(needs("pacs.admin"))):
+def node_events(node_id: uuid.UUID, c: Ctx = Depends(needs_global("pacs.admin"))):
     from vyonix.pacs import nodes as dnodes
     with c.session() as s:
         return {"items": dnodes.events(s, node_id=node_id, limit=100)}
 
 
 @router.get("/dicom-events")
-def dicom_events(outcome: str | None = None, limit: int = 100, c: Ctx = Depends(needs("pacs.admin"))):
+def dicom_events(outcome: str | None = None, limit: int = 100, c: Ctx = Depends(needs_global("pacs.admin"))):
     from vyonix.pacs import nodes as dnodes
     with c.session() as s:
         return {"items": dnodes.events(s, outcome=outcome, limit=limit)}
 
 
 @router.get("/holds")
-def list_holds(c: Ctx = Depends(needs("pacs.admin"))):
+def list_holds(c: Ctx = Depends(needs_global("pacs.admin"))):
     from vyonix.pacs import nodes as dnodes
     with c.session() as s:
         return dnodes.holds(s)
@@ -478,7 +478,7 @@ class HoldDecisionIn(BaseModel):
 
 
 @router.post("/holds/decide")
-def decide_holds(body: HoldDecisionIn, c: Ctx = Depends(needs("pacs.admin"))):
+def decide_holds(body: HoldDecisionIn, c: Ctx = Depends(needs_global("pacs.admin"))):
     from vyonix.pacs import nodes as dnodes
     b = _backend(c)
     with c.session() as s:
@@ -497,28 +497,28 @@ class ForwardRuleIn(BaseModel):
 
 
 @router.get("/forward-rules")
-def forward_rules(c: Ctx = Depends(needs("pacs.admin"))):
+def forward_rules(c: Ctx = Depends(needs_global("pacs.admin"))):
     from vyonix.pacs import forward
     with c.session() as s:
         return {"items": forward.rules(s), "jobs": forward.jobs(s, limit=50)}
 
 
 @router.post("/forward-rules", status_code=201)
-def add_forward_rule(body: ForwardRuleIn, c: Ctx = Depends(needs("pacs.admin"))):
+def add_forward_rule(body: ForwardRuleIn, c: Ctx = Depends(needs_global("pacs.admin"))):
     from vyonix.pacs import forward
     with c.session() as s:
         return forward.save_rule(s, **body.model_dump(), **c.actor)
 
 
 @router.put("/forward-rules/{rule_id}")
-def update_forward_rule(rule_id: uuid.UUID, body: ForwardRuleIn, c: Ctx = Depends(needs("pacs.admin"))):
+def update_forward_rule(rule_id: uuid.UUID, body: ForwardRuleIn, c: Ctx = Depends(needs_global("pacs.admin"))):
     from vyonix.pacs import forward
     with c.session() as s:
         return forward.save_rule(s, rule_id=rule_id, **body.model_dump(), **c.actor)
 
 
 @router.delete("/forward-rules/{rule_id}", status_code=204)
-def remove_forward_rule(rule_id: uuid.UUID, c: Ctx = Depends(needs("pacs.admin"))):
+def remove_forward_rule(rule_id: uuid.UUID, c: Ctx = Depends(needs_global("pacs.admin"))):
     from vyonix.pacs import forward
     with c.session() as s:
         forward.remove_rule(s, rule_id, **c.actor)
@@ -530,7 +530,7 @@ class ForwardIn(BaseModel):
 
 
 @router.post("/studies/{study_uid}/forward", status_code=201)
-def forward_study(study_uid: str, body: ForwardIn, c: Ctx = Depends(needs("pacs.admin"))):
+def forward_study(study_uid: str, body: ForwardIn, c: Ctx = Depends(needs_global("pacs.admin"))):
     """Envia o estudo a um nó cadastrado para receber (entra na fila do serviço; SHA-256 conferido)."""
     from vyonix.pacs import forward
     with c.session() as s:
@@ -538,14 +538,14 @@ def forward_study(study_uid: str, body: ForwardIn, c: Ctx = Depends(needs("pacs.
 
 
 @router.post("/forward-jobs/{job_id}/retry")
-def retry_forward(job_id: uuid.UUID, c: Ctx = Depends(needs("pacs.admin"))):
+def retry_forward(job_id: uuid.UUID, c: Ctx = Depends(needs_global("pacs.admin"))):
     from vyonix.pacs import forward
     with c.session() as s:
         return forward.retry(s, job_id, **c.actor)
 
 
 @router.get("/status")
-def status(c: Ctx = Depends(needs("pacs.admin"))):
+def status(c: Ctx = Depends(needs_global("pacs.admin"))):
     b = backend_for(c.plat)
     engine: dict = {"configured": b is not None}
     if b is not None:
@@ -558,7 +558,7 @@ def status(c: Ctx = Depends(needs("pacs.admin"))):
 
 
 @router.post("/sync")
-def sync(c: Ctx = Depends(needs("pacs.admin"))):
+def sync(c: Ctx = Depends(needs_global("pacs.admin"))):
     if not c.plat.edge:
         # No modo cloud o motor é compartilhado: a distribuição às organizações é feita pelo VyonixWorker, pelas
         # rotas de AE Title (/pacs/routes), nunca por uma organização puxando tudo para si.
@@ -578,14 +578,14 @@ class HoldIn(BaseModel):
 
 
 @router.get("/retention")
-def retention_report(c: Ctx = Depends(needs("pacs.admin"))):
+def retention_report(c: Ctx = Depends(needs_global("pacs.admin"))):
     from vyonix.pacs import retention
     with c.session() as s:
         return retention.report(s)
 
 
 @router.post("/studies/{study_uid}/retention-hold")
-def retention_hold(study_uid: str, body: HoldIn, c: Ctx = Depends(needs("pacs.admin"))):
+def retention_hold(study_uid: str, body: HoldIn, c: Ctx = Depends(needs_global("pacs.admin"))):
     from vyonix.pacs import retention
     with c.session() as s:
         st = retention.set_hold(s, study_uid, body.hold, reason=body.reason, **c.actor)

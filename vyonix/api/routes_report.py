@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
-from vyonix.api.app import Ctx, needs
+from vyonix.api.app import Ctx, needs, needs_global
 from vyonix.api.app import ctx as ctx_any
 from vyonix.auth import service as auth
 from vyonix.errors import Forbidden, NotLicensed
@@ -30,8 +30,20 @@ def _require(c: Ctx, s) -> None:
 
 
 def _scope(c: Ctx, s):
+    """Escopo da fila de laudos. Médico: vínculos vigentes. Demais (coordenação, quem distribui, leitura): unidades
+    do papel — papel numa unidade não vê a fila de outra (MISSÃO 2 V-02); exame sem unidade é alcançado por papel
+    de qualquer unidade (V-03: os estudos recebidos pelo PACS ainda chegam sem unidade)."""
     from vyonix.report import queue
-    return queue.scope(s, c.p.user_id, can_assign=c.p.has("report.assign"))
+    sc = queue.scope(s, c.p.user_id, can_assign=c.p.has("report.assign"))
+    if sc is not None:
+        return sc
+    perms = [x for x in ("report.assign", "report.read", "report.write") if c.p.has(x)]
+    if not perms or any(c.p.global_has(x) for x in perms):
+        return None
+    sites: set = {None}
+    for x in perms:
+        sites |= c.p.sites_for(x) or set()
+    return (False, sites)
 
 
 def _in_scope(c: Ctx, s, *, study_id: uuid.UUID | None = None, report_id: uuid.UUID | None = None,
@@ -56,8 +68,7 @@ def _in_scope(c: Ctx, s, *, study_id: uuid.UUID | None = None, report_id: uuid.U
         from vyonix.errors import Forbidden
         st = s.get(Study, study_id)
         perms = ("report.read", "report.write", "report.assign")
-        if st is not None and not any(c.p.global_has(x) if st.site_id is None else c.p.has(x, st.site_id)
-                                      for x in perms):
+        if st is not None and not any(c.p.has(x, st.site_id) for x in perms):
             raise Forbidden("Sem permissão nesta unidade.", code="site_forbidden")   # MISSÃO 2 S-02
 
 
@@ -458,7 +469,7 @@ def _tpl_owner(c: Ctx, personal: bool):
     if personal:
         c.require("report.templates.own")
         return c.p.user_id
-    c.require("report.templates.manage")
+    c.require_global("report.templates.manage")
     return None
 
 
@@ -524,7 +535,7 @@ def propose_template(tid: uuid.UUID, c: Ctx = Depends(needs("report.templates.ow
 
 
 @router.get("/templates/personal-summary")
-def personal_templates_summary(c: Ctx = Depends(needs("report.templates.manage"))):
+def personal_templates_summary(c: Ctx = Depends(needs_global("report.templates.manage"))):
     """Quantidade de modelos pessoais por usuário (sem nomes nem conteúdo)."""
     with c.session() as s:
         return {"items": tpl.personal_summary(s)}
@@ -704,7 +715,7 @@ class EndLinkIn(BaseModel):
 
 
 @router.get("/physicians")
-def list_physicians(c: Ctx = Depends(needs("report.physicians.manage"))):
+def list_physicians(c: Ctx = Depends(needs_global("report.physicians.manage"))):
     with c.session() as s:
         return {"items": phys.listing(s)}
 
@@ -716,25 +727,25 @@ def my_physician(c: Ctx = Depends(needs("report.read"))):
 
 
 @router.post("/physicians", status_code=201)
-def create_physician(body: PhysicianIn, c: Ctx = Depends(needs("report.physicians.manage"))):
+def create_physician(body: PhysicianIn, c: Ctx = Depends(needs_global("report.physicians.manage"))):
     with c.session() as s:
         return {"id": str(phys.save(s, **body.model_dump(), **c.actor).id)}
 
 
 @router.put("/physicians/{pid}")
-def update_physician(pid: uuid.UUID, body: PhysicianIn, c: Ctx = Depends(needs("report.physicians.manage"))):
+def update_physician(pid: uuid.UUID, body: PhysicianIn, c: Ctx = Depends(needs_global("report.physicians.manage"))):
     with c.session() as s:
         return {"id": str(phys.save(s, physician_id=pid, **body.model_dump(), **c.actor).id)}
 
 
 @router.post("/physicians/{pid}/links", status_code=201)
-def add_link(pid: uuid.UUID, body: LinkIn, c: Ctx = Depends(needs("report.physicians.manage"))):
+def add_link(pid: uuid.UUID, body: LinkIn, c: Ctx = Depends(needs_global("report.physicians.manage"))):
     with c.session() as s:
         return {"id": str(phys.add_link(s, pid, **body.model_dump(), **c.actor).id)}
 
 
 @router.post("/physician-links/{lid}/end")
-def end_link(lid: uuid.UUID, body: EndLinkIn, c: Ctx = Depends(needs("report.physicians.manage"))):
+def end_link(lid: uuid.UUID, body: EndLinkIn, c: Ctx = Depends(needs_global("report.physicians.manage"))):
     with c.session() as s:
         phys.end_link(s, lid, valid_to=body.valid_to, **c.actor)
         return {"ok": True}
@@ -750,13 +761,13 @@ class BrandingIn(BaseModel):
 
 
 @router.get("/branding")
-def get_branding(c: Ctx = Depends(needs("report.branding.manage"))):
+def get_branding(c: Ctx = Depends(needs_global("report.branding.manage"))):
     with c.session() as s:
         return brand.describe(s)
 
 
 @router.post("/branding/assets", status_code=201)
-async def upload_asset(request: Request, kind: str, c: Ctx = Depends(needs("report.branding.manage"))):
+async def upload_asset(request: Request, kind: str, c: Ctx = Depends(needs_global("report.branding.manage"))):
     from vyonix.errors import ValidationFailed
     data = bytearray()
     async for chunk in request.stream():                  # leitura limitada (não carrega envio gigante na memória)
@@ -770,14 +781,14 @@ async def upload_asset(request: Request, kind: str, c: Ctx = Depends(needs("repo
 
 
 @router.post("/branding", status_code=201)
-def save_branding(body: BrandingIn, c: Ctx = Depends(needs("report.branding.manage"))):
+def save_branding(body: BrandingIn, c: Ctx = Depends(needs_global("report.branding.manage"))):
     with c.session() as s:
         v = brand.save(s, **body.model_dump(), **c.actor)
         return {"id": str(v.id), "version": v.version}
 
 
 @router.get("/branding/preview")
-def preview_branding(site_id: uuid.UUID | None = None, c: Ctx = Depends(needs("report.branding.manage"))):
+def preview_branding(site_id: uuid.UUID | None = None, c: Ctx = Depends(needs_global("report.branding.manage"))):
     from fastapi.responses import Response
     from vyonix.report import pdf
     from vyonix.settings import service as settings
@@ -905,7 +916,7 @@ def signature_delegate(body: DelegateIn, c: Ctx = Depends(needs("report.sign")))
 @router.post("/physicians/{pid}/signature/preview")
 async def admin_preview_signature(pid: uuid.UUID, request: Request, crop: str | None = None, brightness: float = 1.0,
                                   contrast: float = 1.0, remove_background: bool = False,
-                                  c: Ctx = Depends(needs("report.physicians.manage"))):
+                                  c: Ctx = Depends(needs_global("report.physicians.manage"))):
     png, _w, _h = sig.process(await _body(request), **_params(crop, brightness, contrast, remove_background))
     return _png(png)
 
@@ -913,7 +924,7 @@ async def admin_preview_signature(pid: uuid.UUID, request: Request, crop: str | 
 @router.post("/physicians/{pid}/signature", status_code=201)
 async def admin_upload_signature(pid: uuid.UUID, request: Request, crop: str | None = None, brightness: float = 1.0,
                                  contrast: float = 1.0, remove_background: bool = False,
-                                 c: Ctx = Depends(needs("report.physicians.manage"))):
+                                 c: Ctx = Depends(needs_global("report.physicians.manage"))):
     """Envio pelo administrador **designado pelo próprio médico**; fica pendente até o médico confirmar."""
     data = await _body(request)
     with c.session() as s:
@@ -923,7 +934,7 @@ async def admin_upload_signature(pid: uuid.UUID, request: Request, crop: str | N
 
 
 @router.get("/physicians/{pid}/signature/pending")
-def admin_view_signature(pid: uuid.UUID, c: Ctx = Depends(needs("report.physicians.manage"))):
+def admin_view_signature(pid: uuid.UUID, c: Ctx = Depends(needs_global("report.physicians.manage"))):
     """O administrador designado vê só a imagem pendente que ele enviou (visualização auditada)."""
     with c.session() as s:
         return _png(sig.image_for(s, c.p.user_id, physician_id=pid, key=_sig_key(c), actor=c.p.username, ip=c.ip))
@@ -985,7 +996,7 @@ def sla_get(c: Ctx = Depends(ctx_any)):
 
 
 @router.put("/sla")
-def sla_put(body: SlaIn, c: Ctx = Depends(needs("report.sla.manage"))):
+def sla_put(body: SlaIn, c: Ctx = Depends(needs_global("report.sla.manage"))):
     """Novos prazos valem para atribuições e mudanças de prioridade a partir de agora. Exames em andamento só mudam
     com ``apply_to_open`` (explícito, com justificativa, auditado)."""
     from vyonix.report import queue

@@ -108,6 +108,17 @@ def create_app(plat: Platform, *, cookie_secure: bool = True, web_dist: Path | N
 
     from sqlalchemy.orm.exc import StaleDataError
 
+    from sqlalchemy.exc import IntegrityError
+
+    @app.exception_handler(IntegrityError)
+    async def _integrity(request: Request, exc: IntegrityError):
+        # A07 V-04: gravação simultânea que esbarra numa restrição de unicidade é conflito (409), não erro interno.
+        # O detalhe (sem parâmetros: hide_parameters) fica só no log do servidor.
+        log.warning("Conflito de integridade em %s %s: %s", request.method, request.url.path,
+                    type(exc.orig).__name__ if exc.orig is not None else "IntegrityError")
+        return JSONResponse({"error": "conflict", "message": "Outra gravação aconteceu ao mesmo tempo. Recarregue e "
+                             "tente novamente.", "details": {}}, status_code=409)
+
     @app.exception_handler(StaleDataError)
     async def _stale(request: Request, exc: StaleDataError):
         # MISSÃO 2 R-06: alteração concorrente (outra pessoa gravou antes) é conflito, não erro interno
@@ -187,6 +198,14 @@ class Ctx:
 
     def require(self, perm: str, site_id: uuid.UUID | None = None) -> None:
         auth.require(self.p, perm, site_id)
+
+    def require_global(self, perm: str) -> None:
+        """Permissão em todas as unidades (ação que vale para a instituição inteira) — MISSÃO 2."""
+        auth.require(self.p, perm)
+        if not self.p.global_has(perm):
+            from vyonix.errors import Forbidden
+            raise Forbidden("Esta ação vale para toda a instituição: exige o papel em todas as unidades.",
+                            code="global_required", details={"permission": perm})
 
 
 def _principal(request: Request, *, allow_pending: bool) -> Ctx:

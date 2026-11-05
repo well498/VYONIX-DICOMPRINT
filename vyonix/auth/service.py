@@ -210,7 +210,12 @@ def check_grant(s: Session, p: "Principal", role_codes: list, *, user_id: uuid.U
     if user_id is not None:                              # papéis atuais do usuário alterado (com a unidade)
         cur = select(RolePermission.permission, UserRole.site_id).join(
             UserRole, UserRole.role_id == RolePermission.role_id).where(UserRole.user_id == user_id)
-        want |= {(perm, site) for perm, site in s.execute(cur).all()}
+        rows = s.execute(cur).all()
+        want |= {(perm, site) for perm, site in rows}
+        if not rows and not p.global_has("core.users.manage"):
+            # A07 V-05: conta sem papel não pertence a nenhuma unidade — só quem administra todas as unidades a altera
+            raise Forbidden("Esta conta não tem papel em nenhuma unidade: só o administrador da instituição pode "
+                            "alterá-la.", code="cannot_delegate", details={"permissions": ["core.users.manage"]})
     missing = sorted({perm for perm, site in want
                       if not (p.global_has(perm) if site is None else p.has(perm, site))})
     if missing:
@@ -416,6 +421,7 @@ def login(s: Session, username: str, password: str, *, ip: str | None = None, us
         details = {"reason": "password", "failed": u.failed}
         if u.failed >= pol["lockout_attempts"]:
             u.locked_until, u.failed = now + timedelta(minutes=pol["lockout_minutes"]), 0
+            _revoke_viewer(s, u.id)                 # bloqueio também revoga o visualizador (V-06)
             details["locked_until"] = u.locked_until.isoformat()
         audit.record(s, actor=u.username, actor_id=u.id, action="auth.login_failed", details=details, ip=ip)
         raise Unauthorized(GENERIC)
@@ -511,6 +517,7 @@ def change_password(s: Session, p: Principal, current: str, new: str, ip: str | 
         details = {"failed": u.failed}
         if u.failed >= pol["lockout_attempts"]:
             u.locked_until, u.failed = utcnow() + timedelta(minutes=pol["lockout_minutes"]), 0
+            _revoke_viewer(s, u.id)                 # bloqueio também revoga o visualizador (V-06)
             details["locked_until"] = u.locked_until.isoformat()
             _end_sessions(s, u.id)
         audit.record(s, actor=u.username, actor_id=u.id, action="auth.password_change_failed", ip=ip,
@@ -590,6 +597,7 @@ def mfa_verify(s: Session, p: Principal, key: bytes, code: str, ip: str | None =
         pol = _policy(s)
         if u.failed >= pol["lockout_attempts"]:
             u.locked_until, u.failed = utcnow() + timedelta(minutes=pol["lockout_minutes"]), 0
+            _revoke_viewer(s, u.id)                 # bloqueio também revoga o visualizador (V-06)
             _end_sessions(s, u.id)
         audit.record(s, actor=p.username, actor_id=p.user_id, action="auth.mfa_failed", ip=ip)
         raise Unauthorized("Código inválido.")
@@ -599,6 +607,7 @@ def mfa_verify(s: Session, p: Principal, key: bytes, code: str, ip: str | None =
 
 
 def mfa_disable(s: Session, user_id: uuid.UUID, *, actor: str, actor_id=None, ip=None) -> None:
+    _revoke_viewer(s, user_id)                      # MISSÃO 2 V-06
     f = _mfa_factor(s, user_id)
     if f is None:
         raise NotFound("Segundo fator não cadastrado.")

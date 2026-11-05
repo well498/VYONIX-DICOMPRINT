@@ -163,13 +163,14 @@ _READ_PERMS = ("ris.exam.prepare", "ris.schedule.read", "report.read", "report.a
 
 def _site(c: Ctx, s, study_id: uuid.UUID, *perms: str):
     """O papel que concede a permissão precisa valer na unidade do exame (papel por unidade não alcança outra
-    unidade). Exame sem unidade exige o papel em todas as unidades (MISSÃO 2, R-04)."""
+    unidade — MISSÃO 2, R-04). Exame sem unidade (os recebidos pelo PACS ainda chegam assim) é alcançado por papel de
+    qualquer unidade: exigir papel global deixava instituições com papéis por unidade sem acesso (A07 V-03)."""
     from vyonix.clinical.models import Study
     from vyonix.errors import Forbidden, NotFound
     st = s.get(Study, study_id)
     if st is None:
         raise NotFound("Exame não encontrado.")
-    ok = any(c.p.global_has(x) if st.site_id is None else c.p.has(x, st.site_id) for x in perms)
+    ok = any(c.p.has(x, st.site_id) for x in perms)    # sem unidade: papel de qualquer unidade (V-03)
     if not ok:
         raise Forbidden("Sem permissão nesta unidade.", code="site_forbidden")
     return st

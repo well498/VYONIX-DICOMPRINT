@@ -8,7 +8,7 @@ from datetime import date
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
-from vyonix.api.app import Ctx, needs
+from vyonix.api.app import Ctx, needs, needs_global
 from vyonix.clinical import service as clinical
 
 router = APIRouter()
@@ -156,7 +156,7 @@ def procedures(c: Ctx = Depends(needs("clinical.orders.read"))):
 
 
 @router.post("/procedures")
-def save_procedure(body: ProcedureIn, c: Ctx = Depends(needs("clinical.procedures.manage"))):
+def save_procedure(body: ProcedureIn, c: Ctx = Depends(needs_global("clinical.procedures.manage"))):
     with c.session() as s:
         p = clinical.save_procedure(s, **body.model_dump(), **c.actor)
         return {"id": str(p.id)}
@@ -193,7 +193,7 @@ def studies(patient_id: uuid.UUID | None = None, unreconciled: bool = False,
     with c.session() as s:
         allowed = c.p.sites_for("clinical.studies.read")     # MISSÃO 2 S-02: papel por unidade vê só a unidade
         return [_study(x) for x in clinical.studies(s, patient_id=patient_id, unreconciled=unreconciled)
-                if allowed is None or x.site_id in allowed]
+                if allowed is None or x.site_id is None or x.site_id in allowed]
 
 
 @router.post("/studies/{sid}/reconcile")
@@ -202,8 +202,7 @@ def reconcile(sid: uuid.UUID, body: ReconcileIn, c: Ctx = Depends(needs("clinica
         from vyonix.clinical.models import Study
         st = s.get(Study, sid)
         if st is not None:                                   # S-02: papel da unidade do exame
-            ok = c.p.global_has("clinical.studies.reconcile") if st.site_id is None else \
-                c.p.has("clinical.studies.reconcile", st.site_id)
+            ok = c.p.has("clinical.studies.reconcile", st.site_id)
             if not ok:
                 from vyonix.errors import Forbidden
                 raise Forbidden("Sem permissão nesta unidade.", code="site_forbidden")

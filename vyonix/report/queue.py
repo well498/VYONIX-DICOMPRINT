@@ -59,7 +59,9 @@ def allowed(sc: tuple[bool, set] | None, site_id: uuid.UUID | None) -> bool:
     if sc is None:
         return True
     whole, sites = sc
-    return whole or (site_id is not None and site_id in sites)
+    if site_id is None:                  # exame sem unidade: só quem tem ``None`` no conjunto (papel por unidade —
+        return whole or None in sites    # MISSÃO 2 V-03); vínculo de médico nunca inclui ``None``
+    return whole or site_id in sites
 
 
 def require(s: Session, sc, study_id: uuid.UUID) -> None:
