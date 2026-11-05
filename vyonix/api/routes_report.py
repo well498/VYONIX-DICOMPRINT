@@ -89,6 +89,20 @@ def _can_read_draft(c: Ctx, s, rid: uuid.UUID) -> None:
     _author(c, s, rid, action="ler_rascunho", reviewer=_is_reviewer(c, s, rid))
 
 
+def _view(c: Ctx, s, rid: uuid.UUID) -> dict:
+    """Laudo + ``can_write``: a interface deixa o editor só leitura para quem não é o responsável (evita digitar e
+    perder o texto na recusa do servidor) — MISSÃO 2, recomendação A05."""
+    from vyonix.report import authorship
+    from vyonix.report.models import Report
+    from vyonix.ris import prep
+    d = rep.get(s, rid)
+    r = s.get(Report, rid)
+    shared = r.study_id in prep.shared_studies(s, c.p.user_id, scope="report")
+    d["can_write"] = bool(shared or _is_reviewer(c, s, rid) or authorship.is_responsible(
+        s, r, c.p.user_id, (c.p.username, c.p.display_name)))
+    return d
+
+
 class OpenIn(BaseModel):
     study_id: uuid.UUID
     template_id: uuid.UUID | None = None
@@ -209,7 +223,7 @@ def open_report(body: OpenIn, c: Ctx = Depends(needs("report.write"))):
         shared = body.study_id in prep.shared_studies(s, c.p.user_id, scope="report")
         r = rep.open_report(s, body.study_id, template_id=body.template_id, auto=body.auto,
                             check_owner=not shared, **c.actor)
-        return rep.get(s, r.id)
+        return _view(c, s, r.id)
 
 
 @router.get("/suggest")
@@ -225,7 +239,7 @@ def get_report(rid: uuid.UUID, c: Ctx = Depends(needs("report.read"))):
     with c.session() as s:
         _in_scope(c, s, report_id=rid)
         _can_read_draft(c, s, rid)
-        return rep.get(s, rid)
+        return _view(c, s, rid)
 
 
 @router.put("/reports/{rid}")
@@ -237,7 +251,7 @@ def save_draft(rid: uuid.UUID, body: DraftIn, c: Ctx = Depends(needs("report.wri
         rep.update_draft(s, rid, body=body.body, critical=body.critical, critical_note=body.critical_note,
                          expected_version=body.row_version, body_format=body.body_format,
                          reviewer=_is_reviewer(c, s, rid), **c.actor)
-        return rep.get(s, rid)
+        return _view(c, s, rid)
 
 
 def _is_reviewer(c: Ctx, s, rid: uuid.UUID) -> bool:
@@ -264,7 +278,7 @@ def request_review(rid: uuid.UUID, body: ReviewRequestIn, c: Ctx = Depends(needs
         _author(c, s, rid, action="enviar_revisao")
         rep.request_review(s, rid, reviewer_id=body.reviewer_id, note=body.note, expected_version=body.row_version,
                            **c.actor)
-        return rep.get(s, rid)
+        return _view(c, s, rid)
 
 
 @router.post("/reports/{rid}/review/return")
@@ -275,7 +289,7 @@ def return_review(rid: uuid.UUID, body: ReviewReturnIn, c: Ctx = Depends(needs("
         if not _is_reviewer(c, s, rid):
             raise Forbidden("Só o revisor deste laudo pode devolvê-lo.", code="not_reviewer")
         rep.return_review(s, rid, note=body.note, **c.actor)
-        return rep.get(s, rid)
+        return _view(c, s, rid)
 
 
 @router.get("/reports/{rid}/revisions")
@@ -316,7 +330,7 @@ def finalize(rid: uuid.UUID, body: SignIn, c: Ctx = Depends(needs("report.sign")
     with c.session() as s:
         rep.finalize(s, rid, expected_version=body.row_version, actor=c.p.display_name or c.p.username,
                      actor_id=c.p.user_id, ip=c.ip, reviewer=_is_reviewer(c, s, rid))
-        return rep.get(s, rid)
+        return _view(c, s, rid)
 
 
 @router.post("/reports/{rid}/addenda", status_code=201)
@@ -332,7 +346,7 @@ def add_addendum(rid: uuid.UUID, body: AddendumIn, c: Ctx = Depends(needs("repor
     with c.session() as s:
         rep.addendum(s, rid, body.text, critical=body.critical, actor=c.p.display_name or c.p.username,
                      actor_id=c.p.user_id, ip=c.ip)
-        return rep.get(s, rid)
+        return _view(c, s, rid)
 
 
 @router.get("/reports/{rid}/pdf")

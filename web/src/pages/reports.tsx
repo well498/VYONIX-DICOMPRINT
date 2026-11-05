@@ -10,7 +10,7 @@ import { MySignaturePanel, PhysiciansPanel } from "./physicians";
 type Row = { study_id: string; study_instance_uid: string; accession: string | null; modality: string | null;
   study_date: string | null; description: string | null; patient_name: string | null; report_id: string | null;
   report_status: "pending" | "draft" | "review" | "final"; critical: boolean;
-  assignment: null | { physician: string; priority: string; due_at: string; overdue: boolean };
+  assignment: null | { physician: string; physician_user_id?: string; priority: string; due_at: string; overdue: boolean };
   report_started_at?: string | null; changes_locked?: boolean };
 type Version = { version: number; kind: "final" | "addendum"; body: string; critical: boolean; signed_by: string;
   signed_at: string; sha256: string; signature_mode?: "password" | "handwritten_image"; body_format?: string;
@@ -20,7 +20,7 @@ type Version = { version: number; kind: "final" | "addendum"; body: string; crit
 type Review = { requested_by: string | null; note: string | null; requested_at: string | null; reviewer_id: string | null };
 type Report = { id: string; study_id: string; study_instance_uid: string | null; status: "draft" | "review" | "final";
   body: string; body_format?: string; critical: boolean; critical_note: string | null; author: string; version: number;
-  finalized_by: string | null; finalized_at: string | null; row_version: number; versions: Version[];
+  finalized_by: string | null; finalized_at: string | null; row_version: number; versions: Version[]; can_write?: boolean;
   draft_revision?: number; review?: Review | null };
 type Revision = { revision: number; author: string; event: string; at: string; body: string; body_format: string };
 const REV_EVENT: Record<string, string> = { save: "gravação", review_request: "enviado para revisão", return: "devolvido pelo revisor" };
@@ -182,7 +182,10 @@ function Editor({ me, row, initial, onClose }: { me: Me; row: Row; initial: Repo
     ? (await get<{ fields: Record<string, string | null> }>(`/report/reports/${report.id}/fields`)).fields : {}), [report?.id]);
   const revs = useLoad(async () => (showRevs && report ? (await get<{ items: Revision[] }>(`/report/reports/${report.id}/revisions`)).items : []),
     [showRevs, report?.row_version]);
-  const editable = report?.status === "draft" ? can("report.write") : report?.status === "review" && can("report.review");
+  // MISSÃO 2: só o médico responsável (ou o revisor/compartilhamento) escreve — o servidor informa can_write
+  const mine = report?.can_write !== false;
+  const editable = mine && (report?.status === "draft" ? can("report.write") : report?.status === "review" && can("report.review"));
+  const otherDoctor = !report && row.assignment && row.assignment.physician_user_id !== me.user_id ? row.assignment.physician : null;
   const [template, setTemplate] = useState("auto");
   const [password, setPassword] = useState("");
   const [add, setAdd] = useState({ text: "", critical: false, password: "" });
@@ -267,12 +270,14 @@ function Editor({ me, row, initial, onClose }: { me: Me; row: Row; initial: Repo
               {(templates.data ?? []).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
             </select>
           </Field>
-          <div><button className="primary" disabled={act.busy} onClick={() => void create()}>Iniciar laudo</button>
+          <div><button className="primary" disabled={act.busy || !!otherDoctor} onClick={() => void create()}>Iniciar laudo</button>
+            {otherDoctor && <p className="field-hint">Exame atribuído a {otherDoctor}: só ele pode iniciar o laudo.</p>}
             {template === "auto" && suggestion.data && <p className="field-hint">{suggestion.data.status === "selected"
               ? `Modelo selecionado: ${suggestion.data.name} (regra: ${suggestion.data.level}).` : suggestion.data.message}</p>}</div>
         </div>) : <Notice kind="info">Sem laudo para este estudo.</Notice>)}
       {report && report.status !== "final" && (
         <>
+          {!mine && <Notice kind="info">Este laudo está sob responsabilidade de outro médico: somente leitura.</Notice>}
           {report.status === "review" && <Notice kind="info">Em revisão — enviado por {report.review?.requested_by ?? "—"} em {fmtDate(report.review?.requested_at)}
             {report.review?.note ? `. Observação: ${report.review.note}` : ""}. {editable ? "Você pode ajustar o texto, devolver ao autor ou liberar." : "O texto fica bloqueado até a devolução ou a liberação pelo revisor."}</Notice>}
           {report.status === "draft" && report.review?.note && <Notice kind="warn">Devolvido pelo revisor: {report.review.note}</Notice>}
