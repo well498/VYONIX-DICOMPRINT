@@ -1,0 +1,319 @@
+id	usuario	descricao	esperado	obtido	erro	ok	hora_utc	nota
+T-SEC-PWD-ERR	demo.recepcao	1 tentativa com senha errada	401	401		1	14:42:34	
+T-SEC-ENUM	-	usuário inexistente: mesma resposta que senha errada (sem enumeração)	401	401		1	14:42:34	
+LOGIN	demo.recepcao	login	200	200		1	14:42:38	
+PWCHG	demo.recepcao	troca obrigatória 1º login	200	200		1	14:42:38	
+T-RIS-A1	demo.recepcao	recepção lê pedido O01	200	200		1	14:42:50	
+T-RIS-A2	demo.recepcao	agendar O01 (scheduled_at com fuso)	201	201		1	14:42:50	
+T-RIS-A2b	demo.recepcao	agendar sem fuso → rejeitado	422	422	validation	1	14:42:50	
+T-RIS-A3	demo.recepcao	chegada do paciente O01	200	200		1	14:42:50	
+T-RIS-A4	demo.recepcao	agendar O16 (antes do estudo, modalidade US)	201	201		1	14:42:50	
+T-RIS-A4b	demo.recepcao	chegada O16	200	200		1	14:42:50	
+T-PRM-REC-1	demo.recepcao	PROIBIDO recepção atribuir médico	403	403	technician_only	1	14:42:50	
+T-PRM-REC-2	demo.recepcao	PROIBIDO recepção mudar prioridade	403	403	technician_only	1	14:42:50	
+T-PRM-REC-3	demo.recepcao	PROIBIDO recepção encaminhar exame	403	403	forbidden	1	14:42:51	
+T-PRM-REC-4	demo.recepcao	PROIBIDO recepção ver fila de laudos	403	403	forbidden	1	14:42:51	
+T-PRM-REC-5	demo.recepcao	PROIBIDO recepção gerenciar usuários	403	403	forbidden	1	14:42:51	
+T-SEC-CSRF	demo.recepcao	POST sem X-CSRF-Token → 403	403	403	csrf	1	14:42:51	
+T-PRT-01	demo.recepcao	Portal do paciente (rota) inexistente	404	404	not_found	1	14:42:51	
+T-SEC-STAGE	demo.tecnico.matriz	antes de trocar a senha, rota de negócio bloqueada (403 stage)	403	403	stage	1	14:43:11	
+T-SEC-PWD-WEAK	demo.tecnico.matriz	troca com senha fraca rejeitada	422	422	validation	1	14:43:11	
+PWCHG	demo.tecnico.matriz	troca obrigatória 1º login	200	200		1	14:43:11	
+T-RIS-B1a	demo.tecnico.matriz	técnico: O01 em realização	200	200		1	14:43:11	
+T-PRM-TEC-1	demo.tecnico.matriz	PROIBIDO técnico cancelar agendamento	403	403	forbidden	1	14:43:11	
+T-RIS-B1b	demo.tecnico.matriz	técnico: O01 concluído	200	200		1	14:43:11	
+T-RIS-B1c	demo.tecnico.matriz	técnico: O16 em realização	200	200		1	14:43:11	
+T-RIS-B2x	demo.tecnico.matriz	checklist com código inválido → 422	422	422	validation	1	14:43:11	
+T-RIS-B3-O01	demo.tecnico.matriz	checklist + encaminhar O01	200	200		1	14:43:11	
+T-RIS-B3-O02	demo.tecnico.matriz	checklist + encaminhar O02	200	200		1	14:43:12	
+T-RIS-B3-O03	demo.tecnico.matriz	checklist + encaminhar O03	200	200		1	14:43:12	
+T-RIS-B3-O04	demo.tecnico.matriz	checklist + encaminhar O04	200	200		1	14:43:12	
+T-RIS-B3-O05	demo.tecnico.matriz	checklist + encaminhar O05	200	200		1	14:43:12	
+T-RIS-B3-O06-1a	demo.tecnico.matriz	checklist + encaminhar O06	200	422	validation	1	14:43:12	esperado pelo sistema: encaminhamento bloqueado até 2 min sem novas imagens (recepção encerrada)
+T-RIS-B3-O07-1a	demo.tecnico.matriz	checklist + encaminhar O07	200	422	validation	1	14:43:13	esperado pelo sistema: encaminhamento bloqueado até 2 min sem novas imagens (recepção encerrada)
+T-RIS-B3-O08-1a	demo.tecnico.matriz	checklist + encaminhar O08	200	422	validation	1	14:43:13	esperado pelo sistema: encaminhamento bloqueado até 2 min sem novas imagens (recepção encerrada)
+T-RIS-B3-O09-1a	demo.tecnico.matriz	checklist + encaminhar O09	200	422	validation	1	14:43:13	esperado pelo sistema: encaminhamento bloqueado até 2 min sem novas imagens (recepção encerrada)
+T-RIS-B3-O11-1a	demo.tecnico.matriz	checklist + encaminhar O11	200	422	validation	1	14:43:13	esperado pelo sistema: encaminhamento bloqueado até 2 min sem novas imagens (recepção encerrada)
+T-RIS-B3-O12-1a	demo.tecnico.matriz	checklist + encaminhar O12	200	422	validation	1	14:43:13	esperado pelo sistema: encaminhamento bloqueado até 2 min sem novas imagens (recepção encerrada)
+T-RIS-B3-O13-1a	demo.tecnico.matriz	checklist + encaminhar O13	200	422	validation	1	14:43:14	esperado pelo sistema: encaminhamento bloqueado até 2 min sem novas imagens (recepção encerrada)
+T-RIS-B3-O14-1a	demo.tecnico.matriz	checklist + encaminhar O14	200	422	validation	1	14:43:14	esperado pelo sistema: encaminhamento bloqueado até 2 min sem novas imagens (recepção encerrada)
+T-RIS-B3-O15-1a	demo.tecnico.matriz	checklist + encaminhar O15	200	422	validation	1	14:43:14	esperado pelo sistema: encaminhamento bloqueado até 2 min sem novas imagens (recepção encerrada)
+T-PRM-TEC-2	demo.tecnico.matriz	PROIBIDO técnico devolver laudo	403	403	forbidden	1	14:43:14	
+T-RIS-B3-O06	demo.tecnico.matriz	encaminhar O06 após recepção encerrada	200	200		1	14:43:22	
+T-RIS-B3-O07	demo.tecnico.matriz	encaminhar O07 após recepção encerrada	200	200		1	14:43:22	
+T-RIS-B3-O08	demo.tecnico.matriz	encaminhar O08 após recepção encerrada	200	200		1	14:43:22	
+T-RIS-B3-O09	demo.tecnico.matriz	encaminhar O09 após recepção encerrada	200	200		1	14:43:22	
+T-RIS-B3-O11	demo.tecnico.matriz	encaminhar O11 após recepção encerrada	200	200		1	14:43:22	
+T-RIS-B3-O12	demo.tecnico.matriz	encaminhar O12 após recepção encerrada	200	200		1	14:43:22	
+T-RIS-B3-O13	demo.tecnico.matriz	encaminhar O13 após recepção encerrada	200	200		1	14:43:22	
+T-RIS-B3-O14	demo.tecnico.matriz	encaminhar O14 após recepção encerrada	200	200		1	14:43:22	
+T-RIS-B3-O15	demo.tecnico.matriz	encaminhar O15 após recepção encerrada	200	200		1	14:43:22	
+T-RIS-C0	demo.tecnico.matriz	médicos elegíveis para O01	200	200		1	14:43:30	
+T-RIS-C1-O01	demo.tecnico.matriz	técnico Matriz atribui O01 à Dra. Ana	200	200		1	14:43:30	
+T-RIS-C1-O05	demo.tecnico.matriz	técnico Matriz atribui O05 à Dra. Ana	200	200		1	14:43:30	
+T-RIS-C1-O13	demo.tecnico.matriz	técnico Matriz atribui O13 à Dra. Ana	200	200		1	14:43:30	
+T-RIS-C1-O14	demo.tecnico.matriz	técnico Matriz atribui O14 à Dra. Ana	200	200		1	14:43:30	
+LOGIN	demo.tecnico.satelite	login	200	200		1	14:43:49	
+PWCHG	demo.tecnico.satelite	troca obrigatória 1º login	200	200		1	14:43:49	
+T-RIS-C2-O03	demo.tecnico.satelite	técnico Satélite atribui O03 à Dra. Carla (exame sem unidade - F1)	200	200		1	14:43:49	
+T-RIS-C2-O09	demo.tecnico.satelite	técnico Satélite atribui O09 à Dra. Carla (exame sem unidade - F1)	200	200		1	14:43:49	
+T-RIS-C2-O12	demo.tecnico.satelite	técnico Satélite atribui O12 à Dra. Carla (exame sem unidade - F1)	200	200		1	14:43:49	
+LOGIN	demo.tecnico.geral	login	200	200		1	14:43:54	
+PWCHG	demo.tecnico.geral	troca obrigatória 1º login	200	200		1	14:43:54	
+T-RIS-C3a	demo.tecnico.geral	O02 → Dra. Ana	200	200		1	14:43:54	
+T-RIS-C3b	demo.tecnico.geral	redistribuição O02 → Dra. Carla antes do início	200	200		1	14:43:54	
+T-RIS-C3c	demo.tecnico.geral	O07 → Dra. Ana	200	200		1	14:43:54	
+T-RIS-C3d	demo.tecnico.geral	O15 → Dra. Carla	200	200		1	14:43:54	
+T-RIS-C4a	demo.tecnico.geral	O04 prioridade routine→urgent	200	200		1	14:43:54	
+T-RIS-C4b	demo.tecnico.geral	O04 → Dra. Ana (prazo ≈ +4h)	200	200		1	14:43:54	
+T-RIS-C4c	demo.tecnico.geral	O04 prioridade urgent→routine	200	200		1	14:43:54	
+T-RIS-C4d	demo.tecnico.geral	prioridade inválida → 422	422	422	validation	1	14:43:54	
+T-RIS-C4e	demo.tecnico.geral	motivo curto → 422	422	422	validation	1	14:43:54	
+T-RIS-C5	demo.tecnico.geral	atribuir O06 ao Dr. Bruno (vínculo só Satélite) → bloqueado por F1	403	403	physician_not_linked	1	14:43:54	
+T-RIS-B4a	demo.tecnico.geral	O10 abrir pendência técnica (artefato)	201	201		1	14:43:54	
+T-RIS-B4b	demo.tecnico.geral	O10 encaminhar com pendência aberta → 422	422	422	validation	1	14:43:54	
+T-RIS-B4c	demo.tecnico.geral	O10 comentário	201	201		1	14:43:55	
+T-PRM-TEC-3	demo.tecnico.geral	PROIBIDO técnico cancelar exame	403	403	forbidden	1	14:43:55	
+LOGIN	demo.admin.inst	login	200	200		1	14:44:57	
+PWCHG	demo.admin.inst	troca obrigatória 1º login	200	200		1	14:44:57	
+T-PRM-ADM-01	demo.admin.inst	 GET /users	200	200		1	14:44:57	
+T-PRM-ADM-02	demo.admin.inst	 GET /audit?limit=5	200	200		1	14:44:57	
+T-PRM-ADM-03	demo.admin.inst	 GET /settings	200	200		1	14:44:57	
+T-PRM-ADM-04	demo.admin.inst	 GET /pacs/nodes	200	200		1	14:44:57	
+T-PRM-ADM-05	demo.admin.inst	 GET /report/physicians	200	200		1	14:44:57	
+T-PRM-ADM-06	demo.admin.inst	passa permissão; corpo vazio POST /users	422	422	validation	1	14:44:57	
+T-PRM-ADM-07	demo.admin.inst	PROIBIDO plataforma (edge) GET /platform/institutions	403	403	operator_only	1	14:44:57	
+T-PRM-ADM-08	demo.admin.inst	PROIBIDO admin atribuir (exclusivo técnico) POST /report/assignments	403	403	technician_only	1	14:44:57	
+T-PRM-ADM-09	demo.admin.inst	PROIBIDO admin prioridade POST /ris/prep/874c8afa-ed4d-4474-b7ff-2967d59bb1a6/priority	403	403	technician_only	1	14:44:57	
+T-PRM-ADM-10-invalido	demo.admin.inst	PROIBIDO alterar os próprios papéis PUT /users/undefined/roles	403	422	validation	1	14:44:57	execução inválida do coordenador (id do usuário não resolvido); refeito em T-PRM-ADM-11
+LOGIN	demo.supervisor	login	200	200		1	14:45:02	
+PWCHG	demo.supervisor	troca obrigatória 1º login	200	200		1	14:45:02	
+T-PRM-SUP-01	demo.supervisor	 GET /users	200	200		1	14:45:02	
+T-PRM-SUP-02	demo.supervisor	 GET /audit?limit=5	200	200		1	14:45:02	
+T-PRM-SUP-03	demo.supervisor	 GET /pacs/nodes	200	200		1	14:45:02	
+T-PRM-SUP-04	demo.supervisor	 GET /report/worklist	200	200		1	14:45:02	
+T-PRM-SUP-05	demo.supervisor	 GET /report/production/physicians	200	200		1	14:45:02	
+T-PRM-SUP-06	demo.supervisor	 GET /ris/prep	200	200		1	14:45:02	
+T-PRM-SUP-07	demo.supervisor	PROIBIDO POST /users	403	403	forbidden	1	14:45:02	
+T-PRM-SUP-08	demo.supervisor	PROIBIDO POST /report/reports	403	403	forbidden	1	14:45:02	
+T-PRM-SUP-09	demo.supervisor	PROIBIDO PUT /settings/core/security	403	403	forbidden	1	14:45:02	
+T-PRM-SUP-10	demo.supervisor	PROIBIDO GET /report/physicians	403	403	forbidden	1	14:45:02	
+T-PRM-SUP-11	demo.supervisor	PROIBIDO POST /report/assignments	403	403	technician_only	1	14:45:02	
+LOGIN	demo.coord.cdi	login	200	200		1	14:45:07	
+PWCHG	demo.coord.cdi	troca obrigatória 1º login	200	200		1	14:45:07	
+T-PRM-CDI-01	demo.coord.cdi	 GET /users	200	200		1	14:45:07	
+T-PRM-CDI-02	demo.coord.cdi	 GET /patients	200	200		1	14:45:07	
+T-PRM-CDI-03	demo.coord.cdi	 GET /ris/prep	200	200		1	14:45:07	
+T-PRM-CDI-04	demo.coord.cdi	 GET /report/worklist	200	200		1	14:45:07	
+T-PRM-CDI-05	demo.coord.cdi	 GET /pacs/dicomweb/studies	[200, 204]	200		1	14:45:07	
+T-PRM-CDI-06	demo.coord.cdi	passa permissão POST /procedures	422	422	validation	1	14:45:07	
+T-PRM-CDI-07	demo.coord.cdi	PROIBIDO GET /audit	403	403	forbidden	1	14:45:07	
+T-PRM-CDI-08	demo.coord.cdi	PROIBIDO GET /settings	403	403	forbidden	1	14:45:07	
+T-PRM-CDI-09	demo.coord.cdi	PROIBIDO POST /users	403	403	forbidden	1	14:45:07	
+T-PRM-CDI-10	demo.coord.cdi	PROIBIDO POST /report/reports	403	403	forbidden	1	14:45:07	
+T-PRM-CDI-11	demo.coord.cdi	PROIBIDO GET /pacs/nodes	403	403	forbidden	1	14:45:07	
+T-PRM-CDI-12	demo.coord.cdi	PROIBIDO prioridade (exclusivo técnico) POST /ris/prep/874c8afa-ed4d-4474-b7ff-2967d59bb1a6/priority	403	403	technician_only	1	14:45:07	
+LOGIN	demo.admin.inst	login	200	200		1	14:45:29	
+T-PRM-ADM11-01	demo.admin.inst	PROIBIDO alterar os próprios papéis PUT /users/94f7e2ec-c5c2-41e5-a74f-207b891a9e42/roles	403	403	self_roles	1	14:45:29	
+LOGIN	demo.suporte	login	200	200		1	14:45:33	
+PWCHG	demo.suporte	troca obrigatória 1º login	200	200		1	14:45:33	
+T-PRM-SUP2-01	demo.suporte	 GET /audit?limit=5	200	200		1	14:45:33	
+T-PRM-SUP2-02	demo.suporte	 GET /audit/verify	200	200		1	14:45:33	
+T-PRM-SUP2-03	demo.suporte	 GET /settings	200	200		1	14:45:33	
+T-PRM-SUP2-04	demo.suporte	 GET /pacs/nodes	200	200		1	14:45:33	
+T-PRM-SUP2-05	demo.suporte	PROIBIDO GET /patients	403	403	forbidden	1	14:45:33	
+T-PRM-SUP2-06	demo.suporte	PROIBIDO GET /pacs/dicomweb/studies	403	403	forbidden	1	14:45:33	
+T-PRM-SUP2-07	demo.suporte	PROIBIDO GET /report/worklist	403	403	forbidden	1	14:45:33	
+T-PRM-SUP2-08	demo.suporte	PROIBIDO GET /ris/prep/874c8afa-ed4d-4474-b7ff-2967d59bb1a6	403	403	forbidden	1	14:45:33	
+T-PRM-SUP2-09	demo.suporte	PROIBIDO GET /users	403	403	forbidden	1	14:45:33	
+T-PRM-SUP2-10	demo.suporte	PROIBIDO PUT /settings/core/security	403	403	forbidden	1	14:45:33	
+LOGIN	demo.financeiro	login	200	200		1	14:45:38	
+PWCHG	demo.financeiro	troca obrigatória 1º login	200	200		1	14:45:38	
+T-PRM-FIN-01	demo.financeiro	 GET /ris/worklist	200	200		1	14:45:38	
+T-PRM-FIN-02	demo.financeiro	 GET /report/sla	200	200		1	14:45:38	
+T-PRM-FIN-03	demo.financeiro	PROIBIDO GET /patients	403	403	forbidden	1	14:45:38	
+T-PRM-FIN-04	demo.financeiro	PROIBIDO GET /studies	403	403	forbidden	1	14:45:38	
+T-PRM-FIN-05	demo.financeiro	PROIBIDO GET /pacs/dicomweb/studies	403	403	forbidden	1	14:45:38	
+T-PRM-FIN-06	demo.financeiro	PROIBIDO GET /report/worklist	403	403	forbidden	1	14:45:38	
+T-PRM-FIN-07	demo.financeiro	PROIBIDO GET /users	403	403	forbidden	1	14:45:38	
+T-PRM-FIN-08	demo.financeiro	PROIBIDO GET /settings	403	403	forbidden	1	14:45:38	
+T-PRM-FIN-09	demo.financeiro	REQUISITO: financeiro sem dados clínicos (A03 F4/A04 F-02 preveem 200) GET /ris/prep/874c8afa-ed4d-4474-b7ff-2967d59bb1a6	403	200		0	14:45:38	
+T-PRM-FIN-10	demo.financeiro	REQUISITO: financeiro sem linha do tempo clínica GET /ris/studies/874c8afa-ed4d-4474-b7ff-2967d59bb1a6/timeline	403	200		0	14:45:38	
+T-PRM-FIN-11	demo.financeiro	PROIBIDO produção médica GET /report/production	403	403	forbidden	1	14:45:38	
+LOGIN	demo.multi	login	200	200		1	14:45:43	
+PWCHG	demo.multi	troca obrigatória 1º login	200	200		1	14:45:43	
+T-PRM-MULTI-01	demo.multi	 GET /patients	200	200		1	14:45:43	
+T-PRM-MULTI-02	demo.multi	recepção (Satélite) passa permissão POST /patients	422	422	validation	1	14:45:43	
+T-PRM-MULTI-03	demo.multi	 GET /ris/orders	200	200		1	14:45:43	
+T-PRM-MULTI-04	demo.multi	 GET /ris/prep	200	200		1	14:45:43	
+T-PRM-MULTI-05	demo.multi	 GET /ris/prep/874c8afa-ed4d-4474-b7ff-2967d59bb1a6	200	200		1	14:45:43	
+T-PRM-MULTI-06	demo.multi	técnico (Matriz) passa permissão POST /ris/prep/874c8afa-ed4d-4474-b7ff-2967d59bb1a6/check	422	422	validation	1	14:45:43	
+T-PRM-MULTI-07	demo.multi	PROIBIDO POST /procedures	403	403	forbidden	1	14:45:43	
+T-PRM-MULTI-08	demo.multi	PROIBIDO GET /audit	403	403	forbidden	1	14:45:43	
+T-PRM-MULTI-09	demo.multi	PROIBIDO GET /users	403	403	forbidden	1	14:45:43	
+T-PRM-MULTI-10	demo.multi	PROIBIDO GET /report/worklist	403	403	forbidden	1	14:45:43	
+T-PRM-MULTI-11	demo.multi	PROIBIDO POST /report/reports	403	403	forbidden	1	14:45:43	
+T-PRM-MULTI-12	demo.multi	PROIBIDO GET /settings	403	403	forbidden	1	14:45:43	
+LOGIN	demo.recepcao	login	200	200		1	14:45:48	
+T-PRM-REC2-01	demo.recepcao	 GET /patients	200	200		1	14:45:48	
+T-PRM-REC2-02	demo.recepcao	 POST /patients	422	422	validation	1	14:45:48	
+T-PRM-REC2-03	demo.recepcao	 GET /orders	200	200		1	14:45:48	
+T-PRM-REC2-04	demo.recepcao	 POST /orders	422	422	validation	1	14:45:48	
+T-PRM-REC2-05	demo.recepcao	 GET /ris/orders	200	200		1	14:45:48	
+T-PRM-REC2-06	demo.recepcao	 GET /ris/worklist	200	200		1	14:45:48	
+T-PRM-REC2-07	demo.recepcao	PROIBIDO GET /pacs/dicomweb/studies	403	403	forbidden	1	14:45:48	
+T-PRM-REC2-08	demo.recepcao	PROIBIDO GET /ris/prep	403	403	forbidden	1	14:45:48	
+T-PRM-REC2-09	demo.recepcao	PROIBIDO POST /ris/prep/874c8afa-ed4d-4474-b7ff-2967d59bb1a6/check	403	403	forbidden	1	14:45:48	
+T-PRM-REC2-10	demo.recepcao	PROIBIDO POST /procedures	403	403	forbidden	1	14:45:48	
+T-PRM-REC2-11	demo.recepcao	REQUISITO: recepção sem preparo técnico (A04 F-02 prevê 200) GET /ris/prep/874c8afa-ed4d-4474-b7ff-2967d59bb1a6	403	200		0	14:45:48	
+T-PRM-REC2-12	demo.recepcao	passa permissão; nada alterado PATCH /orders/61751296-c802-4721-a12d-a599b4e2ee89/status	422	422	validation	1	14:45:48	
+T-PRM-REC2-13	demo.recepcao	IDOR id inexistente GET /patients/00000000-0000-0000-0000-000000000000	404	404	not_found	1	14:45:48	
+LOGIN	demo.medico.01	login	200	200		1	14:46:09	
+PWCHG	demo.medico.01	troca obrigatória 1º login	200	200		1	14:46:10	
+T-REP-D1	demo.medico.01	fila do médico 01 (mine)	200	200		1	14:46:10	
+T-TPL-01	demo.medico.01	criar modelo pessoal DEMO	201	201		1	14:46:10	
+T-TPL-02	demo.medico.01	publicar sem revisão → 422	422	422	validation	1	14:46:10	
+T-TPL-03	demo.medico.01	publicar com revisão	200	200		1	14:46:10	
+T-PHR-01	demo.medico.01	criar frase pessoal	201	201		1	14:46:10	
+T-PHR-02	demo.medico.01	atalho inválido → 422	422	422	validation	1	14:46:10	
+T-PHR-03	demo.medico.01	PROIBIDO médico criar frase da instituição	403	403	forbidden	1	14:46:10	
+T-TPL-04	demo.medico.01	médico cria modelo da instituição (A03 F6: código permite)	201	201		1	14:46:10	
+T-VWR-01	demo.medico.01	abrir visualizador O13 (preview) não inicia laudo	200	200		1	14:46:10	
+T-REP-D3	demo.medico.01	abrir laudo O01 com modelo	201	201		1	14:46:10	
+T-REP-D3b	demo.medico.01	campos do laudo	200	200		1	14:46:10	
+T-REP-D3c	demo.medico.01	editar O01	200	200		1	14:46:10	
+T-REP-D4-O04	demo.medico.01	abrir laudo O04	201	201		1	14:46:10	
+T-REP-D4e-O04	demo.medico.01	editar O04	200	200		1	14:46:10	
+T-REP-D4-O05	demo.medico.01	abrir laudo O05	201	201		1	14:46:10	
+T-REP-D4e-O05	demo.medico.01	editar O05	200	200		1	14:46:10	
+T-REP-D4-O07	demo.medico.01	abrir laudo O07	201	201		1	14:46:10	
+T-REP-D4e-O07	demo.medico.01	editar O07	200	200		1	14:46:10	
+T-REP-D4-O14	demo.medico.01	abrir laudo O14	201	201		1	14:46:10	
+T-REP-D4e-O14	demo.medico.01	editar O14	200	200		1	14:46:10	
+T-REP-D5d	demo.medico.01	médico pede troca após início → 409	409	409	report_started	1	14:46:27	
+T-REP-F4a	demo.medico.01	médico pede prioridade O11 antes do início	201	201		1	14:46:27	
+LOGIN	demo.tecnico.geral	login	200	200		1	14:46:30	
+T-REP-D5-01	demo.tecnico.geral	prioridade após início do laudo POST /ris/prep/214a4905-b360-4796-8c93-e0a56d7e8e2e/priority	409	409	report_started	1	14:46:30	
+T-REP-D5-02	demo.tecnico.geral	troca de médico após início POST /ris/prep/214a4905-b360-4796-8c93-e0a56d7e8e2e/physician	409	409	report_started	1	14:46:30	
+T-REP-D5-03	demo.tecnico.geral	atribuição após início POST /report/assignments	409	409	report_started	1	14:46:30	
+T-REP-F4b	demo.tecnico.geral	técnico muda O11 para stat (pedido médico)	200	200		1	14:46:31	
+T-REP-F4c	demo.tecnico.geral	técnico atribui O11 à Dra. Ana (≈+1h)	200	200		1	14:46:31	
+LOGIN	demo.medico.03	login	200	200		1	14:46:34	
+PWCHG	demo.medico.03	troca obrigatória 1º login	200	200		1	14:46:34	
+T-REP-DP1	demo.medico.03	PROIBIDO 03 abrir O13 (atribuído à 01, não iniciado)	409	409	assigned_to_other	1	14:46:34	
+T-REP-D6a	demo.medico.03	03 abre O02 (redistribuído para ela)	201	201		1	14:46:35	
+T-REP-D6b	demo.medico.03	03 edita O02	200	200		1	14:46:35	
+T-REP-D6c	demo.medico.03	03 abre O03 (stat)	201	201		1	14:46:35	
+T-REP-D6d	demo.medico.03	03 edita O03	200	200		1	14:46:35	
+T-REP-D6e	demo.medico.03	03 abre O15	201	201		1	14:46:35	
+T-REP-D6f	demo.medico.03	03 edita O15 (fica pendente)	200	200		1	14:46:35	
+T-REP-DP-01	demo.medico.03	PROIBIDO 03 abrir O04 (iniciado pela 01) POST /report/reports	403	403	not_responsible	1	14:46:35	
+T-REP-DP-02	demo.medico.03	PROIBIDO 03 ler rascunho da 01 GET /report/reports/4fcbbd8b-1735-4112-b4a7-e57a63deb329	403	403	not_responsible	1	14:46:35	
+T-REP-DP-03	demo.medico.03	PROIBIDO 03 editar rascunho da 01 PUT /report/reports/4fcbbd8b-1735-4112-b4a7-e57a63deb329	403	403	not_responsible	1	14:46:35	
+T-REP-DP-04	demo.medico.03	PROIBIDO 03 ver revisões da 01 GET /report/reports/4fcbbd8b-1735-4112-b4a7-e57a63deb329/revisions	403	403	not_responsible	1	14:46:35	
+T-REP-DP-05	demo.medico.03	PROIBIDO usar modelo pessoal de outra médica POST /report/reports	404	404	not_found	1	14:46:35	
+T-REP-DP-06	demo.medico.03	PROIBIDO editar frase pessoal da 01 PUT /report/phrases/26584ef6-a1de-4102-b40d-f0f4f3770881	404	404	not_found	1	14:46:35	
+T-REP-DP-07	demo.medico.03	PROIBIDO 03 devolver exame da 01 POST /ris/prep/5b0916f7-6d43-4036-aa47-e36d5de18391/return	403	403	not_responsible	1	14:46:35	
+T-REP-D6g	demo.medico.03	03 reserva O06 (fila livre) sem abrir	200	200		1	14:46:35	
+LOGIN	demo.medico.01	login	200	200		1	14:46:57	
+T-REP-D7-01	demo.medico.01	PROIBIDO 01 abrir O02 (iniciado pela 03) POST /report/reports	403	403	not_responsible	1	14:46:57	
+T-REP-D7-02	demo.medico.01	O06 já reservado pela 03 POST /report/queue/3a295974-7f4e-41b7-8468-e1d00acf5dc4/claim	409	409	already_assigned	1	14:46:57	
+T-REP-E2	demo.medico.01	01 devolve O05 para correção	200	200		1	14:46:57	
+T-REP-E3	demo.medico.01	REQUISITO: laudo devolvido não deve ser editável pelo médico (A03 F3 prevê 200)	409	200		0	14:46:57	
+T-REP-F1-01	demo.medico.01	liberar sem row_version POST /report/reports/ec4b5a07-8093-4f14-9ae2-d528c0819bdc/finalize	422	422	validation	1	14:46:57	
+T-REP-F1-02	demo.medico.01	liberar com versão antiga POST /report/reports/ec4b5a07-8093-4f14-9ae2-d528c0819bdc/finalize	409	409	conflict	1	14:46:57	
+T-REP-F1-03	demo.medico.01	liberar com senha errada (1 tentativa) POST /report/reports/ec4b5a07-8093-4f14-9ae2-d528c0819bdc/finalize	403	403	password_mismatch	1	14:46:57	
+T-REP-F1d	demo.medico.01	liberar O07 (assinatura por senha)	200	200		1	14:46:57	
+T-REP-F1e-01	demo.medico.01	editar laudo liberado PUT /report/reports/ec4b5a07-8093-4f14-9ae2-d528c0819bdc	409	409	conflict	1	14:46:57	
+T-REP-F1e-02	demo.medico.01	verificar integridade GET /report/reports/ec4b5a07-8093-4f14-9ae2-d528c0819bdc/verify	200	200		1	14:46:57	
+T-REP-F1g	demo.medico.01	PDF do laudo O07	200	200		1	14:46:58	
+T-REP-F2-O01	demo.medico.01	liberar O01	200	200		1	14:46:58	
+T-REP-F2-O14	demo.medico.01	liberar O14	200	200		1	14:46:58	
+T-REP-F4o-O11	demo.medico.01	abrir O11	201	201		1	14:46:58	
+T-REP-F4e-O11	demo.medico.01	editar O11	200	200		1	14:46:58	
+T-REP-F4o-O13	demo.medico.01	abrir O13	201	201		1	14:46:58	
+T-REP-F4e-O13	demo.medico.01	editar O13	200	200		1	14:46:58	
+T-REP-F4f	demo.medico.01	lote sem confirmação → 422	422	422	validation	1	14:46:58	
+T-REP-F4g	demo.medico.01	liberação em lote O11+O13	200	200		1	14:46:58	
+T-REP-G-01	demo.medico.01	adendo em rascunho POST /report/reports/4fcbbd8b-1735-4112-b4a7-e57a63deb329/addenda	409	409	conflict	1	14:46:59	
+T-REP-G-02	demo.medico.01	retificação inexistente POST /report/reports/0b400d44-59ff-4ffa-995c-3124f7e84d93/rectify	[404, 405]	405		1	14:46:59	
+T-REP-G3a	demo.medico.01	adendo O01	201	201		1	14:46:59	
+T-REP-G3b	demo.medico.01	adendo O07	201	201		1	14:46:59	
+T-REP-G3c	demo.medico.01	verificar O01 com adendo	200	200		1	14:46:59	
+LOGIN	demo.tecnico.matriz	login	200	200		1	14:47:18	
+T-REP-E4a	demo.tecnico.matriz	técnico comenta O05	201	201		1	14:47:18	
+T-REP-E4b	demo.tecnico.matriz	técnico confere qualidade O05	200	200		1	14:47:18	
+T-REP-E4c	demo.tecnico.matriz	reencaminhar O05 → volta à mesma médica	200	200		1	14:47:18	
+T-REP-E4d	demo.tecnico.matriz	trocar médico do O05 após início → 409	409	409	report_started	1	14:47:18	
+LOGIN	demo.medico.01	login	200	200		1	14:47:22	
+T-REP-E5	demo.medico.01	01 libera O05 após correção	200	200		1	14:47:22	
+T-REP-H1	demo.medico.01	Minha Produção (01)	200	200		1	14:47:22	
+T-REP-H1x-01	demo.medico.01	PROIBIDO ver produção de outra médica GET /report/production?physician_id=3c63826f-07f0-4774-88f2-5e20b35df5c0	403	403	forbidden	1	14:47:22	
+T-REP-H1x-02	demo.medico.01	PROIBIDO lista de produção GET /report/production/physicians	403	403	forbidden	1	14:47:22	
+T-REP-H1x-03	demo.medico.01	IDOR laudo inexistente GET /report/reports/00000000-0000-0000-0000-000000000000	404	404	not_found	1	14:47:22	
+T-REP-H1c	demo.medico.01	produção CSV	200	200		1	14:47:22	
+LOGIN	demo.medico.03	login	200	200		1	14:47:26	
+T-REP-F3	demo.medico.03	03 libera O03 (stat)	200	200		1	14:47:26	
+T-REP-F3x-01	demo.medico.03	PROIBIDO 03 liberar laudo da 01 POST /report/reports/4fcbbd8b-1735-4112-b4a7-e57a63deb329/finalize	403	403	not_responsible	1	14:47:26	
+T-REP-F3x-02	demo.medico.03	PROIBIDO 03 adendo em laudo da 01 POST /report/reports/ec4b5a07-8093-4f14-9ae2-d528c0819bdc/addenda	403	403	not_responsible	1	14:47:26	
+T-REP-J2	demo.medico.03	03 vê anteriores do paciente do O05 (P04) ao laudar	200	200		1	14:47:26	
+T-REP-H2	demo.medico.03	Minha Produção (03)	200	200		1	14:47:26	
+LOGIN	demo.medico.02	login	200	200		1	14:47:30	
+PWCHG	demo.medico.02	troca obrigatória 1º login	200	200		1	14:47:30	
+T-UNI-05	demo.medico.02	médico 02 (só Satélite): fila vazia por F1	200	200		1	14:47:30	
+T-UNI-MED02-01	demo.medico.02	02 sem escopo no exame (sem unidade) GET /ris/prep/3a295974-7f4e-41b7-8468-e1d00acf5dc4	403	403	out_of_scope	1	14:47:30	
+T-UNI-MED02-02	demo.medico.02	02 não abre laudo POST /report/reports	403	403	out_of_scope	1	14:47:30	
+T-UNI-MED02-03	demo.medico.02	02 não lê laudo da 01 GET /report/reports/ec4b5a07-8093-4f14-9ae2-d528c0819bdc	403	403	out_of_scope	1	14:47:30	
+T-UNI-MED02-04	demo.medico.02	REQUISITO: 02 não deve abrir imagens fora do escopo (A04 F-03 prevê 200) GET /pacs/dicomweb/studies/2.25.4467605157873201968565678748353728166/metadata	403	200		0	14:47:30	
+T-UNI-MED02-05	demo.medico.02	produção vazia GET /report/production	200	200		1	14:47:30	
+LOGIN	demo.tele.gestor	login	200	200		1	14:47:51	
+PWCHG	demo.tele.gestor	troca obrigatória 1º login	200	200		1	14:47:51	
+T-PRM-TG-01	demo.tele.gestor	 GET /report/worklist	200	200		1	14:47:51	
+T-PRM-TG-02	demo.tele.gestor	 GET /report/physicians	200	200		1	14:47:51	
+T-PRM-TG-03	demo.tele.gestor	 GET /studies	200	200		1	14:47:51	
+T-PRM-TG-04	demo.tele.gestor	 GET /report/assignable-physicians	200	200		1	14:47:51	
+T-PRM-TG-05	demo.tele.gestor	gestor lê rascunho (quem distribui) GET /report/reports/4fcbbd8b-1735-4112-b4a7-e57a63deb329	200	200		1	14:47:51	
+T-PRM-TG-06	demo.tele.gestor	PROIBIDO GET /patients	403	403	forbidden	1	14:47:51	
+T-PRM-TG-07	demo.tele.gestor	PROIBIDO GET /orders	403	403	forbidden	1	14:47:51	
+T-PRM-TG-08	demo.tele.gestor	PROIBIDO POST /report/reports	403	403	forbidden	1	14:47:51	
+T-PRM-TG-09	demo.tele.gestor	PROIBIDO (exclusivo técnico) POST /report/assignments	403	403	technician_only	1	14:47:51	
+T-PRM-TG-10	demo.tele.gestor	PROIBIDO (exclusivo técnico) POST /ris/prep/874c8afa-ed4d-4474-b7ff-2967d59bb1a6/priority	403	403	technician_only	1	14:47:51	
+T-PRM-TG-11	demo.tele.gestor	PROIBIDO GET /audit	403	403	forbidden	1	14:47:51	
+T-PRM-TG-12	demo.tele.gestor	PROIBIDO devolver POST /ris/prep/214a4905-b360-4796-8c93-e0a56d7e8e2e/return	403	403	forbidden	1	14:47:51	
+T-PRM-TG-13	demo.tele.gestor	PROIBIDO assinar POST /report/reports/ead37f29-8685-4839-b608-05c823d5fcd2/finalize	403	403	forbidden	1	14:47:51	
+T-PHR-04	demo.tele.gestor	gestor cria frase da instituição	201	201		1	14:47:52	
+LOGIN	demo.supervisor	login	200	200		1	14:47:55	
+T-REP-H3-01	demo.supervisor	supervisor vê produção da 01 (auditado) GET /report/production?physician_id=4e959cb2-0573-47e1-8bc6-7073e9233135	200	200		1	14:47:55	
+LOGIN	demo.tecnico.geral	login	200	200		1	14:47:59	
+T-REP-J1	demo.tecnico.geral	histórico do paciente P04	200	200		1	14:47:59	
+T-REP-J1b	demo.tecnico.geral	linha do tempo O05	200	200		1	14:47:59	
+T-UNI-08	demo.tecnico.geral	demo.multi/técnico de unidade age em exame sem unidade (F1) — leitura	200	200		1	14:47:59	
+T-PRM-TECG-01	demo.tecnico.geral	 GET /patients	200	200		1	14:47:59	
+T-PRM-TECG-02	demo.tecnico.geral	 GET /studies	200	200		1	14:47:59	
+T-PRM-TECG-03	demo.tecnico.geral	 GET /ris/prep	200	200		1	14:47:59	
+T-PRM-TECG-04	demo.tecnico.geral	PROIBIDO POST /patients	403	403	forbidden	1	14:47:59	
+T-PRM-TECG-05	demo.tecnico.geral	PROIBIDO POST /orders	403	403	forbidden	1	14:47:59	
+T-PRM-TECG-06	demo.tecnico.geral	PROIBIDO GET /report/worklist	403	403	forbidden	1	14:47:59	
+T-PRM-TECG-07	demo.tecnico.geral	PROIBIDO GET /users	403	403	forbidden	1	14:47:59	
+T-PRM-TECG-08	demo.tecnico.geral	PROIBIDO GET /audit	403	403	forbidden	1	14:47:59	
+T-PRM-TECG-09	demo.tecnico.geral	PROIBIDO POST /procedures	403	403	forbidden	1	14:47:59	
+T-PRM-TECG-10	demo.tecnico.geral	PROIBIDO GET /pacs/nodes	403	403	forbidden	1	14:47:59	
+T-SEC-LOGOUT	demo.tecnico.geral	logout	200	200		1	14:47:59	
+T-SEC-LOGOUT2	demo.tecnico.geral	após logout /auth/me → 401	401	401		1	14:47:59	
+T-PERS-01	demo.tecnico.geral	novo login após logout com a senha trocada (persistência)	200	200		1	14:48:02	
+LOGIN	admin	login	200	200		1	14:48:21	
+T-PACS-O16	admin	STOW do O16 com o StudyInstanceUID do agendamento (MWL)	200	200		1	14:48:21	
+T-RIS-MWL-O16	admin	"agendamento O16 passa a ""received"" após chegada das imagens"	"""received"""	received		1	14:48:25	
+T-AUD-06	admin	cadeia de auditoria íntegra	200	200		1	14:48:25	
+T-PACS-16	admin	estudos não conciliados	200	200		1	14:49:05	
+T-PACS-17a	admin	pedido sem accession para P08 (conciliação manual)	201	201		1	14:49:05	
+T-PACS-17n	admin	NEGATIVO conciliar X08 a pedido de outro paciente	409	409	conflict	1	14:49:05	
+T-PACS-17b	admin	conciliação manual X08 → pedido P08	200	200		1	14:49:05	
+T-PACS-17c	admin	reconciliar de novo a outro pedido → 409	409	409	conflict	1	14:49:05	
+T-PACS-22	admin	qualidade do PACS	200	200		1	14:49:05	
+T-PACS-QIDO	admin	QIDO por PatientID DEMO-P04 → 3 estudos	3	3		1	14:49:06	
+T-PACS-QIDO-S	admin	QIDO séries O05 → 2	2	2		1	14:49:06	
+T-PACS-WADO	admin	WADO-RS instância O05 contém o SOP UID enviado	200	200		1	14:49:06	
+T-PACS-ECHO1	admin	C-ECHO em nó simulado sem porta → 422	422	422	validation	1	14:49:06	
+T-PACS-ECHO2a	admin	nó auxiliar para C-ECHO ao motor local	201	201		1	14:49:06	
+T-PACS-ECHO2b	admin	C-ECHO VYONIX → motor local	200	200		1	14:49:06	
