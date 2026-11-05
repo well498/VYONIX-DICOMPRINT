@@ -112,7 +112,7 @@ Severidade: Alta/P1 · Média/P2 · Baixa/P3. Estado: **Corrigida** (código + t
 | `tests_deploy` (local) | 67 | 0 | — |
 | `tests` DICOM Print (local) | 337 (26 pulados) | 0 | — |
 | Provas A07 (autoria, unidade, delegação, bloqueio, R-05/R-07, Weasis, HTTPS, corrida de liberação) | ver relatório A07 | V-01..V-07 → corrigidos e revalidados | Windows, `/pacs/*` entre unidades |
-| CI Windows (comercial/homologação) | a preencher após a execução | — | — |
+| CI d1af7f2 (0.3.1) | plataforma 370/0 falhas; viewer 6/0; comercial 47 aprovados / 0 reprovados / 1 não executado; homologação (atualização sobre 0.2.0) aprovada | 0 | 2.8 impressão física |
 | Proprietário (Windows) | — | — | **Roteiro `docs/homologacao/Roteiro_Homologacao_Windows_0.3.md`** |
 
 Os 15 testes obrigatórios da missão (A07) — situação: autenticação ✔, recuperação de senha (não existe fluxo

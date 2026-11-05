@@ -8,9 +8,9 @@
 
 | Campo | Valor |
 |---|---|
-| Versão | 0.3.x (preencher) |
-| Execução de CI (artefato `homologacao-windows`) | (preencher) |
-| SHA-256 do `VYONIX_Homologacao_Setup_x64.exe` | (preencher) |
+| Versão | 0.3.1 (commit d1af7f2) |
+| Execução de CI (artefato `homologacao-windows`) | 41945585511 (aprovada em 05/11/2026) |
+| SHA-256 do `VYONIX_Homologacao_Setup_x64.exe` | `526605F9A15D9AA79A2FF25894E51CBD7F7F767907868E795BDC4A062CCB28E4` (115,6 MB) |
 
 > **Leia antes de começar**
 > - **Nada é feito sem a sua autorização.** Cada passo diz o que fazer; se tiver dúvida, pare e pergunte ao suporte.

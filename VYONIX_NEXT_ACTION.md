@@ -19,6 +19,11 @@
 * **Aguardando proprietário:** decisões G-1..G-7 (firewall, BLK-15, MFA de administradores, backup cifrado,
   credenciais do Core, interface de papéis, unidade dos exames do PACS) e a homologação Windows da 0.3.1
   (`docs/homologacao/Roteiro_Homologacao_Windows_0.3.md`). P0 continua aberto.
+* **CI 0.3.1 (d1af7f2) aprovada:** plataforma 41945574641 (370/0), viewer 41945578030 (6/0), comercial 41945581682
+  (47/0/1), homologação 41945585511 (atualização sobre 0.2.0 aprovada); instalador de homologação SHA-256
+  `526605F9A15D9AA79A2FF25894E51CBD7F7F767907868E795BDC4A062CCB28E4`. Validação do proprietário: pendente.
+* **Pedido do proprietário (04/11 22:15):** não lembra login/senha do administrador. Proposto comando de emergência
+  de redefinição (só no servidor, auditado) ou reinstalação do zero — **aguardando escolha/autorização**.
 
 ## Novas solicitações (04/11 21:51) — incorporadas sem cancelar nada
 | Pri | Tarefa | Situação |
