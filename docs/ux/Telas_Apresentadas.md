@@ -55,3 +55,11 @@ Classificação de todos os quadros: **PROTÓTIPO** (dados fictícios; nada impl
 | 1–9, 1b | D-06..D-09 aprovadas em 04/11 02:36 (ver Referencias_Fotos_Lote1.md §5b) | REF-02, REF-05, REF-06 com regras de aprovação |
 | 10, 11 | ajustes de 04/11 02:42 aplicados; 11 v2 sem aprovação de prioridade/troca (regra 02:59) | aguardando aprovação do desenho |
 | 1b (bloqueio), 12, 12b | aguardando | — |
+
+## Decisões do proprietário — 05/11/2026 (protótipos 13 e 14, lista do técnico)
+- Técnico: tela única de exames, sem menu lateral (sem Agenda, Pacientes, Central, Minha produção, Novo exame).
+- Usuários: editar sem excluir/recriar; login fixo; desativar em vez de excluir. Mesma tela para todos os perfis (protótipo 13).
+- Todos os perfis editam os próprios dados e a própria senha em "Minha conta" (protótipo 14); nome/CRM do laudo do médico só pelo administrador.
+- **Somente administradores principais adicionam ou removem perfis (papéis) e unidades.** Outros administradores alteram nome, contato, senha e situação. Ninguém altera o próprio perfil. Inclusão/remoção pede senha e é auditada.
+- Implementação: nova permissão exclusiva (ex.: core.roles.manage) atribuída só ao administrador principal; hoje PUT /users/{id}/roles exige apenas core.users.manage (A04 deve revisar).
+- Status: aguardando aprovação visual; nada implementado.
