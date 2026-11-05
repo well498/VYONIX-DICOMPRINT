@@ -23,8 +23,8 @@
 ## Novas solicitações (04/11 21:51) — incorporadas sem cancelar nada
 | Pri | Tarefa | Situação |
 |---|---|---|
-| P1 | Desligamento de médicos, redistribuição e Transferência Excepcional (A03/A04/A05/A07/A08) | Desenho A03 concluído (lacunas P1: atribuição presa ao desligado, prazo reiniciado no reencaminhamento, compartilhamento após desligamento, adendo de laudo de médico desligado); protótipos A05 das 5 telas prontos; **aguarda respostas do proprietário** (gestor clínico, quem pede, acesso ao rascunho anterior, fila de pendências) antes da interface; backend em seguida |
-| — | Avaliação de prontidão para contrato estadual (somente diagnóstico) | A01 em execução; relatório técnico/executivo a entregar |
+| P1 | Desligamento de médicos, redistribuição e Transferência Excepcional (A03/A04/A05/A07/A08) | Desenho A03 concluído (lacunas P1: atribuição presa ao desligado, prazo reiniciado no reencaminhamento, compartilhamento após desligamento, adendo de laudo de médico desligado); protótipos A05 das 5 telas prontos; **aguarda respostas do proprietário** (8 perguntas em `docs/requisitos/Desligamento_Medico_Transferencia_Excepcional.md`) antes da interface; backend em seguida |
+| — | Avaliação de prontidão para contrato estadual (somente diagnóstico) | Concluída (A01): documento "VYONIX — Prontidão para Rede Estadual" (https://claude.ai/artifact/PzeULGT7rjGokjXaHRtc6D). Demonstração: sim; piloto: após E0–E1; federado/central/escala: não. Plano E0–E6 com critérios de aceite. Nenhum desenvolvimento iniciado |
 
 ## Em execução
 | Pri | Tarefa | Situação |
