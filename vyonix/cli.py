@@ -186,6 +186,23 @@ def cmd_status(a) -> int:
     return 0 if out["database"] == "ok" else 1
 
 
+def cmd_main_admin(a) -> int:
+    """Recuperação local: torna administrador principal um administrador existente (quando nenhum principal
+    consegue entrar). Só roda no servidor, com acesso à configuração protegida (administrador do Windows)."""
+    from vyonix.auth import service as auth
+    from vyonix.context import build
+    from vyonix.tenancy import service as tenancy
+    cfg = _cfg(a)
+    plat = build(cfg)
+    tid = tenancy.resolve(plat.db, a.org or cfg.default_organization)
+    if tid is None:
+        raise SystemExit("Organização não encontrada.")
+    with plat.db.session(tid) as s:
+        auth.recover_main_admin(s, a.login)
+    print(f"'{a.login}' agora é administrador principal (registrado na auditoria).")
+    return 0
+
+
 def _pacs(a):
     from vyonix.context import build
     from vyonix.pacs import backend_for
@@ -293,6 +310,10 @@ def main(argv: list[str] | None = None) -> int:
     op.add_argument("--code", default="vyonix")
     op.add_argument("--name", default="VYONIX")
     op.add_argument("--admin-user", required=True)
+    ma = sub.add_parser("recuperar-admin-principal",
+                        help="torna administrador principal um administrador existente (recuperação local)")
+    ma.add_argument("--login", required=True)
+    ma.add_argument("--org")
     hs = sub.add_parser("homolog-enviar", help="HOMOLOGAÇÃO: envia um estudo sintético ao PACS local (C-STORE)")
     hs.add_argument("--paciente-id", required=True, help="o mesmo identificador cadastrado no paciente fictício")
     hs.add_argument("--nome", required=True, help="nome fictício do paciente (Nome Sobrenome)")
@@ -307,7 +328,7 @@ def main(argv: list[str] | None = None) -> int:
     return {"init": cmd_init, "migrate": cmd_migrate, "serve": cmd_serve, "worker": cmd_worker,
             "status": cmd_status, "pacs-backup": cmd_pacs_backup, "pacs-verify": cmd_pacs_verify,
             "pacs-restore": cmd_pacs_restore, "operator-init": cmd_operator_init,
-            "homolog-enviar": cmd_homolog_send}[a.cmd](a)
+            "homolog-enviar": cmd_homolog_send, "recuperar-admin-principal": cmd_main_admin}[a.cmd](a)
 
 
 if __name__ == "__main__":

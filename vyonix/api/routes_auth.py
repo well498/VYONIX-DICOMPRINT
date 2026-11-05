@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Request, Response
 from pydantic import BaseModel, Field
 
-from vyonix.api.app import COOKIE, AuthPending, Ctx, client_ip, platform
+from vyonix.api.app import COOKIE, Auth, AuthPending, Ctx, client_ip, platform
 from vyonix.auth import service as auth
 from vyonix.errors import Unauthorized, ValidationFailed, VyonixError
 from vyonix.tenancy import service as tenancy
@@ -17,6 +17,12 @@ class LoginIn(BaseModel):
     username: str = Field(min_length=1, max_length=60)
     password: str = Field(min_length=1, max_length=256)
     organization: str | None = Field(None, max_length=40)
+
+
+class MeIn(BaseModel):
+    display_name: str | None = Field(None, max_length=120)
+    email: str | None = Field(None, max_length=200)
+    phone: str | None = Field(None, max_length=30)
 
 
 class PasswordIn(BaseModel):
@@ -92,6 +98,24 @@ def logout(response: Response, c: Ctx = AuthPending):
 @router.get("/auth/me")
 def me(c: Ctx = AuthPending):
     return _me(c)
+
+
+@router.get("/auth/me/profile")
+def my_profile(c: Ctx = Auth):
+    """Minha conta: dados próprios editáveis e o que só o administrador muda."""
+    from vyonix.auth.models import User
+    with c.session() as s:
+        u = s.get(User, c.p.user_id)
+        return {"username": u.username, "display_name": u.display_name, "email": u.email, "phone": u.phone,
+                "professional_reg": u.professional_reg, "physician": auth._is_physician(s, u.id),
+                "main_admin": bool(u.main_admin), "roles": c.p.roles}
+
+
+@router.patch("/auth/me")
+def update_me(body: MeIn, c: Ctx = Auth):
+    with c.session() as s:
+        auth.update_me(s, c.p, ip=c.ip, **body.model_dump(exclude_unset=True))
+    return {"ok": True}
 
 
 @router.post("/auth/password")

@@ -56,6 +56,7 @@ class Principal:
     stage: str                                   # ok | password_change | mfa_enroll | mfa_verify
     grants: dict[str, set] = field(default_factory=dict)      # permissão -> {None | site_id}
     roles: list[dict] = field(default_factory=list)
+    main_admin: bool = False                      # administrador principal (gestão de perfis)
 
     def has(self, perm: str, site_id: uuid.UUID | None = None) -> bool:
         if self.stage != "ok":
@@ -78,7 +79,7 @@ class Principal:
     def public(self) -> dict:
         return {"user_id": str(self.user_id), "tenant_id": str(self.tenant_id), "username": self.username,
                 "display_name": self.display_name, "stage": self.stage, "permissions": sorted(self.grants),
-                "roles": self.roles}
+                "roles": self.roles, "main_admin": self.main_admin}
 
 
 # --------------------------------------------------------------------------- catálogo e papéis
@@ -282,6 +283,10 @@ def set_roles(s: Session, user_id: uuid.UUID, roles: list[tuple[str, uuid.UUID |
         s.add(UserRole(user_id=user_id, role_id=by_code[code].id, site_id=site))
     s.flush()
     _guard_last_admin(s)
+    u = s.get(User, user_id)
+    if u is not None and u.main_admin and not _is_global_admin(s, user_id):
+        raise Conflict("Este usuário é administrador principal e precisa manter o papel de administrador em todas as "
+                       "unidades. Retire antes o status de administrador principal.", code="main_admin_role")
     if audit_it:
         audit.record(s, actor=actor, actor_id=actor_id, ip=ip, action="user.roles", target_type="user",
                      target_id=user_id, details={"roles": [{"role": c, "site_id": str(x) if x else None}
@@ -301,7 +306,7 @@ def update_user(s: Session, user_id: uuid.UUID, *, actor: str, actor_id=None, ip
     u = s.get(User, user_id)
     if not u:
         raise NotFound("Usuário não encontrado.")
-    allowed = {"display_name", "email", "active", "mfa_required"}
+    allowed = {"display_name", "email", "active", "mfa_required", "phone", "professional_reg"}
     changed = {}
     for k, v in fields.items():
         if k in allowed and v is not None and getattr(u, k) != v:
@@ -310,6 +315,7 @@ def update_user(s: Session, user_id: uuid.UUID, *, actor: str, actor_id=None, ip
     if "active" in changed:
         s.flush()
         _guard_last_admin(s)
+        _guard_last_main(s)
         if not u.active:
             _end_sessions(s, u.id)
     if changed:
@@ -349,8 +355,144 @@ def user_list(s: Session) -> list[dict]:
              "active": u.active, "locked": bool(u.locked_until and u.locked_until > now),
              "must_change": u.must_change, "mfa_required": u.mfa_required, "mfa_enabled": u.id in mfa,
              "last_login_at": u.last_login_at.isoformat() if u.last_login_at else None,
-             "roles": by_user.get(u.id, []), "row_version": u.row_version}
+             "roles": by_user.get(u.id, []), "row_version": u.row_version, "main_admin": bool(u.main_admin),
+             "phone": u.phone, "professional_reg": u.professional_reg}
             for u in s.execute(select(User).order_by(User.username)).scalars()]
+
+
+# --------------------------------------------------------------------------- administrador principal
+
+MAIN_ADMIN_MAX = 3
+_ADMIN_ROLES = ("administrador", "admin_vyonix")
+
+
+def _is_global_admin(s: Session, user_id: uuid.UUID) -> bool:
+    return s.execute(select(UserRole.id).join(Role, Role.id == UserRole.role_id).where(
+        UserRole.user_id == user_id, Role.code.in_(_ADMIN_ROLES), UserRole.site_id.is_(None)).limit(1)).first() is not None
+
+
+def _main_count(s: Session) -> int:
+    return s.execute(select(func.count()).select_from(User).where(User.main_admin.is_(True), User.active.is_(True))
+                     ).scalar() or 0
+
+
+def _guard_last_main(s: Session) -> None:
+    """A instituição nunca fica sem administrador principal ativo (se já tinha um)."""
+    any_main = s.execute(select(func.count()).select_from(User).where(User.main_admin.is_(True))).scalar() or 0
+    if any_main and not _main_count(s):
+        raise Conflict("A instituição precisa de ao menos um administrador principal ativo.", code="last_main_admin")
+
+
+def ensure_main_admin(s: Session, *, actor: str = "VYONIX") -> uuid.UUID | None:
+    """Sem nenhum administrador principal ativo (instalação nova ou atualização), o administrador ativo mais antigo
+    com papel em todas as unidades passa a ser o principal. Chamado ao criar a instituição e ao atualizar."""
+    if _main_count(s):
+        return None
+    cand = s.execute(select(User).join(UserRole, UserRole.user_id == User.id).join(Role, Role.id == UserRole.role_id)
+                     .where(User.active.is_(True), Role.code.in_(_ADMIN_ROLES), UserRole.site_id.is_(None))
+                     .order_by(User.created_at, User.username).limit(1)).scalar_one_or_none()
+    if cand is None:
+        return None
+    cand.main_admin = True
+    audit.record(s, actor=actor, action="user.main_admin", target_type="user", target_id=cand.id,
+                 details={"main_admin": True, "how": "automatico"})
+    return cand.id
+
+
+def require_main(p: "Principal") -> None:
+    if not p.main_admin:
+        raise Forbidden("Somente administradores principais podem adicionar ou remover perfis.", code="main_admin_only")
+
+
+def protect_main(s: Session, p: "Principal", user_id: uuid.UUID) -> None:
+    """Conta de administrador principal só é alterada por outro administrador principal."""
+    u = s.get(User, user_id)
+    if u is not None and u.main_admin and not p.main_admin:
+        raise Forbidden("Somente um administrador principal altera a conta de outro administrador principal.",
+                        code="main_admin_only")
+
+
+def set_main_admin(s: Session, p: "Principal", user_id: uuid.UUID, value: bool, *, ip=None) -> None:
+    """Nomeia ou retira um administrador principal (a senha já foi confirmada pelo chamador)."""
+    require_main(p)
+    if user_id == p.user_id:
+        raise Forbidden("Você não pode alterar o seu próprio status de administrador principal; peça a outro "
+                        "administrador principal.", code="self_main_admin")
+    u = s.get(User, user_id)
+    if u is None:
+        raise NotFound("Usuário não encontrado.")
+    if bool(u.main_admin) == value:
+        return
+    if value:
+        if not u.active:
+            raise Conflict("Reative a conta antes de nomeá-la administrador principal.")
+        if not _is_global_admin(s, user_id):
+            raise Conflict("Só quem tem o papel de administrador em todas as unidades pode ser administrador principal.",
+                           code="main_admin_role")
+        if _main_count(s) >= MAIN_ADMIN_MAX:
+            raise Conflict(f"Limite de {MAIN_ADMIN_MAX} administradores principais atingido. Retire um antes.",
+                           code="main_admin_limit")
+    u.main_admin = value
+    s.flush()
+    _guard_last_main(s)
+    _end_sessions(s, u.id)                           # o novo poder (ou a perda dele) vale a partir do próximo login
+    audit.record(s, actor=p.username, actor_id=p.user_id, ip=ip, action="user.main_admin", target_type="user",
+                 target_id=u.id, details={"main_admin": value, "username": u.username})
+
+
+def recover_main_admin(s: Session, username: str) -> uuid.UUID:
+    """Recuperação local (console do servidor, VYONIX DEPLOY/CLI): torna principal um administrador existente."""
+    u = _find_user(s, username)
+    if u is None or not u.active:
+        raise NotFound("Usuário ativo não encontrado.")
+    if not _is_global_admin(s, u.id):
+        raise Conflict("O usuário precisa ter o papel de administrador em todas as unidades.")
+    if not u.main_admin and _main_count(s) >= MAIN_ADMIN_MAX:
+        raise Conflict(f"Já existem {MAIN_ADMIN_MAX} administradores principais ativos.")
+    u.main_admin = True
+    audit.record(s, actor="console local (recuperação)", action="user.main_admin", target_type="user", target_id=u.id,
+                 details={"main_admin": True, "how": "recuperacao_local", "username": u.username})
+    return u.id
+
+
+def end_user_sessions(s: Session, user_id: uuid.UUID, *, actor: str, actor_id=None, ip=None) -> None:
+    if s.get(User, user_id) is None:
+        raise NotFound("Usuário não encontrado.")
+    _end_sessions(s, user_id)
+    audit.record(s, actor=actor, actor_id=actor_id, ip=ip, action="user.sessions_ended", target_type="user",
+                 target_id=user_id)
+
+
+def update_me(s: Session, p: "Principal", *, ip=None, **fields) -> None:
+    """Minha conta: cada pessoa altera o próprio nome de exibição, e-mail e telefone. Perfis, unidades, situação e o
+    nome/CRM impressos no laudo não mudam por aqui."""
+    u = s.get(User, p.user_id)
+    changed = {}
+    for k in ("display_name", "email", "phone"):
+        v = fields.get(k)
+        if v is None:
+            continue
+        v = v.strip() or None
+        if k == "display_name":
+            if not v:
+                raise ValidationFailed("Informe o nome.")
+            if v != u.display_name and _is_physician(s, u.id):
+                raise Forbidden("Médico: o nome é alterado pelo administrador (protege a autoria dos laudos).",
+                                code="physician_name")
+        if getattr(u, k) != v:
+            setattr(u, k, v)
+            changed[k] = v
+    if changed:
+        audit.record(s, actor=p.username, actor_id=p.user_id, ip=ip, action="user.self_update", target_type="user",
+                     target_id=u.id, details=changed)
+
+
+def _is_physician(s: Session, user_id: uuid.UUID) -> bool:
+    try:
+        from vyonix.report.models import Physician
+    except ImportError:                                  # pragma: no cover - módulo de laudos ausente
+        return False
+    return s.execute(select(Physician.id).where(Physician.user_id == user_id).limit(1)).first() is not None
 
 
 # --------------------------------------------------------------------------- sessões
@@ -463,7 +605,8 @@ def authenticate(s: Session, token: str, *, touch: bool = True) -> Principal:
         if perm:
             grants.setdefault(perm, set()).add(site)
     return Principal(user_id=u.id, tenant_id=u.tenant_id, username=u.username, display_name=u.display_name,
-                     session_id=ses.id, csrf=ses.csrf, stage=_stage(s, u, ses), grants=grants, roles=roles)
+                     session_id=ses.id, csrf=ses.csrf, stage=_stage(s, u, ses), grants=grants, roles=roles,
+                     main_admin=bool(u.main_admin))
 
 
 def user_has(s: Session, user_id: uuid.UUID, perm: str) -> bool:

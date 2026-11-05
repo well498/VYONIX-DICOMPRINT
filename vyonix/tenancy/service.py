@@ -53,6 +53,7 @@ def create_organization(db: Database, *, code: str, name: str, admin_username: s
         auth.create_user(s, username=admin_username, display_name=admin_name, password=admin_password,
                          roles=[("administrador", None)], must_change=admin_must_change, actor=actor,
                          user_id=admin_id)
+        auth.ensure_main_admin(s, actor=actor)
     return tid
 
 
@@ -64,6 +65,7 @@ def refresh(db: Database, tenant_id: uuid.UUID) -> None:
     with db.session(tenant_id) as s:
         registry.ensure_rows(s)
         auth.ensure_default_roles(s)
+        auth.ensure_main_admin(s)
 
 
 def organization(s: Session) -> Organization:

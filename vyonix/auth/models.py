@@ -23,6 +23,11 @@ class User(TenantMixin, Base):
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     mfa_required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # 05/11/2026 (decisão do proprietário): só o administrador principal adiciona ou remove perfis; até 3 por
+    # instituição, nunca zero; ninguém altera o próprio status (vyonix.auth.service.set_main_admin).
+    main_admin: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
+    phone: Mapped[str | None] = mapped_column(String(30))
+    professional_reg: Mapped[str | None] = mapped_column(String(40))      # CRTR, matrícula etc. (CRM fica no médico)
 
 
 class Role(TenantMixin, Base):

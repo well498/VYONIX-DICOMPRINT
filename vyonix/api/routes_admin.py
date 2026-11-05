@@ -38,6 +38,13 @@ class UserPatch(BaseModel):
     email: str | None = Field(None, max_length=200)
     active: bool | None = None
     mfa_required: bool | None = None
+    phone: str | None = Field(None, max_length=30)
+    professional_reg: str | None = Field(None, max_length=40)
+
+
+class MainAdminIn(BaseModel):
+    main: bool
+    password: str = Field(min_length=1, max_length=256)
 
 
 class RolesIn(BaseModel):
@@ -82,6 +89,8 @@ def users(c: Ctx = Depends(needs("core.users.read"))):
 @router.post("/users", status_code=201)
 def create_user(body: UserIn, c: Ctx = Depends(needs("core.users.manage"))):
     from vyonix.auth import directory
+    if body.roles:                                   # 05/11/2026: só o administrador principal atribui perfis
+        auth.require_main(c.p)
     with directory.Reservation(c.plat.db, body.username, c.p.tenant_id, not c.plat.edge) as uid, c.session() as s:
         auth.check_grant(s, c.p, [(r.role, r.site_id) for r in body.roles])
         u = auth.create_user(s, username=body.username, display_name=body.display_name, email=body.email,
@@ -106,12 +115,14 @@ def login_available(login: str, c: Ctx = Depends(needs("core.users.manage"))):
 def update_user(user_id: uuid.UUID, body: UserPatch, c: Ctx = Depends(needs("core.users.manage"))):
     with c.session() as s:
         auth.check_grant(s, c.p, [], user_id=user_id)          # não mexe em conta mais privilegiada
+        auth.protect_main(s, c.p, user_id)
         auth.update_user(s, user_id, **body.model_dump(exclude_unset=True), **c.actor)
     return {"ok": True}
 
 
 @router.put("/users/{user_id}/roles")
 def set_roles(user_id: uuid.UUID, body: RolesIn, c: Ctx = Depends(needs("core.users.manage"))):
+    auth.require_main(c.p)                       # 05/11/2026: só o administrador principal adiciona/remove perfis
     with c.session() as s:
         if user_id == c.p.user_id:               # MISSÃO 2 S-01: ninguém altera os próprios papéis
             from vyonix.errors import Forbidden
@@ -126,6 +137,7 @@ def set_roles(user_id: uuid.UUID, body: RolesIn, c: Ctx = Depends(needs("core.us
 def reset_password(user_id: uuid.UUID, body: PasswordReset, c: Ctx = Depends(needs("core.users.manage"))):
     with c.session() as s:
         auth.check_grant(s, c.p, [], user_id=user_id)          # não mexe em conta mais privilegiada
+        auth.protect_main(s, c.p, user_id)
         auth.reset_password(s, user_id, body.password, **c.actor)
     return {"ok": True}
 
@@ -134,6 +146,7 @@ def reset_password(user_id: uuid.UUID, body: PasswordReset, c: Ctx = Depends(nee
 def unlock(user_id: uuid.UUID, c: Ctx = Depends(needs("core.users.manage"))):
     with c.session() as s:
         auth.check_grant(s, c.p, [], user_id=user_id)          # não mexe em conta mais privilegiada
+        auth.protect_main(s, c.p, user_id)
         auth.unlock(s, user_id, **c.actor)
     return {"ok": True}
 
@@ -142,7 +155,32 @@ def unlock(user_id: uuid.UUID, c: Ctx = Depends(needs("core.users.manage"))):
 def mfa_reset(user_id: uuid.UUID, c: Ctx = Depends(needs("core.users.manage"))):
     with c.session() as s:
         auth.check_grant(s, c.p, [], user_id=user_id)          # não mexe em conta mais privilegiada
+        auth.protect_main(s, c.p, user_id)
         auth.mfa_disable(s, user_id, **c.actor)
+    return {"ok": True}
+
+
+@router.post("/users/{user_id}/end-sessions")
+def end_sessions(user_id: uuid.UUID, c: Ctx = Depends(needs("core.users.manage"))):
+    with c.session() as s:
+        auth.check_grant(s, c.p, [], user_id=user_id)
+        auth.protect_main(s, c.p, user_id)
+        auth.end_user_sessions(s, user_id, **c.actor)
+    return {"ok": True}
+
+
+@router.post("/users/{user_id}/main-admin")
+def main_admin(user_id: uuid.UUID, body: MainAdminIn, c: Ctx = Depends(needs_global("core.users.manage"))):
+    """Nomeia/retira administrador principal (máx. 3, nunca zero, nunca o próprio), com confirmação de senha."""
+    from vyonix.errors import Forbidden
+    auth.require_main(c.p)
+    ok = None
+    with c.session() as s:
+        ok = auth.confirm_password(s, c.p, body.password, purpose="main_admin", ip=c.ip)
+    if not ok:
+        raise Forbidden("Senha incorreta.", code="password_mismatch")
+    with c.session() as s:
+        auth.set_main_admin(s, c.p, user_id, body.main, ip=c.ip)
     return {"ok": True}
 
 
@@ -154,6 +192,7 @@ def roles(c: Ctx = Depends(needs("core.users.read"))):
 
 @router.put("/roles/{code}")
 def save_role(code: str, body: RoleIn, c: Ctx = Depends(needs("core.users.manage"))):
+    auth.require_main(c.p)
     with c.session() as s:
         auth.check_grant(s, c.p, [code], permissions=body.permissions)
         r = auth.save_role(s, code=code, name=body.name, permissions=body.permissions, **c.actor)
@@ -170,6 +209,7 @@ def role_templates(c: Ctx = Depends(needs("core.users.read"))):
 def activate_template(code: str, c: Ctx = Depends(needs("core.users.manage"))):
     """Ativa um modelo de perfil opcional (o papel criado pode ser personalizado depois)."""
     from vyonix.modules.manifest import ROLE_TEMPLATES
+    auth.require_main(c.p)
     with c.session() as s:
         if code in ROLE_TEMPLATES:
             auth.check_grant(s, c.p, [], permissions=auth.expand(ROLE_TEMPLATES[code][1]))
@@ -184,6 +224,7 @@ def apply_structure(code: str, c: Ctx = Depends(needs("core.users.manage"))):
     from vyonix.modules.manifest import ROLE_TEMPLATES, STRUCTURES
     if code not in STRUCTURES:
         raise NotFound("Estrutura desconhecida.")
+    auth.require_main(c.p)
     with c.session() as s:
         for t in STRUCTURES[code][1]:
             auth.check_grant(s, c.p, [], permissions=auth.expand(ROLE_TEMPLATES[t][1]))
