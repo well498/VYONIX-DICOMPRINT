@@ -1,6 +1,6 @@
 # VYONIX — Próxima ação executável e registro de tarefas
 
-* **Atualizado em:** 2026-10-29 (fim da tarde) · ramo `develop`
+* **Atualizado em:** 2026-11-04 (noite) · ramo `develop` (0.3.1 — Missão 2)
 * **Regra permanente do proprietário (29/10):** todo novo pedido é **acrescentado** ao planejamento; nada é
   cancelado, reiniciado ou descartado. P0 pode reordenar, preservando o progresso (justificativa registrada aqui).
 * **Ponto exato de parada:** `f9c04e3` (+ documentos) enviado com `[skip ci]` para não cancelar os runs Windows
@@ -8,6 +8,23 @@
   disparar `deploy-windows` (ambos os sabores) em `f9c04e3`+, que inclui o novo critério **2.13** (recuperação com
   falhas, reexecução, reversão, falhas simuladas de migração e inicialização). **Kit e instalador só são entregues
   com 2.12, 2.13 e a homologação aprovados nesse commit.**
+
+## MISSÃO 2 — Segurança (04/11/2026) — `docs/seguranca/Missao2_Auditoria_Seguranca.md`
+* Auditoria por A01/A02/A03/A04/A06/A08 (provas locais), UX A05, validação independente A07 (2 rodadas: V-01..V-07
+  aprovados; V-03 como política a confirmar; V-07 com resíduo documentado).
+* Falhas graves da 0.3.0 corrigidas na **0.3.1** (ramo `m2-seguranca` → `develop`): autoria do laudo (R-01/R-02),
+  delegação por unidade (S-01), escopo por unidade (S-02/V-01/V-02), TLS/logs/concorrência. **0.3.0 não deve ser
+  usada além de testes.**
+* Testes de proteção: `tests_platform/test_m2_security.py` (13; 9 reprovam na 0.3.0).
+* **Aguardando proprietário:** decisões G-1..G-7 (firewall, BLK-15, MFA de administradores, backup cifrado,
+  credenciais do Core, interface de papéis, unidade dos exames do PACS) e a homologação Windows da 0.3.1
+  (`docs/homologacao/Roteiro_Homologacao_Windows_0.3.md`). P0 continua aberto.
+
+## Novas solicitações (04/11 21:51) — incorporadas sem cancelar nada
+| Pri | Tarefa | Situação |
+|---|---|---|
+| P1 | Desligamento de médicos, redistribuição e Transferência Excepcional (A03/A04/A05/A07/A08) | Desenho A03 concluído (lacunas P1: atribuição presa ao desligado, prazo reiniciado no reencaminhamento, compartilhamento após desligamento, adendo de laudo de médico desligado); protótipos A05 das 5 telas prontos; **aguarda respostas do proprietário** (gestor clínico, quem pede, acesso ao rascunho anterior, fila de pendências) antes da interface; backend em seguida |
+| — | Avaliação de prontidão para contrato estadual (somente diagnóstico) | A01 em execução; relatório técnico/executivo a entregar |
 
 ## Em execução
 | Pri | Tarefa | Situação |

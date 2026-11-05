@@ -60,3 +60,19 @@ consolidados em `Registro_Aperfeicoamento.md` (A03/A04/A05) e `docs/ux/Fase_A_*`
 Comercial 41816136962 aprovado (47/0/1), incluindo o 2.9 reescrito por A06; homologação 41816154805 aprovada com
 atualização a partir da 0.2.0. Pendências registradas: e2e da tela do técnico, `Barrier` no teste de corrida e
 comparação da pasta de licenciamento no 2.13 (A07); limpeza L4 dos resíduos (A01/A04).
+
+### MISSÃO 2 — Auditoria de segurança (04/11/2026)
+| Agente | Tarefa | Situação | Evidência |
+|---|---|---|---|
+| A01 | Superfície de ataque, fronteiras, modelo de ameaças | EXECUTADO | 10 achados (A1-01..A1-10) |
+| A02 | PACS/DICOM, Weasis, TLS DICOM | EXECUTADO (provas D01–D04; 28 testes PACS OK) | D-01..D-09 |
+| A03 | Fluxos clínicos, autoria, concorrência | EXECUTADO (9 provas) | R-01..R-09 |
+| A04 (líder) | Autenticação, sessões, autorização, segredos | EXECUTADO (provas) | S-01..S-12 |
+| A05 | UX de segurança + protótipo | EXECUTADO (protótipo não implementado) | recomendações P1–P3 |
+| A06 | Infra, TLS, CI, backup; roteiro Windows | EXECUTADO (teste TLS local) | W-01..W-12; roteiro salvo |
+| A07 | Validação independente das correções | EXECUTADO e VALIDADO (2 rodadas) | V-01..V-09 |
+| A08 | Banco, RLS, logs, backup | EXECUTADO (provas em bancos descartáveis) | B-01..B-08 |
+
+Pedidos de 04/11 21:51: A03 (desenho do desligamento) e A05 (5 protótipos) EXECUTADOS; A01 (prontidão estadual) em
+execução. Nada foi executado no computador do proprietário.
+
