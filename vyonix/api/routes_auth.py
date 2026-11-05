@@ -48,7 +48,8 @@ def login(body: LoginIn, request: Request, response: Response):
     plat = platform(request)
     ip = client_ip(request)
     if not request.app.state.login_limiter.hit(ip):
-        raise VyonixError("Muitas tentativas. Aguarde um minuto.", code="rate_limited")
+        from vyonix.errors import TooManyRequests
+        raise TooManyRequests("Muitas tentativas. Aguarde um minuto.")
     # Só usuário e senha: a instalação local atende uma organização; no servidor com várias instituições, o login
     # é único na plataforma e o diretório global indica a instituição. O código da organização continua aceito
     # (compatibilidade) para contas antigas com o mesmo login em duas organizações.

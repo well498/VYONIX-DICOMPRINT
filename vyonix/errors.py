@@ -44,3 +44,8 @@ class Locked(VyonixError):
 class Unavailable(VyonixError):
     """Dependência externa (ex.: motor de armazenamento DICOM) não configurada ou sem resposta."""
     status, code = 503, "unavailable"
+
+
+class TooManyRequests(VyonixError):
+    """Limite de tentativas atingido (HTTP 429) — MISSÃO 2 S-06."""
+    status, code = 429, "rate_limited"

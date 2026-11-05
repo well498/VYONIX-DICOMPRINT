@@ -211,6 +211,16 @@ class M2Security(_prep.Prep):
                                                        ViewerToken.revoked_at.is_(None))).scalars().all()
         self.assertEqual(left, [])
 
+    # ------------------------------------------------------------------ S-06
+    def test_s06_login_rate_limit_is_429_with_retry_after(self):
+        from fastapi.testclient import TestClient
+        c = TestClient(self.client.app)
+        codes = [c.post("/api/v1/auth/login", json={"username": "ninguem", "password": "errada-123"}).status_code
+                 for _ in range(21)]
+        self.assertEqual(codes[-1], 429)
+        r = c.post("/api/v1/auth/login", json={"username": "ninguem", "password": "errada-123"})
+        self.assertEqual((r.status_code, r.headers.get("retry-after"), r.json()["error"]), (429, "60", "rate_limited"))
+
     # ------------------------------------------------------------------ B-04
     def test_b04_app_role_cannot_rewrite_migration_version(self):
         from sqlalchemy import text

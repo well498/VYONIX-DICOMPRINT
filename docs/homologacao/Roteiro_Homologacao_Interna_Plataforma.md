@@ -25,7 +25,7 @@
    Se o navegador ainda assim não abrir, a janela preta mostra o endereço `http://127.0.0.1:…/?t=…`: copie-o
    inteiro e cole no navegador; deixe a janela preta aberta. Preencha:
    - Organização: `clinica-alfa` · Nome: `Clínica Alfa (fictícia)`
-   - Administrador: `gestor.alfa` · Senha: uma senha sua com 10 caracteres ou mais (ex.: `Gestor-Alfa-2026!`)
+   - Administrador: `gestor.alfa` · Senha: uma senha **sua**, com 10 caracteres ou mais (não use senhas de exemplo de documentos: este repositório é público)
    - Portas: deixe as sugeridas (8444 e 5544).
    Revise o plano e aprove. O assistente gera um relatório PDF da implantação. **Sem essa aprovação nada fica
    instalado e o endereço 8444 não abre.**
@@ -43,8 +43,8 @@
 | Perfil | Usuário | Senha | Observação |
 |---|---|---|---|
 | Gestor da clínica (administrador) | `gestor.alfa` | a que você definiu no assistente | criado na instalação |
-| Técnico em Radiologia | `tecnico.alfa` | provisória `Provisoria-2026x` → no 1º acesso defina `Tecnico-Alfa-2026!` | criado no teste 2 |
-| Médica laudadora | `dra.ficticia` | provisória `Provisoria-2026x` → no 1º acesso defina `Medica-Ficticia-2026!` | criada no teste 2 |
+| Técnico em Radiologia | `tecnico.alfa` | provisória definida por você → no 1º acesso defina uma senha nova sua | criado no teste 2 |
+| Médica laudadora | `dra.ficticia` | provisória definida por você → no 1º acesso defina uma senha nova sua | criada no teste 2 |
 | Paciente fictícia | Maria Ficticia | prontuário `HML-001` | criada no teste 4 |
 
 A tela de acesso pede só **usuário e senha**. Senhas provisórias são trocadas no primeiro acesso.
@@ -68,7 +68,7 @@ o que apareceu.
 ### Teste 2 — Cadastrar técnico e médica
 - **Como abrir:** menu **Usuários e papéis → Novo usuário**.
 - **Preencher (técnico):** Nome `Tiago Técnico Fictício`, Usuário `tecnico.alfa` (ao sair do campo o sistema
-  confere se o login está livre), Senha provisória `Provisoria-2026x`, Papel **Técnico** → **Criar usuário**.
+  confere se o login está livre), Senha provisória (uma senha sua, só para o primeiro acesso), Papel **Técnico** → **Criar usuário**.
 - **Repita (médica):** Nome `Dra. Fictícia Teste`, Usuário `dra.ficticia`, mesma senha provisória, Papel **Médico**.
 - **Esperado:** os dois aparecem na lista "Aguardando troca de senha".
 - **Opcional:** em "Perfis da instituição → Modelos de perfil", ative "Coordenador do CDI" e dê ao técnico os dois
@@ -98,7 +98,7 @@ o que apareceu.
   serviço **VyonixPacsEngine** em execução (Serviços do Windows).
 
 ### Teste 6 — Exame aparece sozinho na Central de Exames (técnico)
-- **Como abrir:** saia (Sair) e entre como `tecnico.alfa` / `Provisoria-2026x`; troque para `Tecnico-Alfa-2026!`.
+- **Como abrir:** saia (Sair) e entre como `tecnico.alfa` com a senha provisória; troque para uma senha nova sua.
   Menu **Painel do técnico**.
 - **Esperado:** em até 1–2 minutos (sincronização do PACS e fim da recepção), o cartão **Aguardando preparação**
   mostra 1 e a lista mostra "Maria Ficticia — CT · TC de crânio (sintético) · 8 imagem(ns) · SIMULADOR_HML".
@@ -127,7 +127,7 @@ o que apareceu.
   "Suspeita técnica" aberta, o sistema recusa o encaminhamento.
 
 ### Teste 10 — Médica vê o exame na fila de laudos
-- **Como abrir:** saia; entre como `dra.ficticia` / `Provisoria-2026x`, troque para `Medica-Ficticia-2026!`. Menu **Laudos**.
+- **Como abrir:** saia; entre como `dra.ficticia` com a senha provisória e troque para uma senha nova sua. Menu **Laudos**.
 - **Esperado:** "Maria Ficticia" na lista com **Laudar** e **Abrir no Viewer**.
 
 ### Teste 11 — Laudo (implementado; não é assinatura digital)

@@ -95,7 +95,9 @@ def create_app(plat: Platform, *, cookie_secure: bool = True, web_dist: Path | N
 
     @app.exception_handler(VyonixError)
     async def _vy(request: Request, exc: VyonixError):
-        return JSONResponse({"error": exc.code, "message": str(exc), "details": exc.details}, status_code=exc.status)
+        headers = {"Retry-After": "60"} if exc.status == 429 else None
+        return JSONResponse({"error": exc.code, "message": str(exc), "details": exc.details}, status_code=exc.status,
+                            headers=headers)
 
     @app.exception_handler(RequestValidationError)
     async def _val(request: Request, exc: RequestValidationError):
