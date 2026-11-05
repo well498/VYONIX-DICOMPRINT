@@ -189,24 +189,33 @@ def save_role(s: Session, *, code: str, name: str, permissions: list[str], actor
 
 # --------------------------------------------------------------------------- usuários
 
-def check_grant(s: Session, p: "Principal", role_codes: list[str], *, user_id: uuid.UUID | None = None,
+def check_grant(s: Session, p: "Principal", role_codes: list, *, user_id: uuid.UUID | None = None,
                 permissions: list[str] | None = None) -> None:
     """Delegação limitada (Prompt Mestre §18): ninguém concede papel ou permissão que não possui, nem altera os
-    papéis de quem tem mais permissões que ele. Vale para criar usuário, trocar papéis e salvar papel."""
-    mine = set(p.grants)
-    want: set[str] = set(permissions or [])
+    papéis de quem tem mais permissões que ele. Vale para criar usuário, trocar papéis e salvar papel.
+
+    MISSÃO 2 (S-01): a comparação é feita por **par (permissão, unidade)**. Quem tem um papel só na Unidade B não
+    concede nada em todas as unidades nem em outra unidade, e não altera conta que tenha papel fora do seu alcance.
+    ``role_codes`` aceita códigos (= todas as unidades, ex.: editar a definição do papel) ou pares
+    ``(código, site_id)``. Permissões avulsas (definição de papel) exigem a permissão em todas as unidades."""
     roles = {r.code: r.id for r in s.execute(select(Role)).scalars()}
-    ids = [roles[c] for c in role_codes if c in roles]
-    if ids:
-        want |= set(s.execute(select(RolePermission.permission).where(RolePermission.role_id.in_(ids))).scalars())
-    if user_id is not None:                              # papéis atuais do usuário alterado
-        cur = select(RolePermission.permission).join(UserRole, UserRole.role_id == RolePermission.role_id).where(
-            UserRole.user_id == user_id)
-        want |= set(s.execute(cur).scalars())
-    missing = sorted(want - mine)
+    want: set[tuple[str, uuid.UUID | None]] = {(x, None) for x in (permissions or [])}
+    pairs = [(rc, None) if isinstance(rc, str) else (rc[0], rc[1]) for rc in role_codes]
+    for code, site in pairs:
+        rid = roles.get(code)
+        if rid is None:
+            continue
+        for perm in s.execute(select(RolePermission.permission).where(RolePermission.role_id == rid)).scalars():
+            want.add((perm, site))
+    if user_id is not None:                              # papéis atuais do usuário alterado (com a unidade)
+        cur = select(RolePermission.permission, UserRole.site_id).join(
+            UserRole, UserRole.role_id == RolePermission.role_id).where(UserRole.user_id == user_id)
+        want |= {(perm, site) for perm, site in s.execute(cur).all()}
+    missing = sorted({perm for perm, site in want
+                      if not (p.global_has(perm) if site is None else p.has(perm, site))})
     if missing:
-        raise Forbidden("Você não pode conceder ou alterar permissões que não possui.", code="cannot_delegate",
-                        details={"permissions": missing[:20]})
+        raise Forbidden("Você não pode conceder ou alterar permissões que não possui (nesta unidade ou em todas).",
+                        code="cannot_delegate", details={"permissions": missing[:20]})
 
 
 def _org_active(s: Session) -> bool:
@@ -260,6 +269,7 @@ def set_roles(s: Session, user_id: uuid.UUID, roles: list[tuple[str, uuid.UUID |
     unknown = [c for c, _ in roles if c not in by_code]
     if unknown:
         raise ValidationFailed("Papéis desconhecidos.", details={"roles": unknown})
+    _revoke_viewer(s, user_id)
     for ur in s.execute(select(UserRole).where(UserRole.user_id == user_id)).scalars():
         s.delete(ur)
     s.flush()
@@ -345,6 +355,14 @@ def _end_sessions(s: Session, user_id: uuid.UUID, except_id: uuid.UUID | None = 
     for ses in s.execute(q).scalars():
         if ses.id != except_id:
             ses.ended_at = utcnow()
+    _revoke_viewer(s, user_id)
+
+
+def _revoke_viewer(s: Session, user_id: uuid.UUID) -> None:
+    """Credenciais do visualizador externo (Weasis) não sobrevivem a saída, troca/redefinição de senha, bloqueio
+    ou mudança de papéis (MISSÃO 2, S-04/D-07)."""
+    from vyonix.pacs import external
+    external.revoke_user(s, user_id)
 
 
 def _mfa_factor(s: Session, user_id: uuid.UUID) -> MfaFactor | None:
@@ -455,6 +473,7 @@ def logout(s: Session, p: Principal, ip: str | None = None) -> None:
     ses = s.get(AuthSession, p.session_id)
     if ses and ses.ended_at is None:
         ses.ended_at = utcnow()
+        _revoke_viewer(s, p.user_id)
         audit.record(s, actor=p.username, actor_id=p.user_id, action="auth.logout", target_type="session",
                      target_id=ses.id, ip=ip)
 

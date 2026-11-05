@@ -27,7 +27,9 @@ def is_technician(principal, site_id: uuid.UUID | None = None) -> bool:
         if r.get("role") != ROLE:
             continue
         sid = r.get("site_id")
-        if sid is None or site_id is None or str(sid) == str(site_id):
+        # papel em todas as unidades vale sempre; papel de uma unidade só vale nela — exame sem unidade exige o papel
+        # em todas (MISSÃO 2, R-04)
+        if sid is None or (site_id is not None and str(sid) == str(site_id)):
             return True
     return False
 

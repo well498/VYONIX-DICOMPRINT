@@ -108,6 +108,12 @@ def _open_flags(s: Session, study_id: uuid.UUID) -> int:
 
 
 def priority_of(s: Session, st: Study, p: ExamPrep | None) -> str:
+    # MISSÃO 2 R-05: depois do início do laudo a prioridade fica congelada no valor do início — conciliar com um
+    # pedido de outra prioridade não a altera (o bloqueio vale para todos os caminhos, não só para as rotas diretas)
+    from vyonix.report.models import ReportStart
+    frozen = s.execute(select(ReportStart.priority).where(ReportStart.study_id == st.id)).first()
+    if frozen is not None and frozen[0]:
+        return frozen[0]
     if st.order_id:
         o = s.get(Order, st.order_id)
         if o is not None:
@@ -501,9 +507,12 @@ def revoke_share(s: Session, share_id: uuid.UUID, *, actor: str, actor_id=None, 
 def queue(s: Session, user_id: uuid.UUID, *, date_from=None, date_to=None, modality: str | None = None,
           station: str | None = None, site_id: uuid.UUID | None = None, stage_filter: str | None = None,
           priority: str | None = None, patient: str | None = None, accession: str | None = None,
-          limit: int = 300) -> dict[str, Any]:
+          limit: int = 300, sites: set | None = None) -> dict[str, Any]:
+    """``sites``: unidades do papel do usuário (``None`` = todas) — MISSÃO 2 S-02."""
     from vyonix.pacs.models import PacsInstance, PacsStudy
     q = select(Study, Patient).outerjoin(Patient, Patient.id == Study.patient_id)
+    if sites is not None:
+        q = q.where(Study.site_id.in_(list(sites) or [uuid.uuid4()]))
     if date_from:
         q = q.where(Study.created_at >= datetime.combine(date_from, datetime.min.time()).astimezone())
     if date_to:
@@ -515,7 +524,8 @@ def queue(s: Session, user_id: uuid.UUID, *, date_from=None, date_to=None, modal
     if accession:
         q = q.where(Study.accession == accession.strip())
     if patient:
-        q = q.where(Patient.name.ilike(f"%{patient.strip()}%"))
+        esc = patient.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        q = q.where(Patient.name.ilike(f"%{esc}%", escape="\\"))
     rows = list(s.execute(q.order_by(Study.created_at.desc()).limit(min(limit, 1000))))
     ids = [st.id for st, _p in rows]
     preps = {p.study_id: p for p in s.execute(select(ExamPrep).where(ExamPrep.study_id.in_(ids))).scalars()}

@@ -49,7 +49,44 @@ def _in_scope(c: Ctx, s, *, study_id: uuid.UUID | None = None, report_id: uuid.U
     from vyonix.ris import prep
     if study_id in prep.shared_studies(s, c.p.user_id, scope="report" if write else None):
         return                                               # compartilhado temporariamente com este usuário
-    queue.require(s, _scope(c, s), study_id)
+    sc = _scope(c, s)
+    queue.require(s, sc, study_id)
+    if sc is None:                                           # não médico (ou quem distribui): papel na unidade
+        from vyonix.clinical.models import Study
+        from vyonix.errors import Forbidden
+        st = s.get(Study, study_id)
+        perms = ("report.read", "report.write", "report.assign")
+        if st is not None and not any(c.p.global_has(x) if st.site_id is None else c.p.has(x, st.site_id)
+                                      for x in perms):
+            raise Forbidden("Sem permissão nesta unidade.", code="site_forbidden")   # MISSÃO 2 S-02
+
+
+def _author(c: Ctx, s, rid: uuid.UUID, *, action: str, reviewer: bool = False) -> None:
+    """Só o médico responsável pelo laudo (quem iniciou / atribuição aberta) altera, envia, libera ou adenda —
+    exceções: revisor designado e compartilhamento temporário ``report`` (MISSÃO 2, R-01)."""
+    from vyonix.errors import NotFound
+    from vyonix.report import authorship
+    from vyonix.report.models import Report
+    from vyonix.ris import prep
+    r = s.get(Report, rid)
+    if r is None:
+        raise NotFound("Laudo não encontrado.")
+    shared = r.study_id in prep.shared_studies(s, c.p.user_id, scope="report")
+    authorship.require(s, r, user_id=c.p.user_id, usernames=(c.p.username, c.p.display_name), reviewer=reviewer,
+                       shared=shared, action=action)
+
+
+def _can_read_draft(c: Ctx, s, rid: uuid.UUID) -> None:
+    """Conteúdo de rascunho/revisão (e o histórico de revisões): responsável, revisor, compartilhamento ou quem
+    distribui (``report.assign``). Laudo liberado segue o escopo de unidade."""
+    from vyonix.report.models import Report
+    from vyonix.ris import prep
+    r = s.get(Report, rid)
+    if r is None or r.status not in ("draft", "review") or c.p.has("report.assign"):
+        return
+    if r.study_id in prep.shared_studies(s, c.p.user_id):     # compartilhamento (inclusive só leitura)
+        return
+    _author(c, s, rid, action="ler_rascunho", reviewer=_is_reviewer(c, s, rid))
 
 
 class OpenIn(BaseModel):
@@ -63,13 +100,13 @@ class DraftIn(BaseModel):
     body_format: str | None = Field(None, pattern="^(text|html)$")
     critical: bool = False
     critical_note: str | None = Field(None, max_length=300)
-    row_version: int | None = None
+    row_version: int                    # obrigatório: impede sobrescrita silenciosa (MISSÃO 2, R-07)
 
 
 class ReviewRequestIn(BaseModel):
     reviewer_id: uuid.UUID | None = None
     note: str | None = Field(None, max_length=1000)
-    row_version: int | None = None
+    row_version: int
 
 
 class ReviewReturnIn(BaseModel):
@@ -168,7 +205,10 @@ def open_report(body: OpenIn, c: Ctx = Depends(needs("report.write"))):
     with c.session() as s:
         _require(c, s)
         _in_scope(c, s, study_id=body.study_id, write=True)
-        r = rep.open_report(s, body.study_id, template_id=body.template_id, auto=body.auto, **c.actor)
+        from vyonix.ris import prep
+        shared = body.study_id in prep.shared_studies(s, c.p.user_id, scope="report")
+        r = rep.open_report(s, body.study_id, template_id=body.template_id, auto=body.auto,
+                            check_owner=not shared, **c.actor)
         return rep.get(s, r.id)
 
 
@@ -184,6 +224,7 @@ def suggest(study_id: uuid.UUID, c: Ctx = Depends(needs("report.write"))):
 def get_report(rid: uuid.UUID, c: Ctx = Depends(needs("report.read"))):
     with c.session() as s:
         _in_scope(c, s, report_id=rid)
+        _can_read_draft(c, s, rid)
         return rep.get(s, rid)
 
 
@@ -192,6 +233,7 @@ def save_draft(rid: uuid.UUID, body: DraftIn, c: Ctx = Depends(needs("report.wri
     with c.session() as s:
         _require(c, s)
         _in_scope(c, s, report_id=rid, write=True)
+        _author(c, s, rid, action="editar", reviewer=_is_reviewer(c, s, rid))
         rep.update_draft(s, rid, body=body.body, critical=body.critical, critical_note=body.critical_note,
                          expected_version=body.row_version, body_format=body.body_format,
                          reviewer=_is_reviewer(c, s, rid), **c.actor)
@@ -219,6 +261,7 @@ def request_review(rid: uuid.UUID, body: ReviewRequestIn, c: Ctx = Depends(needs
     with c.session() as s:
         _require(c, s)
         _in_scope(c, s, report_id=rid, write=True)
+        _author(c, s, rid, action="enviar_revisao")
         rep.request_review(s, rid, reviewer_id=body.reviewer_id, note=body.note, expected_version=body.row_version,
                            **c.actor)
         return rep.get(s, rid)
@@ -239,6 +282,8 @@ def return_review(rid: uuid.UUID, body: ReviewReturnIn, c: Ctx = Depends(needs("
 def draft_revisions(rid: uuid.UUID, c: Ctx = Depends(needs("report.read"))):
     with c.session() as s:
         _in_scope(c, s, report_id=rid)
+        if not c.p.has("report.assign"):
+            _author(c, s, rid, action="ler_revisoes", reviewer=_is_reviewer(c, s, rid))
         return {"items": rep.revisions(s, rid)}
 
 
@@ -260,6 +305,10 @@ def finalize(rid: uuid.UUID, body: SignIn, c: Ctx = Depends(needs("report.sign")
     with c.session() as s:
         _require(c, s)
         _in_scope(c, s, report_id=rid, write=True)
+        _author(c, s, rid, action="liberar", reviewer=_is_reviewer(c, s, rid))
+    if body.row_version is None:                   # R-07: liberar exige a versão que o médico leu
+        from vyonix.errors import ValidationFailed
+        raise ValidationFailed("Informe a versão do laudo (row_version) para liberar.")
     with c.session() as s:                         # tentativa falha fica registrada mesmo sem liberar
         ok = auth.confirm_password(s, c.p, body.password, purpose="report.finalize", ip=c.ip)
     if not ok:
@@ -275,6 +324,7 @@ def add_addendum(rid: uuid.UUID, body: AddendumIn, c: Ctx = Depends(needs("repor
     with c.session() as s:
         _require(c, s)
         _in_scope(c, s, report_id=rid, write=True)
+        _author(c, s, rid, action="adendo")
     with c.session() as s:
         ok = auth.confirm_password(s, c.p, body.password, purpose="report.addendum", ip=c.ip)
     if not ok:
@@ -301,6 +351,7 @@ def report_draft_pdf(rid: uuid.UUID, c: Ctx = Depends(needs("report.read"))):
     from fastapi.responses import Response
     with c.session() as s:
         _in_scope(c, s, report_id=rid)
+        _can_read_draft(c, s, rid)
         data, name = rep.pdf(s, rid, draft=True, **c.actor)
     return Response(data, media_type="application/pdf",
                     headers={"Content-Disposition": f'inline; filename="{name}"', "Cache-Control": "no-store"})
@@ -332,6 +383,7 @@ def finalize_batch(body: BatchIn, c: Ctx = Depends(needs("report.sign"))):
         try:
             with c.session() as s:
                 _in_scope(c, s, report_id=rid, write=True)
+                _author(c, s, rid, action="liberar_lote")
                 r = rep.finalize(s, rid, actor=c.p.display_name or c.p.username, actor_id=c.p.user_id, ip=c.ip,
                                  batch=batch)
                 results.append({"report_id": str(rid), "ok": True, "version": r.version})
@@ -972,6 +1024,8 @@ def send_to_pacs(rid: uuid.UUID, c: Ctx = Depends(needs("report.write"))):
     from vyonix.report.models import Report
     with c.session() as s:
         _in_scope(c, s, report_id=rid, write=True)
+        if not c.p.has("report.assign"):
+            _author(c, s, rid, action="enviar_pacs")
         if not registry.is_enabled(s, "pacs"):
             raise Conflict("O VYONIX PACS não está habilitado nesta organização.")
         r = s.get(Report, rid)

@@ -51,9 +51,9 @@ class Database:
         # conectar numa porta local fechada pode demorar vários segundos por tentativa)
         ca = {"connect_timeout": CONNECT_TIMEOUT_S}
         self.engine: Engine = create_engine(_url(url), pool_size=pool_size, max_overflow=10, pool_pre_ping=True,
-                                            future=True, connect_args=ca)
+                                            future=True, connect_args=ca, hide_parameters=True)
         self.service_engine: Engine = create_engine(_url(service_url or url), pool_size=4, pool_pre_ping=True,
-                                                    future=True, connect_args=ca)
+                                                    future=True, connect_args=ca, hide_parameters=True)
         self._factory = sessionmaker(self.engine, expire_on_commit=False)
         self._service_factory = sessionmaker(self.service_engine, expire_on_commit=False)
         for f in (self._factory, self._service_factory):

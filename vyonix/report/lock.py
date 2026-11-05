@@ -136,9 +136,18 @@ def mark_started(s: Session, study_id: uuid.UUID, report_id: uuid.UUID | None, *
     phys = s.get(Physician, a.physician_id) if a is not None else None
     if phys is None and actor_id is not None:
         phys = s.execute(select(Physician).where(Physician.user_id == actor_id)).scalar_one_or_none()
+    pr = a.priority if a else None
+    if pr is None:                                 # sem atribuição: congela a prioridade efetiva do exame
+        from vyonix.clinical.models import Study
+        from vyonix.ris import prep as rprep
+        from vyonix.ris.models import ExamPrep
+        st = s.get(Study, study_id)
+        if st is not None:
+            ep = s.execute(select(ExamPrep).where(ExamPrep.study_id == study_id)).scalar_one_or_none()
+            pr = rprep.priority_of(s, st, ep)
     rs = ReportStart(study_id=study_id, report_id=report_id, started_at=utcnow(), started_by=actor[:120],
                      started_by_id=actor_id, physician_id=phys.id if phys else None,
-                     physician_name=phys.full_name if phys else None, priority=a.priority if a else None,
+                     physician_name=phys.full_name if phys else None, priority=pr,
                      origin="editor")
     s.add(rs)
     s.flush()

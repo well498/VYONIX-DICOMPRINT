@@ -101,7 +101,7 @@ class Queue(ApiBase):
         item = next(x for x in norte.get("/api/v1/report/worklist", params={"mine": True}).json()["items"])
         self.assertEqual((item["assignment"]["priority"], item["assignment"]["overdue"]), ("routine", False))
         rid = norte.post("/api/v1/report/reports", json={"study_id": str(self.st["n"])}).json()["id"]
-        rv = norte.put(f"/api/v1/report/reports/{rid}", json={"body": "Texto."}).json()["row_version"]
+        rv = norte.put(f"/api/v1/report/reports/{rid}", json={"body": "Texto.", "row_version": norte.get(f"/api/v1/report/reports/{rid}").json()["row_version"]}).json()["row_version"]
         r = norte.post(f"/api/v1/report/reports/{rid}/finalize", json={"password": "Senha-Nova-9876!", "row_version": rv})
         self.assertEqual(r.status_code, 200, r.text)
         self.assertEqual(self.ids(norte, mine=True), set())                   # liberado: atribuição concluída

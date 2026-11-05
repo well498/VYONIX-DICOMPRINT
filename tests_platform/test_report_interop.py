@@ -54,7 +54,7 @@ class Interop(ApiBase):
                                                              "crm": "4242", "crm_uf": "PE"}).json()["id"]
         self.c.post(f"/api/v1/report/physicians/{pid}/links", json={"valid_from": "2026-01-01"})
         rid = self.med.post("/api/v1/report/reports", json={"study_id": str(self.study)}).json()["id"]
-        rv = self.med.put(f"/api/v1/report/reports/{rid}", json={"body": "Achados: A|B^C~D&E\\F.\nConclusão: normal."}
+        rv = self.med.put(f"/api/v1/report/reports/{rid}", json={"body": "Achados: A|B^C~D&E\\F.\nConclusão: normal.", "row_version": self.med.get(f"/api/v1/report/reports/{rid}").json()["row_version"]}
                           ).json()["row_version"]
         self.assertEqual(self.med.post(f"/api/v1/report/reports/{rid}/finalize",
                                        json={"password": "Senha-Nova-9876!", "row_version": rv}).status_code, 200)

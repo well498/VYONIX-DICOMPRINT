@@ -379,14 +379,22 @@ def reconcile(s: Session, study_id: uuid.UUID, order_id: uuid.UUID, *, actor: st
         raise Conflict("Estudo já conciliado com outro pedido.")
     if st.patient_id and st.patient_id != o.patient_id:
         raise Conflict("O estudo pertence a outro paciente. Corrija o cadastro (ou mescle) antes de conciliar.")
+    from vyonix.ris import prep as rprep
+    from vyonix.ris.models import ExamPrep
+    ep = s.execute(select(ExamPrep).where(ExamPrep.study_id == st.id)).scalar_one_or_none()
+    before = rprep.priority_of(s, st, ep)
     st.order_id, st.patient_id, st.reconciled_at = o.id, o.patient_id, utcnow()
     if not st.accession:
         st.accession = o.accession
     if o.status in ("requested", "scheduled", "arrived"):
         o.status = "in_progress"
     s.flush()
+    after = rprep.priority_of(s, st, ep)
+    det = {"order_id": str(o.id), "how": how}
+    if after != before:                            # efeito na prioridade sempre auditado (anterior → novo)
+        det["priority"] = {"previous": before, "new": after}
     audit.record(s, actor=actor, actor_id=actor_id, ip=ip, action="study.reconcile", target_type="study",
-                 target_id=st.id, details={"order_id": str(o.id), "how": how})
+                 target_id=st.id, details=det)
     publish(s, "clinical.study.reconciled.v1", {"study_id": str(st.id), "order_id": str(o.id), "how": how},
             source="clinical", subject_kind="study", subject_id=st.id)
     return st

@@ -191,10 +191,20 @@ def order_status(oid: uuid.UUID, body: StatusIn, c: Ctx = Depends(needs("clinica
 def studies(patient_id: uuid.UUID | None = None, unreconciled: bool = False,
             c: Ctx = Depends(needs("clinical.studies.read"))):
     with c.session() as s:
-        return [_study(x) for x in clinical.studies(s, patient_id=patient_id, unreconciled=unreconciled)]
+        allowed = c.p.sites_for("clinical.studies.read")     # MISSÃO 2 S-02: papel por unidade vê só a unidade
+        return [_study(x) for x in clinical.studies(s, patient_id=patient_id, unreconciled=unreconciled)
+                if allowed is None or x.site_id in allowed]
 
 
 @router.post("/studies/{sid}/reconcile")
 def reconcile(sid: uuid.UUID, body: ReconcileIn, c: Ctx = Depends(needs("clinical.studies.reconcile"))):
     with c.session() as s:
+        from vyonix.clinical.models import Study
+        st = s.get(Study, sid)
+        if st is not None:                                   # S-02: papel da unidade do exame
+            ok = c.p.global_has("clinical.studies.reconcile") if st.site_id is None else \
+                c.p.has("clinical.studies.reconcile", st.site_id)
+            if not ok:
+                from vyonix.errors import Forbidden
+                raise Forbidden("Sem permissão nesta unidade.", code="site_forbidden")
         return _study(clinical.reconcile(s, sid, body.order_id, **c.actor))

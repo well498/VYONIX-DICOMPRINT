@@ -315,7 +315,7 @@ class Api(ApiBase):
         d = r.json()
         self.assertEqual((d["status"], d["finalized_by"], len(d["versions"])), ("final", "Dra. Medica Teste — CRM 54321/PB", 1))
         self.assertEqual(len(d["versions"][0]["sha256"]), 64)
-        self.assertEqual(med.put(f"/api/v1/report/reports/{rep['id']}", json={"body": "x"}).status_code, 409)
+        self.assertEqual(med.put(f"/api/v1/report/reports/{rep['id']}", json={"body": "x", "row_version": 0}).status_code, 409)
         r = med.post(f"/api/v1/report/reports/{rep['id']}/addenda",
                      json={"text": "Adendo sintético.", "password": "Senha-Nova-9876!"})
         self.assertEqual(r.status_code, 201, r.text)

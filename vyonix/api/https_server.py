@@ -18,6 +18,9 @@ from asyncio import sslproto
 TLS_HANDSHAKE = 0x16
 HOST_RE = re.compile(r"^[A-Za-z0-9.\-]{1,253}$|^\[[0-9A-Fa-f:.]{2,45}\]$")
 MAX_HEAD = 8192
+SNIFF_TIMEOUT_S = 10            # MISSÃO 2 W-09: conexão que não decide (TLS ou HTTP) em 10 s é encerrada
+# MISSÃO 2 W-01: TLS 1.2 só com ECDHE + AEAD (sem CBC/SHA-1, NULL ou anônimas); TLS 1.3 usa as suítes padrão
+CIPHERS = "ECDHE+AESGCM:ECDHE+CHACHA20:!aNULL:!eNULL:!MD5:!SHA1"
 
 
 class _Sniff(asyncio.Protocol):
@@ -29,6 +32,11 @@ class _Sniff(asyncio.Protocol):
 
     def connection_made(self, transport) -> None:
         self.t = transport
+        self._timer = self.loop.call_later(SNIFF_TIMEOUT_S, self._expire)
+
+    def _expire(self) -> None:
+        if not self.decided and self.t is not None:
+            self.t.abort()
 
     def data_received(self, data: bytes) -> None:
         if self.decided:
@@ -36,6 +44,7 @@ class _Sniff(asyncio.Protocol):
         self.buf += data
         if self.buf[0] == TLS_HANDSHAKE:
             self.decided = True
+            self._timer.cancel()
             try:
                 self._tls()
             except Exception:  # noqa: BLE001 - falha ao ligar o TLS: encerra só esta conexão
@@ -43,6 +52,7 @@ class _Sniff(asyncio.Protocol):
                     self.t.abort()
         elif b"\r\n\r\n" in self.buf or len(self.buf) >= MAX_HEAD:
             self.decided = True
+            self._timer.cancel()
             self._redirect()
 
     def eof_received(self):
@@ -50,6 +60,8 @@ class _Sniff(asyncio.Protocol):
 
     def connection_lost(self, exc) -> None:
         self.t = None
+        if getattr(self, "_timer", None) is not None:
+            self._timer.cancel()
 
     def _tls(self) -> None:
         app = self.make_app()
@@ -99,11 +111,15 @@ def make_server(app, *, host: str, port: int, certfile: str, keyfile: str, redir
 
     ``redirect=False`` (configuração ``http_redirect: false``) volta ao HTTPS puro do uvicorn."""
     import uvicorn
+    kw.setdefault("ssl_ciphers", CIPHERS)
+    _quiet_access_log()
     cfg = uvicorn.Config(app, host=host, port=port, ssl_certfile=certfile, ssl_keyfile=keyfile, **kw)
     if not redirect:
         return uvicorn.Server(cfg)
     cfg.load()
     sslctx, real = cfg.ssl, cfg.http_protocol_class
+    import ssl as _ssl
+    sslctx.minimum_version = _ssl.TLSVersion.TLSv1_2
     cfg.ssl = None                                             # TLS ligado por conexão em _Sniff
 
     def factory(config, server_state, app_state, _loop=None):
@@ -112,3 +128,24 @@ def make_server(app, *, host: str, port: int, certfile: str, keyfile: str, redir
                                                  _loop=_loop), port)
     cfg.http_protocol_class = factory
     return uvicorn.Server(cfg)
+
+
+class _NoQuery:
+    """Filtro do log de acesso: grava só o caminho, sem a query string (``?q=<nome do paciente>``) — MISSÃO 2 W-04."""
+
+    def filter(self, record) -> bool:
+        try:
+            args = list(record.args)
+            if len(args) >= 3 and isinstance(args[2], str):
+                args[2] = args[2].split("?", 1)[0]
+                record.args = tuple(args)
+        except Exception:  # noqa: BLE001
+            pass
+        return True
+
+
+def _quiet_access_log() -> None:
+    import logging
+    lg = logging.getLogger("uvicorn.access")
+    if not any(isinstance(f, _NoQuery) for f in lg.filters):
+        lg.addFilter(_NoQuery())

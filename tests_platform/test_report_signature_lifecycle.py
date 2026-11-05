@@ -397,7 +397,7 @@ class Api(ApiBase):
         for _ in range(3):
             study_id, _ = make_study(self.t)
             rid = med.post("/api/v1/report/reports", json={"study_id": str(study_id)}).json()["id"]
-            med.put(f"/api/v1/report/reports/{rid}", json={"body": "Achados: sintético."})
+            med.put(f"/api/v1/report/reports/{rid}", json={"body": "Achados: sintético.", "row_version": med.get(f"/api/v1/report/reports/{rid}").json()["row_version"]})
             rids.append(rid)
         empty_sid, _ = make_study(self.t)
         empty = med.post("/api/v1/report/reports", json={"study_id": str(empty_sid)}).json()["id"]

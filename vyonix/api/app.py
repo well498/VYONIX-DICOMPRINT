@@ -71,6 +71,9 @@ class SecurityHeaders(BaseHTTPMiddleware):
         h.setdefault("X-Frame-Options", "DENY")
         h.setdefault("X-Content-Type-Options", "nosniff")
         h.setdefault("Referrer-Policy", "no-referrer")
+        h.setdefault("Permissions-Policy", "camera=(), microphone=(self), geolocation=(), payment=(), usb=()")
+        h.setdefault("Cross-Origin-Opener-Policy", "same-origin")
+        h.setdefault("Cross-Origin-Resource-Policy", "same-origin")
         if request.url.path.startswith("/api/"):
             h.setdefault("Cache-Control", "no-store")
         if request.url.scheme == "https":
@@ -100,6 +103,14 @@ def create_app(plat: Platform, *, cookie_secure: bool = True, web_dist: Path | N
                 for e in exc.errors()]
         return JSONResponse({"error": "validation", "message": "Dados inválidos.", "details": {"errors": errs}},
                             status_code=422)
+
+    from sqlalchemy.orm.exc import StaleDataError
+
+    @app.exception_handler(StaleDataError)
+    async def _stale(request: Request, exc: StaleDataError):
+        # MISSÃO 2 R-06: alteração concorrente (outra pessoa gravou antes) é conflito, não erro interno
+        return JSONResponse({"error": "conflict", "message": "O registro foi alterado por outra pessoa. Recarregue e "
+                             "tente novamente.", "details": {}}, status_code=409)
 
     @app.exception_handler(Exception)
     async def _any(request: Request, exc: Exception):
@@ -206,6 +217,20 @@ def needs(perm: str) -> Callable[[Request], Ctx]:
     def dep(request: Request) -> Ctx:
         c = ctx(request)
         c.require(perm)
+        return c
+    return dep
+
+
+def needs_global(perm: str) -> Callable[[Request], Ctx]:
+    """Permissão que precisa valer em TODAS as unidades (configuração da instituição, auditoria, módulos, unidades).
+    Papel limitado a uma unidade não alcança a instituição inteira (MISSÃO 2, S-02)."""
+    def dep(request: Request) -> Ctx:
+        c = ctx(request)
+        if not c.p.global_has(perm):
+            from vyonix.errors import Forbidden
+            c.require(perm)                       # sem a permissão: mensagem padrão
+            raise Forbidden("Esta ação vale para toda a instituição: exige o papel em todas as unidades.",
+                            code="global_required", details={"permission": perm})
         return c
     return dep
 

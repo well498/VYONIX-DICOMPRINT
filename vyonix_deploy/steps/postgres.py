@@ -56,7 +56,9 @@ class PgClusterStep(Step):
                 # encerrado à força e impedia o serviço de subir de novo (CI 40951093428, critério 2.10). Os registros
                 # vão para o Log de Eventos do Windows (Aplicativo, origem "VYONIX PostgreSQL").
                 "logging_collector = off\nlog_destination = 'eventlog'\nevent_source = 'VYONIX PostgreSQL'\n"
-                "log_min_duration_statement = 2000\n")
+                "log_min_duration_statement = 2000\n"
+                # MISSÃO 2 B-02: consultas lentas e erros sem os valores (nomes/CPF de pacientes) no Log de Eventos
+                "log_parameter_max_length = 0\nlog_parameter_max_length_on_error = 0\n")
 
     def desired(self, ctx: Context) -> dict:
         return {"data": str(self.data), "port": ctx.cfg.pg_port, "listen": "127.0.0.1", "auth": "scram-sha-256",

@@ -8,7 +8,7 @@ from typing import Any
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
-from vyonix.api.app import Ctx, needs
+from vyonix.api.app import Ctx, needs, needs_global
 from vyonix.audit import service as audit
 from vyonix.auth import service as auth
 from vyonix.modules import registry
@@ -83,7 +83,7 @@ def users(c: Ctx = Depends(needs("core.users.read"))):
 def create_user(body: UserIn, c: Ctx = Depends(needs("core.users.manage"))):
     from vyonix.auth import directory
     with directory.Reservation(c.plat.db, body.username, c.p.tenant_id, not c.plat.edge) as uid, c.session() as s:
-        auth.check_grant(s, c.p, [r.role for r in body.roles])
+        auth.check_grant(s, c.p, [(r.role, r.site_id) for r in body.roles])
         u = auth.create_user(s, username=body.username, display_name=body.display_name, email=body.email,
                              password=body.password, roles=[(r.role, r.site_id) for r in body.roles],
                              mfa_required=body.mfa_required, user_id=uid, **c.actor)
@@ -113,7 +113,11 @@ def update_user(user_id: uuid.UUID, body: UserPatch, c: Ctx = Depends(needs("cor
 @router.put("/users/{user_id}/roles")
 def set_roles(user_id: uuid.UUID, body: RolesIn, c: Ctx = Depends(needs("core.users.manage"))):
     with c.session() as s:
-        auth.check_grant(s, c.p, [r.role for r in body.roles], user_id=user_id)
+        if user_id == c.p.user_id:               # MISSÃO 2 S-01: ninguém altera os próprios papéis
+            from vyonix.errors import Forbidden
+            raise Forbidden("Você não pode alterar os seus próprios papéis; peça a outro administrador.",
+                            code="self_roles")
+        auth.check_grant(s, c.p, [(r.role, r.site_id) for r in body.roles], user_id=user_id)
         auth.set_roles(s, user_id, [(r.role, r.site_id) for r in body.roles], **c.actor)
     return {"ok": True}
 
@@ -213,13 +217,13 @@ def sites(c: Ctx = Depends(needs("core.settings.read"))):
 
 
 @router.post("/sites", status_code=201)
-def create_site(body: SiteIn, c: Ctx = Depends(needs("core.sites.manage"))):
+def create_site(body: SiteIn, c: Ctx = Depends(needs_global("core.sites.manage"))):
     with c.session() as s:
         return _site(tenancy.save_site(s, **body.model_dump(), **c.actor))
 
 
 @router.patch("/sites/{site_id}")
-def update_site(site_id: uuid.UUID, body: SiteIn, c: Ctx = Depends(needs("core.sites.manage"))):
+def update_site(site_id: uuid.UUID, body: SiteIn, c: Ctx = Depends(needs_global("core.sites.manage"))):
     with c.session() as s:
         return _site(tenancy.save_site(s, site_id=site_id, **body.model_dump(), **c.actor))
 
@@ -246,7 +250,14 @@ def setting_get(module: str, key: str, site_id: uuid.UUID | None = None,
 @router.put("/settings/{module}/{key}")
 def setting_put(module: str, key: str, body: SettingIn, c: Ctx = Depends(needs("core.settings.manage"))):
     spec = MANIFESTS[module].setting(key) if module in MANIFESTS else None
-    if spec is not None and spec.permission and not c.p.has(spec.permission):
+
+    def _ok(perm: str) -> bool:                  # MISSÃO 2 S-02: valor da instituição exige o papel em todas as
+        return c.p.has(perm, body.site_id) if body.site_id else c.p.global_has(perm)   # unidades
+    if not _ok("core.settings.manage"):
+        from vyonix.errors import Forbidden
+        raise Forbidden("Configuração da instituição inteira: exige o papel em todas as unidades.",
+                        code="global_required", details={"permission": "core.settings.manage"})
+    if spec is not None and spec.permission and not _ok(spec.permission):
         from vyonix.errors import Forbidden
         raise Forbidden("Esta configuração exige permissão específica.", code="forbidden",
                         details={"permission": spec.permission})
@@ -280,14 +291,14 @@ def modules(c: Ctx = Depends(needs("core.settings.read"))):
 
 
 @router.post("/modules/{code}/enable")
-def module_enable(code: str, c: Ctx = Depends(needs("core.modules.manage"))):
+def module_enable(code: str, c: Ctx = Depends(needs_global("core.modules.manage"))):
     with c.session() as s:
         registry.enable(s, code, **c.actor)
     return {"ok": True}
 
 
 @router.post("/modules/{code}/disable")
-def module_disable(code: str, body: ModuleAction, c: Ctx = Depends(needs("core.modules.manage"))):
+def module_disable(code: str, body: ModuleAction, c: Ctx = Depends(needs_global("core.modules.manage"))):
     with c.session() as s:
         registry.disable(s, code, reason=body.reason or "", **c.actor)
     return {"ok": True}
@@ -298,7 +309,7 @@ def module_disable(code: str, body: ModuleAction, c: Ctx = Depends(needs("core.m
 @router.get("/audit")
 def audit_list(limit: int = 100, before_seq: int | None = None, action: str | None = None,
                target_type: str | None = None, target_id: str | None = None, actor: str | None = None,
-               c: Ctx = Depends(needs("core.audit.read"))):
+               c: Ctx = Depends(needs_global("core.audit.read"))):
     with c.session() as s:
         rows = audit.query(s, limit=limit, before_seq=before_seq, action=action, target_type=target_type,
                            target_id=target_id, actor=actor)
@@ -308,7 +319,7 @@ def audit_list(limit: int = 100, before_seq: int | None = None, action: str | No
 
 
 @router.get("/audit/verify")
-def audit_verify(c: Ctx = Depends(needs("core.audit.read"))):
+def audit_verify(c: Ctx = Depends(needs_global("core.audit.read"))):
     with c.session() as s:
         bad = audit.verify(s)
     return {"ok": not bad, "broken": bad}

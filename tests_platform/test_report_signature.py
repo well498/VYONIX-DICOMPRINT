@@ -55,7 +55,7 @@ class Signature(ApiBase):
     def release(self, text="Laudo de teste."):
         study_id, _ = make_study(self.t)
         rid = self.med.post("/api/v1/report/reports", json={"study_id": str(study_id)}).json()["id"]
-        rv = self.med.put(f"/api/v1/report/reports/{rid}", json={"body": text}).json()["row_version"]
+        rv = self.med.put(f"/api/v1/report/reports/{rid}", json={"body": text, "row_version": self.med.get(f"/api/v1/report/reports/{rid}").json()["row_version"]}).json()["row_version"]
         r = self.med.post(f"/api/v1/report/reports/{rid}/finalize", json={"password": "Senha-Nova-9876!",
                                                                           "row_version": rv})
         self.assertEqual(r.status_code, 200, r.text)

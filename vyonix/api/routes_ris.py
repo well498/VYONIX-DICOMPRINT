@@ -151,7 +151,28 @@ def _prep_scope(c: Ctx, s, study_id: uuid.UUID) -> None:
     from vyonix.ris import prep
     if study_id in prep.shared_studies(s, c.p.user_id):
         return
-    queue.require(s, queue.scope(s, c.p.user_id, can_assign=c.p.has("report.assign")), study_id)
+    sc = queue.scope(s, c.p.user_id, can_assign=c.p.has("report.assign"))
+    if sc is not None:
+        queue.require(s, sc, study_id)
+        return
+    _site(c, s, study_id, *_READ_PERMS)             # MISSÃO 2 R-04: não-médico também respeita a unidade
+
+
+_READ_PERMS = ("ris.exam.prepare", "ris.schedule.read", "report.read", "report.assign")
+
+
+def _site(c: Ctx, s, study_id: uuid.UUID, *perms: str):
+    """O papel que concede a permissão precisa valer na unidade do exame (papel por unidade não alcança outra
+    unidade). Exame sem unidade exige o papel em todas as unidades (MISSÃO 2, R-04)."""
+    from vyonix.clinical.models import Study
+    from vyonix.errors import Forbidden, NotFound
+    st = s.get(Study, study_id)
+    if st is None:
+        raise NotFound("Exame não encontrado.")
+    ok = any(c.p.global_has(x) if st.site_id is None else c.p.has(x, st.site_id) for x in perms)
+    if not ok:
+        raise Forbidden("Sem permissão nesta unidade.", code="site_forbidden")
+    return st
 
 
 def _att_key(c: Ctx) -> bytes:
@@ -207,7 +228,8 @@ def prep_queue(date_from: date | None = None, date_to: date | None = None, modal
     from vyonix.ris import prep
     with c.session() as s:
         return prep.queue(s, c.p.user_id, date_from=date_from, date_to=date_to, modality=modality, station=station,
-                          site_id=site_id, stage_filter=stage, priority=priority, patient=patient, accession=accession)
+                          site_id=site_id, stage_filter=stage, priority=priority, patient=patient, accession=accession,
+                          sites=c.p.sites_for("ris.exam.prepare"))
 
 
 @router.get("/studies/{study_id}/timeline")
@@ -291,6 +313,7 @@ def prep_check(study_id: uuid.UUID, body: CheckIn, c: Ctx = Depends(needs("ris.e
     from vyonix.ris import prep
     with c.session() as s:
         _require(c, s)                     # módulo RIS habilitado e licenciado
+        _site(c, s, study_id, "ris.exam.prepare")
         prep.set_check(s, study_id, body.code, body.done, **c.actor)
         return prep.detail(s, study_id, c.p.user_id)
 
@@ -325,6 +348,10 @@ def prep_flag_resolve(flag_id: uuid.UUID, c: Ctx = Depends(needs("ris.exam.prepa
     from vyonix.ris import prep
     with c.session() as s:
         _require(c, s)                     # módulo RIS habilitado e licenciado
+        from vyonix.ris.models import ExamFlag
+        f = s.get(ExamFlag, flag_id)
+        if f is not None:
+            _site(c, s, f.study_id, "ris.exam.prepare")
         prep.resolve_flag(s, flag_id, **c.actor)
     return {"ok": True}
 
@@ -341,6 +368,7 @@ async def prep_attach(study_id: uuid.UUID, request: Request, kind: str = "docume
             raise ValidationFailed("Arquivo acima do tamanho permitido.")
     with c.session() as s:
         _require(c, s)                     # módulo RIS habilitado e licenciado
+        _site(c, s, study_id, "ris.exam.prepare")
         a = prep.add_attachment(s, study_id, bytes(data), kind=kind, filename=filename, key=_att_key(c), **c.actor)
         return {"id": str(a.id), "media_type": a.media_type}
 
@@ -412,6 +440,7 @@ def prep_duplicate(study_id: uuid.UUID, body: DuplicateIn, c: Ctx = Depends(need
     from vyonix.ris import prep
     with c.session() as s:
         _require(c, s)                     # módulo RIS habilitado e licenciado
+        _site(c, s, study_id, "ris.exam.prepare")
         prep.decide_duplicate(s, study_id, duplicate_of=body.duplicate_of, note=body.note, **c.actor)
         return prep.detail(s, study_id, c.p.user_id)
 
@@ -421,7 +450,25 @@ def prep_forward(study_id: uuid.UUID, c: Ctx = Depends(needs("ris.exam.prepare")
     from vyonix.ris import prep
     with c.session() as s:
         _require(c, s)                     # módulo RIS habilitado e licenciado
+        _site(c, s, study_id, "ris.exam.prepare")
         return prep.forward(s, study_id, **c.actor)
+
+
+def _return_allowed(c: Ctx, s, study_id: uuid.UUID) -> None:
+    """Devolver para correção encerra a atribuição: só o médico responsável pelo exame (ou quem distribui, com
+    ``report.assign``) — médico de outro exame não devolve (MISSÃO 2, R-03)."""
+    from vyonix.errors import Forbidden
+    from vyonix.report import authorship
+    from vyonix.report.models import Physician
+    from sqlalchemy import select as _select
+    if c.p.has("report.assign"):
+        return
+    resp = authorship.responsible(s, study_id)
+    if resp is None:
+        return
+    me = s.execute(_select(Physician).where(Physician.user_id == c.p.user_id)).scalar_one_or_none()
+    if me is None or me.id != resp:
+        raise Forbidden(authorship.MESSAGE, code=authorship.CODE, details={"action": "devolver"})
 
 
 @router.post("/prep/{study_id}/return")
@@ -430,6 +477,7 @@ def prep_return(study_id: uuid.UUID, body: ReasonIn, c: Ctx = Depends(needs("rep
     with c.session() as s:
         _require(c, s)                     # módulo RIS habilitado e licenciado
         _prep_scope(c, s, study_id)
+        _return_allowed(c, s, study_id)
         prep.return_for_correction(s, study_id, body.reason, **c.actor)
     return {"ok": True}
 
@@ -439,6 +487,7 @@ def prep_cancel(study_id: uuid.UUID, body: ReasonIn, c: Ctx = Depends(needs("ris
     from vyonix.ris import prep
     with c.session() as s:
         _require(c, s)                     # módulo RIS habilitado e licenciado
+        _site(c, s, study_id, "ris.exam.cancel")
         prep.cancel(s, study_id, body.reason, **c.actor)
     return {"ok": True}
 
@@ -448,6 +497,7 @@ def prep_share(study_id: uuid.UUID, body: ShareIn, c: Ctx = Depends(needs("ris.e
     from vyonix.ris import prep
     with c.session() as s:
         _require(c, s)                     # módulo RIS habilitado e licenciado
+        _site(c, s, study_id, "ris.exam.share")
         sh = prep.share(s, study_id, body.user_id, scope=body.scope, hours=body.hours, **c.actor)
         return {"id": str(sh.id), "expires_at": sh.expires_at.isoformat()}
 
@@ -457,5 +507,9 @@ def prep_unshare(share_id: uuid.UUID, c: Ctx = Depends(needs("ris.exam.share")))
     from vyonix.ris import prep
     with c.session() as s:
         _require(c, s)                     # módulo RIS habilitado e licenciado
+        from vyonix.ris.models import ExamShare
+        sh = s.get(ExamShare, share_id)
+        if sh is not None:
+            _site(c, s, sh.study_id, "ris.exam.share")
         prep.revoke_share(s, share_id, **c.actor)
     return {"ok": True}

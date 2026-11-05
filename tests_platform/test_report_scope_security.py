@@ -34,8 +34,9 @@ class ScopeSecurity(tq.Queue):
 
     def _critical(self, who, study, note):
         rid = who.post("/api/v1/report/reports", json={"study_id": study}).json()["id"]
-        who.put(f"/api/v1/report/reports/{rid}", json={"body": "Achado.", "critical": True, "critical_note": note})
-        r = who.post(f"/api/v1/report/reports/{rid}/finalize", json={"password": PW})
+        who.put(f"/api/v1/report/reports/{rid}", json={"body": "Achado.", "critical": True, "critical_note": note,
+                                                    "row_version": who.get(f"/api/v1/report/reports/{rid}").json()["row_version"]})
+        r = who.post(f"/api/v1/report/reports/{rid}/finalize", json={"password": PW, "row_version": who.get(f"/api/v1/report/reports/{rid}").json()["row_version"]})
         self.assertEqual(r.status_code, 200, r.text)
 
     def test_a05_001_communicate_respects_site_scope(self):
@@ -60,19 +61,19 @@ class ScopeSecurity(tq.Queue):
         todas = self.users["dr_todas"][0]
         st = self._study(self.south)
         rid = todas.post("/api/v1/report/reports", json={"study_id": st}).json()["id"]
-        todas.put(f"/api/v1/report/reports/{rid}", json={"body": "Rascunho da unidade Sul."})
+        todas.put(f"/api/v1/report/reports/{rid}", json={"body": "Rascunho da unidade Sul.", "row_version": todas.get(f"/api/v1/report/reports/{rid}").json()["row_version"]})
         with db.session(self.t) as s:
             prep.share(s, uuid.UUID(st), uid_n, scope="view", hours=2, actor="admin")
         self.assertEqual(norte.get(f"/api/v1/report/reports/{rid}").status_code, 200)        # leitura permitida
-        self.assertEqual(norte.put(f"/api/v1/report/reports/{rid}", json={"body": "x"}).status_code, 403)
-        self.assertEqual(norte.post(f"/api/v1/report/reports/{rid}/finalize", json={"password": PW}).status_code, 403)
+        self.assertEqual(norte.put(f"/api/v1/report/reports/{rid}", json={"body": "x", "row_version": 0}).status_code, 403)
+        self.assertEqual(norte.post(f"/api/v1/report/reports/{rid}/finalize", json={"password": PW, "row_version": 0}).status_code, 403)
         self.assertEqual(norte.post(f"/api/v1/report/reports/{rid}/addenda", json={"text": "x", "password": PW}).status_code, 403)
         st2 = self._study(self.south)
         with db.session(self.t) as s:
             prep.share(s, uuid.UUID(st2), uid_n, scope="report", hours=2, actor="admin")
         r = norte.post("/api/v1/report/reports", json={"study_id": st2})               # escopo report: pode laudar
         self.assertIn(r.status_code, (200, 201), r.text)
-        self.assertEqual(norte.put(f"/api/v1/report/reports/{r.json()['id']}", json={"body": "ok"}).status_code, 200)
+        self.assertEqual(norte.put(f"/api/v1/report/reports/{r.json()['id']}", json={"body": "ok", "row_version": r.json()["row_version"]}).status_code, 200)
 
 
 if __name__ == "__main__":

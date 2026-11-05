@@ -290,6 +290,8 @@ def wado_series(study_uid: str, series_uid: str, c: Ctx = Depends(needs("pacs.st
     b = _backend(c)
     with c.session() as s:
         _visible(c, s, study_uid)
+        pacs.open_study(s, study_uid, actor=c.p.username, actor_id=c.p.user_id, ip=c.ip, purpose="retrieve",
+                        dedup_s=pacs.OPEN_DEDUP_S)        # MISSÃO 2 D-06: download direto também deixa trilha
         body, ctype = _wrap(lambda: multipart(list(pacs.retrieve_many(s, b, study_uid, series_uid)),
                                               "application/dicom"))
     return Response(body, media_type=ctype)
@@ -300,6 +302,8 @@ def wado_instance(study_uid: str, series_uid: str, sop_uid: str, c: Ctx = Depend
     b = _backend(c)
     with c.session() as s:
         _visible(c, s, study_uid)
+        pacs.open_study(s, study_uid, actor=c.p.username, actor_id=c.p.user_id, ip=c.ip, purpose="retrieve",
+                        dedup_s=pacs.OPEN_DEDUP_S)        # MISSÃO 2 D-06: download direto também deixa trilha
         data = _wrap(lambda: pacs.retrieve_instance(s, b, study_uid, series_uid, sop_uid))
     body, ctype = multipart([data], "application/dicom")
     return Response(body, media_type=ctype)
@@ -315,6 +319,8 @@ def wado_frames(study_uid: str, series_uid: str, sop_uid: str, frame_list: str,
     b = _backend(c)
     with c.session() as s:
         _visible(c, s, study_uid)
+        pacs.open_study(s, study_uid, actor=c.p.username, actor_id=c.p.user_id, ip=c.ip, purpose="retrieve",
+                        dedup_s=pacs.OPEN_DEDUP_S)        # MISSÃO 2 D-06: download direto também deixa trilha
         media, ts, items = _wrap(lambda: pacs.frames(s, b, study_uid, series_uid, sop_uid, numbers))
     body, ctype = multipart(items, media, transfer_syntax=ts)
     return Response(body, media_type=ctype)

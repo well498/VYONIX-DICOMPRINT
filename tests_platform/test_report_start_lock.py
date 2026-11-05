@@ -137,7 +137,7 @@ class ExclusiveAndLock(_prep.Prep):
         bruno = self.docs["bruno"][0]
         self.assertEqual(bruno.post(f"/api/v1/report/queue/{sid}/claim").status_code, 409)
         # o bloqueio continua após salvar, liberar (assinar) o laudo
-        rv = ana.put(f"/api/v1/report/reports/{rid}", json={"body": "Texto sintético."}).json()["row_version"]
+        rv = ana.put(f"/api/v1/report/reports/{rid}", json={"body": "Texto sintético.", "row_version": ana.get(f"/api/v1/report/reports/{rid}").json()["row_version"]}).json()["row_version"]
         r = ana.post(f"/api/v1/report/reports/{rid}/finalize", json={"password": _prep.NEW, "row_version": rv})
         self.assertEqual(r.status_code, 200, r.text)
         refused(self.tec.post(u + "/priority", json={"priority": "stat", "reason": "urgência"}))

@@ -163,16 +163,17 @@ class Editor(EditorBase):
         self.assertIn("<table>", d["body"])
         self.assertEqual(d["draft_revision"], 1)
         # salvar o mesmo conteúdo não cria revisão; conteúdo novo cria
-        self.med.put(f"/api/v1/report/reports/{rep['id']}", json={"body": d["body"], "body_format": "html"})
+        self.med.put(f"/api/v1/report/reports/{rep['id']}", json={"body": d["body"], "body_format": "html", "row_version": self.med.get(f"/api/v1/report/reports/{rep['id']}").json()["row_version"]})
         r = self.med.put(f"/api/v1/report/reports/{rep['id']}",
-                         json={"body": d["body"] + "<p>Conclusão: normal.</p>", "body_format": "html"})
+                         json={"body": d["body"] + "<p>Conclusão: normal.</p>", "body_format": "html", "row_version": self.med.get(f"/api/v1/report/reports/{rep['id']}").json()["row_version"]})
         revs = self.med.get(f"/api/v1/report/reports/{rep['id']}/revisions").json()["items"]
         self.assertEqual([(x["revision"], x["author"], x["event"]) for x in revs],
                          [(1, "medica", "save"), (2, "medica", "save")])
         # limite: texto simples continua com 20 mil caracteres
-        r = self.med.put(f"/api/v1/report/reports/{rep['id']}", json={"body": "x" * 20001, "body_format": "text"})
+        r = self.med.put(f"/api/v1/report/reports/{rep['id']}", json={"body": "x" * 20001, "body_format": "text",
+                                                                      "row_version": self.med.get(f"/api/v1/report/reports/{rep['id']}").json()["row_version"]})
         self.assertEqual(r.status_code, 422)
-        r = self.med.post(f"/api/v1/report/reports/{rep['id']}/finalize", json={"password": PW})
+        r = self.med.post(f"/api/v1/report/reports/{rep['id']}/finalize", json={"password": PW, "row_version": self.med.get(f"/api/v1/report/reports/{rep['id']}").json()["row_version"]})
         self.assertEqual(r.status_code, 200, r.text)
         v = r.json()["versions"][0]
         self.assertEqual((v["body_format"], v["author"], v["reviewer"]), ("html", "Dra. Medica Teste", None))
@@ -301,20 +302,20 @@ class Editor(EditorBase):
         rep = self.open(self.med)
         rid = rep["id"]
         self.med.put(f"/api/v1/report/reports/{rid}", json={"body": "<p>Rascunho da médica.</p>",
-                                                           "body_format": "html"})
-        r = self.med.post(f"/api/v1/report/reports/{rid}/finalize", json={"password": PW})
+                                                           "body_format": "html", "row_version": self.med.get(f"/api/v1/report/reports/{rid}").json()["row_version"]})
+        r = self.med.post(f"/api/v1/report/reports/{rid}/finalize", json={"password": PW, "row_version": self.med.get(f"/api/v1/report/reports/{rid}").json()["row_version"]})
         self.assertEqual((r.status_code, r.json()["error"]), (409, "review_required"))
-        r = self.med.post(f"/api/v1/report/reports/{rid}/review", json={"reviewer_id": self.pid,
+        r = self.med.post(f"/api/v1/report/reports/{rid}/review", json={"reviewer_id": self.pid, "row_version": self.med.get(f"/api/v1/report/reports/{rid}").json()["row_version"],
                                                                        "note": "Confira o fígado"})
         self.assertEqual(r.status_code, 422, r.text)                                  # não revisa a si mesma
-        r = self.med.post(f"/api/v1/report/reports/{rid}/review", json={"reviewer_id": self.pid2,
+        r = self.med.post(f"/api/v1/report/reports/{rid}/review", json={"reviewer_id": self.pid2, "row_version": self.med.get(f"/api/v1/report/reports/{rid}").json()["row_version"],
                                                                        "note": "Confira o fígado"})
         self.assertEqual(r.status_code, 200, r.text)
         self.assertEqual(r.json()["status"], "review")
         # autora não edita nem libera; revisor devolve com observação
-        self.assertEqual(self.med.put(f"/api/v1/report/reports/{rid}", json={"body": "x"}).status_code, 409)
+        self.assertEqual(self.med.put(f"/api/v1/report/reports/{rid}", json={"body": "x", "row_version": 0}).status_code, 409)
         self.assertEqual(self.med.post(f"/api/v1/report/reports/{rid}/finalize",
-                                       json={"password": PW}).status_code, 409)
+                                       json={"password": PW, "row_version": 0}).status_code, 409)
         self.assertEqual(self.med.post(f"/api/v1/report/reports/{rid}/review/return",
                                        json={"note": "x"}).status_code, 403)
         r = self.med2.post(f"/api/v1/report/reports/{rid}/review/return", json={"note": "Descreva o baço."})
@@ -322,13 +323,13 @@ class Editor(EditorBase):
         self.assertEqual((r.json()["status"], r.json()["review"]["note"]), ("draft", "Descreva o baço."))
         # autora corrige e reenvia; revisor ajusta o texto e libera com a assinatura dele
         self.med.put(f"/api/v1/report/reports/{rid}", json={"body": "<p>Rascunho com baço.</p>",
-                                                           "body_format": "html"})
+                                                           "body_format": "html", "row_version": self.med.get(f"/api/v1/report/reports/{rid}").json()["row_version"]})
         self.assertEqual(self.med.post(f"/api/v1/report/reports/{rid}/review",
-                                       json={"reviewer_id": self.pid2}).status_code, 200)
+                                       json={"reviewer_id": self.pid2, "row_version": self.med.get(f"/api/v1/report/reports/{rid}").json()["row_version"]}).status_code, 200)
         r = self.med2.put(f"/api/v1/report/reports/{rid}", json={"body": "<p>Rascunho com baço revisado.</p>",
-                                                                "body_format": "html"})
+                                                                "body_format": "html", "row_version": self.med2.get(f"/api/v1/report/reports/{rid}").json()["row_version"]})
         self.assertEqual(r.status_code, 200, r.text)
-        r = self.med2.post(f"/api/v1/report/reports/{rid}/finalize", json={"password": PW})
+        r = self.med2.post(f"/api/v1/report/reports/{rid}/finalize", json={"password": PW, "row_version": self.med2.get(f"/api/v1/report/reports/{rid}").json()["row_version"]})
         self.assertEqual(r.status_code, 200, r.text)
         d = r.json()
         self.assertEqual(d["status"], "final")
@@ -371,13 +372,14 @@ class Editor(EditorBase):
     def test_review_without_named_reviewer_and_batch_skips_review(self):
         rep = self.open(self.med)
         rid = rep["id"]
-        self.med.put(f"/api/v1/report/reports/{rid}", json={"body": "Texto simples."})
-        self.assertEqual(self.med.post(f"/api/v1/report/reports/{rid}/review", json={}).status_code, 200)
+        self.med.put(f"/api/v1/report/reports/{rid}", json={"body": "Texto simples.", "row_version": self.med.get(f"/api/v1/report/reports/{rid}").json()["row_version"]})
+        self.assertEqual(self.med.post(f"/api/v1/report/reports/{rid}/review",
+                                       json={"row_version": self.med.get(f"/api/v1/report/reports/{rid}").json()["row_version"]}).status_code, 200)
         # sem report.review ninguém revisa (médico comum não devolve nem libera)
         self.assertEqual(self.med2.post(f"/api/v1/report/reports/{rid}/review/return",
                                         json={"note": "x"}).status_code, 403)
-        self.assertEqual(self.med2.post(f"/api/v1/report/reports/{rid}/finalize",
-                                        json={"password": PW}).status_code, 409)
+        self.assertIn(self.med2.post(f"/api/v1/report/reports/{rid}/finalize",       # MISSÃO 2: não é o responsável
+                                     json={"password": PW, "row_version": 0}).status_code, (403, 409))
         r = self.med.post("/api/v1/report/reports/finalize-batch", json={"report_ids": [rid], "password": PW,
                                                                           "confirm": True})
         self.assertEqual(r.json()["released"], 0)

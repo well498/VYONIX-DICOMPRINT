@@ -69,7 +69,7 @@ def _out(r: Report, s: Session, *, versions: bool = False) -> dict[str, Any]:
 
 
 def open_report(s: Session, study_id: uuid.UUID, *, template_id: uuid.UUID | None = None, auto: bool = False,
-                actor: str, actor_id=None, ip=None) -> Report:
+                check_owner: bool = True, actor: str, actor_id=None, ip=None) -> Report:
     """Abre o laudo do estudo (cria o rascunho, a partir do modelo informado ou — ``auto`` — do selecionado pelas
     regras de prioridade do TELELAUDO T4); se já existe, devolve-o."""
     from vyonix.report import lock
@@ -78,6 +78,13 @@ def open_report(s: Session, study_id: uuid.UUID, *, template_id: uuid.UUID | Non
         raise NotFound("Estudo não encontrado.")
     lock.serialize(s, study_id)                    # concorre com troca de médico/prioridade do mesmo exame
     r = s.execute(select(Report).where(Report.study_id == study_id)).scalar_one_or_none()
+    if check_owner and actor_id is not None:       # MISSÃO 2 R-02: exame atribuído/reservado a outro médico
+        from vyonix.report import authorship
+        if r is None:
+            authorship.check_open(s, study_id, actor_id)
+        elif r.status in ("draft", "review") and not authorship.is_responsible(s, r, actor_id, (actor,)):
+            from vyonix.errors import Forbidden
+            raise Forbidden(authorship.MESSAGE, code=authorship.CODE, details={"action": "abrir"})
     if r is not None:
         lock.mark_started(s, study_id, r.id, actor=actor, actor_id=actor_id, ip=ip)
         return r
