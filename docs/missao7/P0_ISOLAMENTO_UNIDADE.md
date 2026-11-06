@@ -58,7 +58,14 @@ A migração `clinical_0001` (novo ramo `clinical`, depois de `core_0004`) só *
 - `tests_platform/test_p0_isolamento_unidade.py`, escrito por A07, revisor independente, antes da correção. São 25 cenários com duas unidades fictícias, técnicos com permissões diferentes, médico vinculado só à A, coordenação, recepção, financeiro, exame sem unidade e uma segunda instituição. Tudo é verificado por **API direta**.
 - Antes da correção (commit 0464c16): 15 de 24 falhavam.
 - Depois da correção: **25 de 25 passam**. O 25º cobre a simulação somente leitura e a aplicação só com o SHA-256 aprovado.
-- A suíte completa e o ajuste de `test_m2_security` estão no relatório de execução.
+- `test_m2_security.test_r04` foi ajustado à regra 3: antes exigia acesso de papel de unidade a exame sem unidade.
+- **Suíte completa** (`tests_platform`, PostgreSQL 16 local, commit 4b3ae50): **316 testes, OK** (3 pulados, os mesmos de antes).
+  - A primeira execução mostrou 6 regressões, todas corrigidas:
+    - camadas de domínio;
+    - RLS declarado na migração;
+    - grafo de migração;
+    - código `out_of_scope` do médico;
+    - expectativa V-03.
 
 ## Pendências e decisões do proprietário
 
