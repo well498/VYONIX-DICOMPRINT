@@ -182,7 +182,8 @@ def _prep_scope(c: Ctx, s, study_id: uuid.UUID) -> None:
         if st is None:
             raise NotFound("Exame não encontrado.")
         if not queue.allowed(sc, st.site_id):
-            scope.deny(c, "study", st.id, "report.read", "no_site" if st.site_id is None else "physician_link")
+            scope.deny(c, "study", st.id, "report.read", "no_site" if st.site_id is None else "physician_link",
+                       physician=True)
         return
     _site(c, s, study_id, *_READ_PERMS)             # MISSÃO 2 R-04: não-médico também respeita a unidade
 

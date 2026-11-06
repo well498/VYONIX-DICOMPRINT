@@ -5,7 +5,7 @@ de unidade aos estudos antigos é feita depois, pela aplicação (``vyonix unida
 simulação aprovada pelo proprietário e auditoria por estudo.
 
 Revisão: clinical_0001
-Depende de: core_0004
+Depende de: core_0001 (orders, studies e sites existem desde o core inicial)
 """
 from alembic import op
 import sqlalchemy as sa
@@ -13,7 +13,9 @@ import sqlalchemy as sa
 revision = 'clinical_0001'
 down_revision = None
 branch_labels = ('clinical',)
-depends_on = 'core_0004'
+depends_on = 'core_0001'
+
+TENANT_TABLES = ("clinical.study_site_assignments",)
 
 TENANT_EXPR = "nullif(current_setting('vyonix.tenant_id', true), '')::uuid"
 SOURCES = ('pedido', 'atendimento', 'agendamento', 'no_dicom', 'unica', 'manual', 'simulacao')
@@ -61,7 +63,7 @@ def upgrade(role_prefix: str = "vyonix") -> None:
     op.create_index('uq_clinical_ssa_sim_study', 'study_site_assignments',
                     ['tenant_id', 'simulation_sha256', 'study_id'], unique=True, schema='clinical',
                     postgresql_where=sa.text('simulation_sha256 IS NOT NULL'))
-    t = 'clinical.study_site_assignments'
+    t = TENANT_TABLES[0]
     op.execute(f"ALTER TABLE {t} ENABLE ROW LEVEL SECURITY")
     op.execute(f"ALTER TABLE {t} FORCE ROW LEVEL SECURITY")
     op.execute(f"CREATE POLICY tenant_isolation ON {t} USING (tenant_id = {TENANT_EXPR}) "

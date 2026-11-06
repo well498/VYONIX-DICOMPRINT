@@ -69,7 +69,8 @@ def _in_scope(c: Ctx, s, *, study_id: uuid.UUID | None = None, report_id: uuid.U
         queue.require(s, sc, study_id)                       # 404/403 padrão (exame inexistente)
         return
     if not queue.allowed(sc, st.site_id):
-        scope.deny(c, "study", st.id, "report.read", "no_site" if st.site_id is None else "physician_link")
+        scope.deny(c, "study", st.id, "report.read", "no_site" if st.site_id is None else "physician_link",
+                       physician=True)
     if sc is None:                                           # não médico (ou quem distribui): papel na unidade
         perms = ("report.read", "report.write", "report.assign")
         if not scope.can(c.p, perms, st.site_id):            # MISSÃO 2 S-02 + P0 0.3.2 (sem unidade = global)

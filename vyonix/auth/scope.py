@@ -17,11 +17,9 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Iterable
 
-from sqlalchemy import true
-
 from vyonix.errors import Forbidden, NotFound
 
-SENTINEL = uuid.UUID(int=0)          # nunca é unidade real: lista vazia de unidades permitidas → nada passa
+from vyonix.db.site_filter import SENTINEL, where_site  # noqa: F401  (reexportados)
 
 
 def _perms(perms) -> tuple[str, ...]:
@@ -44,13 +42,6 @@ def sites(p, perms) -> set | None:
     for x in perms:
         out |= {s for s in (p.grants.get(x) or set()) if s is not None}
     return out if p.stage == "ok" else set()
-
-
-def where_site(col, allowed: set | None):
-    """Condição SQL: ``NULL`` nunca passa quando ``allowed`` não é ``None``."""
-    if allowed is None:
-        return true()
-    return col.in_(list(allowed) or [SENTINEL])
 
 
 @dataclass
@@ -94,15 +85,19 @@ def study_ok(sc: StudyScope | None, st) -> bool:
     return site is not None and site in sc.roles
 
 
-def deny(c, target_type: str, target_id, perm: str | Iterable[str], reason: str, *, not_found: bool = False):
+def deny(c, target_type: str, target_id, perm: str | Iterable[str], reason: str, *, not_found: bool = False,
+         physician: bool = False):
     """Recusa por escopo: 403 ``site_forbidden`` (ou 404 sem revelar existência) + registro ``access.denied``."""
     perm = _perms(perm)[0] if not isinstance(perm, str) else perm
     if not_found:
         exc = NotFound("Não encontrado.")
     else:
-        msg = ("Este exame ainda não tem unidade definida: só quem atua em todas as unidades pode acessá-lo."
-               if reason == "no_site" else "Fora das unidades em que você está autorizado.")
-        exc = Forbidden(msg, code="site_forbidden", details={"permission": perm})
+        if physician or reason == "physician_link":    # mesmo código da fila de laudos (compatibilidade da API)
+            exc = Forbidden("Exame de unidade em que você não tem vínculo vigente.", code="out_of_scope")
+        else:
+            msg = ("Este exame ainda não tem unidade definida: só quem atua em todas as unidades pode acessá-lo."
+                   if reason == "no_site" else "Fora das unidades em que você está autorizado.")
+            exc = Forbidden(msg, code="site_forbidden", details={"permission": perm})
     raise attach(exc, c, target_type, target_id, perm, reason)
 
 

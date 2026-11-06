@@ -389,7 +389,7 @@ def _site_exists(s: Session, site_id: uuid.UUID) -> bool:
 
 def orders(s: Session, *, patient_id: uuid.UUID | None = None, status: str | None = None,
            accession: str | None = None, limit: int = 100, sites: set | None = None) -> list[Order]:
-    from vyonix.auth.scope import where_site
+    from vyonix.db.site_filter import where_site
     q = select(Order).where(where_site(order_site_expr(), sites)).order_by(Order.created_at.desc()).limit(min(limit, 500))
     if accession:
         q = q.where(Order.accession == accession.strip())
@@ -482,7 +482,7 @@ def reconcile(s: Session, study_id: uuid.UUID, order_id: uuid.UUID, *, actor: st
 
 def studies(s: Session, *, patient_id: uuid.UUID | None = None, unreconciled: bool = False,
             limit: int = 100, sites: set | None = None, unassigned: bool = False) -> list[Study]:
-    from vyonix.auth.scope import where_site
+    from vyonix.db.site_filter import where_site
     q = select(Study).where(where_site(Study.site_id, sites)).order_by(Study.created_at.desc()).limit(min(limit, 500))
     if unassigned:
         q = q.where(Study.site_id.is_(None))
