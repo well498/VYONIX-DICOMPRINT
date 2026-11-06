@@ -258,6 +258,46 @@ def cmd_operator_init(a) -> int:
     return 0
 
 
+def _org_db(a):
+    from vyonix.context import build
+    from vyonix.tenancy import service as tenancy
+    cfg = _cfg(a)
+    plat = build(cfg)
+    tid = tenancy.resolve(plat.db, a.org or cfg.default_organization)
+    if tid is None:
+        raise SystemExit("Organização não encontrada.")
+    return plat, tid
+
+
+def cmd_site_simulate(a) -> int:
+    """P0 0.3.2: simulação SOMENTE LEITURA da unidade dos estudos antigos sem unidade (nada é gravado no banco)."""
+    from vyonix.clinical import site_backfill as sb
+    plat, tid = _org_db(a)
+    sim = sb.simulate(plat.db, tid, limit=a.limite)
+    h = sb.write_outputs(sim, a.saida, a.csv)
+    print(json.dumps({"arquivo": a.saida, "csv": a.csv, "sha256": h, "estudos_sem_unidade": sim["estudos_sem_unidade"],
+                      "contagem": sim["contagem"]}, ensure_ascii=False, indent=2))
+    print("Nada foi alterado. Para aplicar, o proprietário aprova este arquivo pelo SHA-256 acima.")
+    return 0
+
+
+def cmd_site_apply(a) -> int:
+    """P0 0.3.2: aplica SOMENTE a simulação aprovada (SHA-256), reavaliando cada estudo; audita cada atribuição."""
+    from vyonix.clinical import site_backfill as sb
+    from vyonix.tenancy.models import Organization
+    plat, tid = _org_db(a)
+    with plat.db.session(tid) as s:
+        code = s.get(Organization, tid).code if s.get(Organization, tid) else None
+    try:
+        sim, h = sb.load_approved(a.simulacao, a.sha256, org_code=code, tenant_id=tid)
+        out = sb.apply(plat.db, tid, sim, h, approved_by=a.aprovado_por, actor="vyonix unidade-aplicar",
+                       dry_run=a.seco)
+    except sb.BackfillRefused as exc:
+        raise SystemExit(f"Recusado: {exc}") from exc
+    print(json.dumps(out, ensure_ascii=False, indent=2))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     p = argparse.ArgumentParser(prog="vyonix", description=f"VYONIX Core {__version__}")
@@ -303,11 +343,23 @@ def main(argv: list[str] | None = None) -> int:
     hs.add_argument("--imagens", type=int, default=8)
     hs.add_argument("--porta", type=int, default=4242)
     hs.add_argument("--forcar-teste", action="store_true", help=argparse.SUPPRESS)
+    us = sub.add_parser("unidade-simular", help="P0: simula (só leitura) a unidade dos estudos antigos sem unidade")
+    us.add_argument("--org")
+    us.add_argument("--saida", required=True, help="arquivo JSON da simulação (não sobrescreve)")
+    us.add_argument("--csv", help="planilha CSV para revisão (sem dados de paciente)")
+    us.add_argument("--limite", type=int)
+    ua = sub.add_parser("unidade-aplicar", help="P0: aplica a simulação APROVADA pelo proprietário (SHA-256)")
+    ua.add_argument("--org")
+    ua.add_argument("--simulacao", required=True)
+    ua.add_argument("--sha256", required=True, help="SHA-256 aprovado pelo proprietário")
+    ua.add_argument("--aprovado-por", required=True)
+    ua.add_argument("--seco", action="store_true", help="só confere, sem gravar")
     a = p.parse_args(argv)
     return {"init": cmd_init, "migrate": cmd_migrate, "serve": cmd_serve, "worker": cmd_worker,
             "status": cmd_status, "pacs-backup": cmd_pacs_backup, "pacs-verify": cmd_pacs_verify,
             "pacs-restore": cmd_pacs_restore, "operator-init": cmd_operator_init,
-            "homolog-enviar": cmd_homolog_send}[a.cmd](a)
+            "homolog-enviar": cmd_homolog_send, "unidade-simular": cmd_site_simulate,
+            "unidade-aplicar": cmd_site_apply}[a.cmd](a)
 
 
 if __name__ == "__main__":

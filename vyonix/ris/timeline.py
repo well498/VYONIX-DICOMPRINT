@@ -146,7 +146,8 @@ def priors(s: Session, study_id: uuid.UUID, *, limit: int = 30) -> dict[str, Any
     return {"patient_linked": True, "items": items}
 
 
-def patient_history(s: Session, patient_id: uuid.UUID, *, scope=None, shared: set | None = None) -> dict[str, Any]:
+def patient_history(s: Session, patient_id: uuid.UUID, *, scope=None, shared: set | None = None,
+                    study_ok=None) -> dict[str, Any]:
     """Histórico do paciente na instituição, um item por exame (sem duplicar): estudos com pedido, agendamento,
     imagens no PACS, documentos (séries DOC/SR, anexos da preparação), situação do laudo e atendimento; pedidos ainda
     sem estudo (agendados, cancelados); atendimentos sem pedido. Mais recentes primeiro.
@@ -202,7 +203,7 @@ def patient_history(s: Session, patient_id: uuid.UUID, *, scope=None, shared: se
             if o.encounter_id:
                 used_encs.add(o.encounter_id)
         when = st.study_date.isoformat() if st.study_date else st.created_at.date().isoformat()
-        ok = queue.allowed(scope, st.site_id) or st.id in shared
+        ok = (study_ok(st) if study_ok is not None else queue.allowed(scope, st.site_id)) or st.id in shared
         base = {"kind": "study", "date": when, "modality": st.modality, "study_id": str(st.id), "restricted": not ok}
         if not ok:
             items.append(base)

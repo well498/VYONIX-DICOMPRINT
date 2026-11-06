@@ -41,24 +41,64 @@ def settings_of(s: Session) -> dict[str, Any]:
     return settings.get(s, "pacs", "viewer")
 
 
-def scope_for(s: Session, p) -> tuple[bool, set] | None:
-    """``None`` = vê a organização inteira; senão (organização_inteira, {unidades}) do vínculo do médico."""
+class PacsScope:
+    """Escopo de imagens (P0 0.3.2): ``roles`` = unidades do papel com ``pacs.studies.read`` (None = todas);
+    ``physician`` = vínculo do médico quando ``pacs/viewer.access = linked`` (aplicado **além** da unidade do papel);
+    ``shared`` = compartilhamentos explícitos (exceção auditada). Estudo sem unidade, ou só no índice do PACS sem
+    cadastro clínico, fica restrito a quem atua em todas as unidades."""
+
+    def __init__(self, roles, physician, shared):
+        self.roles, self.physician, self.shared = roles, physician, shared
+
+
+def scope_for(s: Session, p) -> PacsScope | None:
+    """``None`` = vê a organização inteira (papel global e sem restrição de vínculo)."""
+    from vyonix.auth import scope as uscope
     from vyonix.report import queue
-    if p.has("pacs.admin") or p.has("report.assign") or settings_of(s).get("access") != "linked":
+    roles = uscope.sites(p, ("pacs.studies.read", "pacs.admin"))
+    phys = None
+    if not (p.has("pacs.admin") or p.has("report.assign")) and settings_of(s).get("access") == "linked":
+        phys = queue.scope(s, p.user_id, can_assign=False)
+    if roles is None and phys is None:
         return None
-    return queue.scope(s, p.user_id, can_assign=False)
+    from vyonix.ris import prep
+    return PacsScope(roles, phys, set(prep.shared_studies(s, p.user_id)))
 
 
 def can_see(s: Session, sc, p, study, shared: set | None = None) -> bool:
     from vyonix.report import queue
     if sc is None:
         return True
-    if queue.allowed(sc, study.site_id):
+    if study is None:
+        return False
+    if study.id in (sc.shared if shared is None else shared):
         return True
-    if shared is None:
-        from vyonix.ris import prep
-        shared = prep.shared_studies(s, p.user_id)
-    return study.id in shared
+    site = study.site_id
+    if sc.roles is not None and (site is None or site not in sc.roles):
+        return False
+    if sc.physician is not None and not queue.allowed(sc.physician, site):
+        return False
+    return True
+
+
+def visible_cond(s: Session, p, col):
+    """Condição SQL sobre um Study Instance UID (``col``) — filtra o QIDO **antes** do LIMIT (P0 0.3.2, R5)."""
+    from sqlalchemy import or_, true
+    from vyonix.auth.scope import SENTINEL
+    from vyonix.clinical.models import Study
+    sc = scope_for(s, p)
+    if sc is None:
+        return true()
+    conds = []
+    if sc.roles is not None:
+        conds.append(Study.site_id.in_(list(sc.roles) or [SENTINEL]))
+    if sc.physician is not None:
+        whole, psites = sc.physician
+        if not whole:
+            conds.append(Study.site_id.in_(list(psites) or [SENTINEL]))
+    ok = select(Study.study_instance_uid).where(*conds) if conds else select(Study.study_instance_uid)
+    shared = select(Study.study_instance_uid).where(Study.id.in_(list(sc.shared) or [SENTINEL]))
+    return or_(col.in_(ok), col.in_(shared))
 
 
 def allowed_uids(s: Session, p, uids: list[str]) -> set[str]:
@@ -67,15 +107,16 @@ def allowed_uids(s: Session, p, uids: list[str]) -> set[str]:
     if sc is None:
         return set(uids)
     from vyonix.clinical.models import Study
-    from vyonix.ris import prep
-    shared = prep.shared_studies(s, p.user_id)
     rows = s.execute(select(Study).where(Study.study_instance_uid.in_(uids))).scalars() if uids else []
-    return {st.study_instance_uid for st in rows if can_see(s, sc, p, st, shared)}
+    return {st.study_instance_uid for st in rows if can_see(s, sc, p, st)}
 
 
-def require_uid(s: Session, p, study_uid: str) -> None:
-    """Estudo fora do escopo responde como inexistente (não revela que existe)."""
+def require_uid(s: Session, p, study_uid: str, c=None) -> None:
+    """Estudo fora do escopo responde como inexistente (não revela que existe); com ``c`` registra a recusa."""
     if study_uid not in allowed_uids(s, p, [study_uid]):
+        if c is not None:
+            from vyonix.auth import scope as uscope
+            uscope.deny(c, "pacs_study", study_uid, "pacs.studies.read", "site_scope", not_found=True)
         raise NotFound("Estudo não encontrado.")
 
 
@@ -189,8 +230,7 @@ def launch(s: Session, p, study_uid: str, *, layout: str | None = None, prior_ui
         return {"url": "/viewer/viewer?" + urlencode({"StudyInstanceUIDs": study_uid}), "layout": "default",
                 "layout_name": LAYOUT_NAMES["default"], "source": "default", "prior": None, "priors": [],
                 "note": "Estudo ainda sem cadastro clínico: aberto sem protocolo nem comparação.", "study": None}
-    from vyonix.ris import prep
-    shared = prep.shared_studies(s, p.user_id)
+    shared = sc.shared if sc is not None else set()
     if not can_see(s, sc, p, st, shared):
         raise NotFound("Estudo não encontrado.")
     if layout is not None and layout not in LAYOUTS:

@@ -132,6 +132,12 @@ def _check(s: Session, token: str, *, kind: str) -> ViewerToken:
     from vyonix.auth import service as auth
     if not auth.user_has(s, row.user_id, "pacs.studies.read"):
         raise Forbidden("O usuário não tem mais permissão para abrir estudos.")
+    # P0 0.3.2 (F4): revalida a unidade a cada uso — quem perdeu a unidade perde o estudo, mesmo com credencial vigente
+    from vyonix.auth import scope as uscope
+    from vyonix.pacs import viewing
+    pr = uscope.principal_for(s, row.user_id)
+    if pr is None or row.study_uid not in viewing.allowed_uids(s, pr, [row.study_uid]):
+        raise Forbidden("O estudo não está mais no seu acesso.")
     return row
 
 

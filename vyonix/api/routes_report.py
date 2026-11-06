@@ -31,8 +31,8 @@ def _require(c: Ctx, s) -> None:
 
 def _scope(c: Ctx, s):
     """Escopo da fila de laudos. Médico: vínculos vigentes. Demais (coordenação, quem distribui, leitura): unidades
-    do papel — papel numa unidade não vê a fila de outra (MISSÃO 2 V-02); exame sem unidade é alcançado por papel
-    de qualquer unidade (V-03: os estudos recebidos pelo PACS ainda chegam sem unidade)."""
+    do papel — papel numa unidade não vê a fila de outra (MISSÃO 2 V-02). P0 0.3.2: exame sem unidade só é alcançado
+    por papel em todas as unidades (ou médico com vínculo com a organização inteira)."""
     from vyonix.report import queue
     sc = queue.scope(s, c.p.user_id, can_assign=c.p.has("report.assign"))
     if sc is not None:
@@ -40,7 +40,7 @@ def _scope(c: Ctx, s):
     perms = [x for x in ("report.assign", "report.read", "report.write") if c.p.has(x)]
     if not perms or any(c.p.global_has(x) for x in perms):
         return None
-    sites: set = {None}
+    sites: set = set()
     for x in perms:
         sites |= c.p.sites_for(x) or set()
     return (False, sites)
@@ -61,15 +61,19 @@ def _in_scope(c: Ctx, s, *, study_id: uuid.UUID | None = None, report_id: uuid.U
     from vyonix.ris import prep
     if study_id in prep.shared_studies(s, c.p.user_id, scope="report" if write else None):
         return                                               # compartilhado temporariamente com este usuário
+    from vyonix.auth import scope
+    from vyonix.clinical.models import Study
     sc = _scope(c, s)
-    queue.require(s, sc, study_id)
+    st = s.get(Study, study_id) if study_id is not None else None
+    if st is None:
+        queue.require(s, sc, study_id)                       # 404/403 padrão (exame inexistente)
+        return
+    if not queue.allowed(sc, st.site_id):
+        scope.deny(c, "study", st.id, "report.read", "no_site" if st.site_id is None else "physician_link")
     if sc is None:                                           # não médico (ou quem distribui): papel na unidade
-        from vyonix.clinical.models import Study
-        from vyonix.errors import Forbidden
-        st = s.get(Study, study_id)
         perms = ("report.read", "report.write", "report.assign")
-        if st is not None and not any(c.p.has(x, st.site_id) for x in perms):
-            raise Forbidden("Sem permissão nesta unidade.", code="site_forbidden")   # MISSÃO 2 S-02
+        if not scope.can(c.p, perms, st.site_id):            # MISSÃO 2 S-02 + P0 0.3.2 (sem unidade = global)
+            scope.deny(c, "study", st.id, perms, "no_site" if st.site_id is None else "site_scope")
 
 
 def _author(c: Ctx, s, rid: uuid.UUID, *, action: str, reviewer: bool = False) -> None:

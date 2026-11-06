@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 
 from vyonix.api.app import Ctx, needs
 from vyonix.api.app import ctx as ctx_any
+from vyonix.auth import scope
 from vyonix.errors import NotLicensed
 from vyonix.modules import registry
 from vyonix.ris import service as ris
@@ -41,6 +42,7 @@ def _require(c: Ctx, s) -> None:
 def create(body: ScheduleIn, c: Ctx = Depends(needs("ris.schedule.manage"))):
     with c.session() as s:
         _require(c, s)
+        _order_site(c, s, body.order_id, "ris.schedule.manage")        # P0 0.3.2: pedido de outra unidade → 404
         st = ris.schedule(s, body.order_id, scheduled_at=body.scheduled_at, modality=body.modality,
                           station_aet=body.station_aet, room=body.room, description=body.description,
                           duration_min=body.duration_min, **c.actor)
@@ -48,10 +50,24 @@ def create(body: ScheduleIn, c: Ctx = Depends(needs("ris.schedule.manage"))):
                 "status": st.status}
 
 
+def _order_site(c: Ctx, s, order_id: uuid.UUID, *perms: str):
+    """P0 0.3.2: a unidade do pedido (ou do atendimento) precisa estar entre as do papel; sem unidade, só global."""
+    from vyonix.clinical import service as clinical
+    from vyonix.clinical.models import Order
+    from vyonix.errors import NotFound
+    o = s.get(Order, order_id)
+    if o is None:
+        raise NotFound("Pedido não encontrado.")
+    site = clinical.order_site(s, o)
+    if not scope.can(c.p, perms, site):
+        scope.deny(c, "order", o.id, perms, "no_site" if site is None else "site_scope", not_found=True)
+    return o
+
+
 @router.get("/orders")
 def pending(c: Ctx = Depends(needs("ris.schedule.manage"))):
     with c.session() as s:
-        return {"items": ris.pending_orders(s)}
+        return {"items": ris.pending_orders(s, sites=scope.sites(c.p, "ris.schedule.manage"))}
 
 
 class RoomIn(BaseModel):
@@ -98,6 +114,10 @@ def status(sid: uuid.UUID, body: StatusIn, c: Ctx = Depends(needs("ris.schedule.
                                                    body.status in ("arrived", "in_progress", "completed")):
         raise Forbidden("Sem permissão para esta mudança de situação.", code="forbidden")
     with c.session() as s:
+        from vyonix.ris.models import Schedule
+        sc_ = s.get(Schedule, sid)
+        if sc_ is not None:                     # P0 0.3.2: agendamento de outra unidade → 404
+            _order_site(c, s, sc_.order_id, "ris.schedule.manage", "ris.exam.perform")
         st = ris.set_status(s, sid, body.status, reason=body.reason, **c.actor)
         return {"id": str(st.id), "status": st.status}
 
@@ -108,7 +128,8 @@ def worklist(date_from: date | None = None, date_to: date | None = None, modalit
              c: Ctx = Depends(needs("ris.schedule.read"))):
     with c.session() as s:
         return {"items": ris.worklist(s, date_from=date_from, date_to=date_to, modality=modality,
-                                      station_aet=station_aet, include_done=include_done)}
+                                      station_aet=station_aet, include_done=include_done,
+                                      sites=scope.sites(c.p, "ris.schedule.read"))}
 
 
 @router.get("/exam-center")
@@ -123,7 +144,7 @@ def exam_center(date_from: date, date_to: date, modality: str | None = None, sta
         raise ValidationFailed("Etapa inválida.")
     with c.session() as s:
         return tracking.exam_center(s, date_from=date_from, date_to=date_to, modality=modality, stage=stage,
-                                    late_only=late_only)
+                                    late_only=late_only, sites=scope.sites(c.p, "ris.schedule.read"))
 
 
 @router.get("/technician-panel")
@@ -131,7 +152,8 @@ def technician_panel(day: date | None = None, c: Ctx = Depends(needs("ris.schedu
     """Painel do Técnico em Radiologia: exames do dia, estudos recebidos, recusas na recepção e pendências."""
     from vyonix.ris import technician
     with c.session() as s:
-        return technician.panel(s, day=day, with_images=c.p.has("pacs.studies.read"))
+        return technician.panel(s, day=day, with_images=c.p.has("pacs.studies.read"),
+                                sites=scope.sites(c.p, "ris.schedule.read"))
 
 
 # ------------------------------------------------------------------ Central de Exames: preparação do estudo
@@ -146,14 +168,21 @@ def _prep_reader(c: Ctx) -> None:
 
 
 def _prep_scope(c: Ctx, s, study_id: uuid.UUID) -> None:
-    """Médico só vê estudos da sua unidade ou compartilhados com ele (mesma regra da fila de laudos)."""
+    """Médico só vê estudos da sua unidade ou compartilhados com ele (mesma regra da fila de laudos); os demais
+    papéis respeitam a unidade do exame; exame sem unidade só para quem atua em todas (P0 0.3.2)."""
+    from vyonix.clinical.models import Study
+    from vyonix.errors import NotFound
     from vyonix.report import queue
     from vyonix.ris import prep
     if study_id in prep.shared_studies(s, c.p.user_id):
         return
     sc = queue.scope(s, c.p.user_id, can_assign=c.p.has("report.assign"))
     if sc is not None:
-        queue.require(s, sc, study_id)
+        st = s.get(Study, study_id)
+        if st is None:
+            raise NotFound("Exame não encontrado.")
+        if not queue.allowed(sc, st.site_id):
+            scope.deny(c, "study", st.id, "report.read", "no_site" if st.site_id is None else "physician_link")
         return
     _site(c, s, study_id, *_READ_PERMS)             # MISSÃO 2 R-04: não-médico também respeita a unidade
 
@@ -163,16 +192,15 @@ _READ_PERMS = ("ris.exam.prepare", "ris.schedule.read", "report.read", "report.a
 
 def _site(c: Ctx, s, study_id: uuid.UUID, *perms: str):
     """O papel que concede a permissão precisa valer na unidade do exame (papel por unidade não alcança outra
-    unidade — MISSÃO 2, R-04). Exame sem unidade (os recebidos pelo PACS ainda chegam assim) é alcançado por papel de
-    qualquer unidade: exigir papel global deixava instituições com papéis por unidade sem acesso (A07 V-03)."""
+    unidade — MISSÃO 2, R-04). P0 0.3.2 (regra 3 do proprietário): exame **sem unidade** fica restrito a quem tem a
+    permissão em todas as unidades até a vinculação correta (substitui a exceção V-03)."""
     from vyonix.clinical.models import Study
-    from vyonix.errors import Forbidden, NotFound
+    from vyonix.errors import NotFound
     st = s.get(Study, study_id)
     if st is None:
         raise NotFound("Exame não encontrado.")
-    ok = any(c.p.has(x, st.site_id) for x in perms)    # sem unidade: papel de qualquer unidade (V-03)
-    if not ok:
-        raise Forbidden("Sem permissão nesta unidade.", code="site_forbidden")
+    if not scope.can(c.p, perms, st.site_id):
+        scope.deny(c, "study", st.id, perms, "no_site" if st.site_id is None else "site_scope")
     return st
 
 
@@ -230,7 +258,7 @@ def prep_queue(date_from: date | None = None, date_to: date | None = None, modal
     with c.session() as s:
         return prep.queue(s, c.p.user_id, date_from=date_from, date_to=date_to, modality=modality, station=station,
                           site_id=site_id, stage_filter=stage, priority=priority, patient=patient, accession=accession,
-                          sites=c.p.sites_for("ris.exam.prepare"))
+                          sites=scope.sites(c.p, "ris.exam.prepare"))
 
 
 @router.get("/studies/{study_id}/timeline")
@@ -243,6 +271,24 @@ def study_timeline(study_id: uuid.UUID, c: Ctx = Depends(ctx_any)):
         return timeline.study_timeline(s, study_id)
 
 
+def _study_ok_fn(c: Ctx, s):
+    """Mesmo critério do ``_prep_scope``, sem recusar: compartilhado, vínculo do médico ou unidade do papel."""
+    from vyonix.report import queue
+    from vyonix.ris import prep
+    shared = set(prep.shared_studies(s, c.p.user_id))
+    sc = queue.scope(s, c.p.user_id, can_assign=c.p.has("report.assign"))
+
+    def ok(st) -> bool:
+        if st is None:
+            return False
+        if st.id in shared:
+            return True
+        if sc is not None:
+            return queue.allowed(sc, st.site_id)
+        return scope.can(c.p, _READ_PERMS, st.site_id)
+    return ok
+
+
 @router.get("/patients/{patient_id}/history")
 def patient_history(patient_id: uuid.UUID, c: Ctx = Depends(needs("clinical.patients.read"))):
     """Histórico integrado do paciente (PACS, RIS e laudos), com as regras de acesso da preparação: exame de unidade
@@ -251,8 +297,12 @@ def patient_history(patient_id: uuid.UUID, c: Ctx = Depends(needs("clinical.pati
     from vyonix.ris import prep, timeline
     _prep_reader(c)
     with c.session() as s:
-        sc = queue.scope(s, c.p.user_id, can_assign=c.p.has("report.assign"))
-        out = timeline.patient_history(s, patient_id, scope=sc, shared=prep.shared_studies(s, c.p.user_id))
+        from vyonix.clinical import service as clinical
+        psites = scope.sites(c.p, "clinical.patients.read")
+        if not clinical.patient_in_scope(s, patient_id, psites, allow_unlinked=False):
+            scope.deny(c, "patient", patient_id, "clinical.patients.read", "patient_scope", not_found=True)
+        out = timeline.patient_history(s, patient_id, study_ok=_study_ok_fn(c, s),
+                                       shared=prep.shared_studies(s, c.p.user_id))
         out["can_view_images"] = c.p.has("pacs.studies.read")
         out["can_read_reports"] = c.p.has("report.read")
         return out
@@ -267,12 +317,12 @@ def study_priors(study_id: uuid.UUID, c: Ctx = Depends(ctx_any)):
     with c.session() as s:
         _prep_scope(c, s, study_id)
         out = timeline.priors(s, study_id)
-        sc = queue.scope(s, c.p.user_id, can_assign=c.p.has("report.assign"))
+        ok_fn = _study_ok_fn(c, s)
         from vyonix.clinical.models import Study
-        for it in out["items"]:                     # anterior de unidade sem vínculo: aparece sem acesso ao conteúdo
-            ok = queue.allowed(sc, s.get(Study, uuid.UUID(it["study_id"])).site_id)
+        for it in out["items"]:                     # anterior fora do escopo: aparece sem acesso ao conteúdo
+            ok = ok_fn(s.get(Study, uuid.UUID(it["study_id"])))
             if not ok:
-                it.update(study_instance_uid=None, report=None, restricted=True)
+                it.update(study_instance_uid=None, report=None, description=None, accession=None, restricted=True)
         return out
 
 
@@ -282,8 +332,9 @@ def prep_detail(study_id: uuid.UUID, c: Ctx = Depends(ctx_any)):
     _prep_reader(c)
     with c.session() as s:
         _prep_scope(c, s, study_id)
-        out = prep.detail(s, study_id, c.p.user_id)
-        out["can"] = {k: c.p.has(p) for k, p in (("prepare", "ris.exam.prepare"), ("priority", "ris.exam.priority"),
+        out = prep.detail(s, study_id, c.p.user_id, visible=_study_ok_fn(c, s))
+        _st_site = s.get(__import__("vyonix.clinical.models", fromlist=["Study"]).Study, study_id).site_id
+        out["can"] = {k: scope.can(c.p, p, _st_site) for k, p in (("prepare", "ris.exam.prepare"), ("priority", "ris.exam.priority"),
                                                    ("cancel", "ris.exam.cancel"), ("share", "ris.exam.share"),
                                                    ("assign", "report.assign"), ("return", "report.write"),
                                                    ("viewer", "pacs.studies.read"))}
@@ -316,7 +367,7 @@ def prep_check(study_id: uuid.UUID, body: CheckIn, c: Ctx = Depends(needs("ris.e
         _require(c, s)                     # módulo RIS habilitado e licenciado
         _site(c, s, study_id, "ris.exam.prepare")
         prep.set_check(s, study_id, body.code, body.done, **c.actor)
-        return prep.detail(s, study_id, c.p.user_id)
+        return prep.detail(s, study_id, c.p.user_id, visible=_study_ok_fn(c, s))
 
 
 @router.post("/prep/{study_id}/comments", status_code=201)
@@ -340,6 +391,11 @@ def prep_flag(study_id: uuid.UUID, body: FlagIn, c: Ctx = Depends(ctx_any)):
     with c.session() as s:
         _require(c, s)                     # módulo RIS habilitado e licenciado
         _prep_scope(c, s, study_id)
+        from vyonix.clinical.models import Study
+        site = s.get(Study, study_id).site_id         # P0 0.3.2 (R13): a permissão vale na unidade do exame
+        if not (scope.can(c.p, "ris.exam.prepare", site) or
+                (scope.can(c.p, "report.read", site) and body.code in prep.REQUESTS + ("other",))):
+            scope.deny(c, "study", study_id, "ris.exam.prepare", "no_site" if site is None else "site_scope")
         f = prep.add_flag(s, study_id, body.code, body.note, **c.actor)
         return {"id": str(f.id)}
 
@@ -399,7 +455,13 @@ def _tech_study(c: Ctx, s, study_id: uuid.UUID, action: str):
     st = s.get(Study, study_id)
     if st is None:
         raise NotFound("Exame não encontrado.")
-    exclusive.require(c.p, st.site_id, action=action)
+    from vyonix.errors import Forbidden
+    try:
+        exclusive.require(c.p, st.site_id, action=action)
+    except Forbidden as exc:                      # P0 0.3.2: recusa auditada (access.denied)
+        reason = "no_site" if st.site_id is None else (
+            "site_scope" if any(r.get("role") == exclusive.ROLE for r in c.p.roles) else "technician_only")
+        raise scope.attach(exc, c, "study", st.id, f"ris.exam.{action}", reason)
     _prep_scope(c, s, study_id)
     return st
 
@@ -442,8 +504,10 @@ def prep_duplicate(study_id: uuid.UUID, body: DuplicateIn, c: Ctx = Depends(need
     with c.session() as s:
         _require(c, s)                     # módulo RIS habilitado e licenciado
         _site(c, s, study_id, "ris.exam.prepare")
+        if body.duplicate_of is not None:              # P0 0.3.2 (R16): o outro estudo também precisa estar no escopo
+            _site(c, s, body.duplicate_of, "ris.exam.prepare")
         prep.decide_duplicate(s, study_id, duplicate_of=body.duplicate_of, note=body.note, **c.actor)
-        return prep.detail(s, study_id, c.p.user_id)
+        return prep.detail(s, study_id, c.p.user_id, visible=_study_ok_fn(c, s))
 
 
 @router.post("/prep/{study_id}/forward")
@@ -498,7 +562,12 @@ def prep_share(study_id: uuid.UUID, body: ShareIn, c: Ctx = Depends(needs("ris.e
     from vyonix.ris import prep
     with c.session() as s:
         _require(c, s)                     # módulo RIS habilitado e licenciado
-        _site(c, s, study_id, "ris.exam.share")
+        st = _site(c, s, study_id, "ris.exam.share")
+        # P0 0.3.2 (R17): o destinatário precisa poder ver exames da unidade, salvo permissão global específica
+        if not scope.user_can(s, body.user_id, _READ_PERMS, st.site_id) and \
+                not c.p.global_has("ris.exam.share.cross_site"):
+            from vyonix.errors import Conflict
+            raise Conflict("O destinatário não atua na unidade deste exame.", code="share_out_of_site")
         sh = prep.share(s, study_id, body.user_id, scope=body.scope, hours=body.hours, **c.actor)
         return {"id": str(sh.id), "expires_at": sh.expires_at.isoformat()}
 
@@ -512,5 +581,8 @@ def prep_unshare(share_id: uuid.UUID, c: Ctx = Depends(needs("ris.exam.share")))
         sh = s.get(ExamShare, share_id)
         if sh is not None:
             _site(c, s, sh.study_id, "ris.exam.share")
+        else:
+            from vyonix.errors import NotFound
+            raise NotFound("Compartilhamento não encontrado.")
         prep.revoke_share(s, share_id, **c.actor)
     return {"ok": True}

@@ -74,7 +74,8 @@ FAIL_CONFLICT = 0xA770            # (específico do VYONIX) conflito com conteú
 # --------------------------------------------------------------------------- entrada
 
 def ingest(s: Session, backend: PacsBackend, data: bytes, *, actor: str, via: str = "stow",
-           actor_id: uuid.UUID | None = None, ip: str | None = None) -> StoreResult:
+           actor_id: uuid.UUID | None = None, ip: str | None = None, site_id: uuid.UUID | None = None,
+           site_source: str | None = None, site_check=None) -> StoreResult:
     """Valida, guarda e indexa uma instância DICOM Part 10 na organização da sessão."""
     try:
         p, ds = dicom.parse(data)
@@ -94,6 +95,13 @@ def ingest(s: Session, backend: PacsBackend, data: bytes, *, actor: str, via: st
         _audit_reject(s, p, actor, actor_id, ip, via, reason)
         raise InstanceRejected(reason, failure=FAIL_CONFLICT, sop_uid=p.sop_uid, sop_class_uid=p.sop_class_uid)
 
+    if site_check is not None:                         # P0 0.3.2 (F7): não acrescenta imagens a estudo de outra unidade
+        from vyonix.clinical.models import Study as _CStudy
+        cst = s.execute(select(_CStudy).where(_CStudy.study_instance_uid == p.study_uid)).scalar_one_or_none()
+        if cst is not None and not site_check(cst.site_id):
+            reason = "Estudo de outra unidade (ou sem unidade definida): envio recusado."
+            _audit_reject(s, p, actor, actor_id, ip, via, reason)
+            raise InstanceRejected(reason, failure=FAIL_CONFLICT, sop_uid=p.sop_uid, sop_class_uid=p.sop_class_uid)
     ref = backend.store(data)
     try:
         stored = backend.fetch(ref.backend_id)
@@ -107,7 +115,7 @@ def ingest(s: Session, backend: PacsBackend, data: bytes, *, actor: str, via: st
             raise InstanceRejected("O armazenamento devolveu outra instância.", failure=FAIL_PROCESSING,
                                    sop_uid=p.sop_uid, sop_class_uid=p.sop_class_uid)
         with s.begin_nested():               # índice parcial nunca fica gravado
-            result = _index(s, p, ds, backend.name, ref.backend_id, via)
+            result = _index(s, p, ds, backend.name, ref.backend_id, via, site_id, site_source)
     except Exception as exc:
         if not ref.already_existed:
             try:
@@ -138,7 +146,8 @@ def _audit_reject(s, p, actor, actor_id, ip, via, reason: str) -> None:
                  details={"reason": reason, "via": via, "sha256": p.sha256, "size": p.size})
 
 
-def _index(s: Session, p: dicom.ParsedInstance, ds, backend_name: str, backend_id: str, via: str) -> StoreResult:
+def _index(s: Session, p: dicom.ParsedInstance, ds, backend_name: str, backend_id: str, via: str,
+           site_id=None, site_source=None) -> StoreResult:
     st = s.execute(select(PacsStudy).where(PacsStudy.study_uid == p.study_uid)).scalar_one_or_none()
     new_study = st is None
     if new_study:
@@ -183,7 +192,7 @@ def _index(s: Session, p: dicom.ParsedInstance, ds, backend_name: str, backend_i
         cs = clinical.register_study(s, study_instance_uid=p.study_uid, accession=st.accession,
                                      modality=p.modality, study_date=p.study_date, description=st.description,
                                      patient_identifier=(issuer, p.patient_id), storage_location=f"pacs:{st.id.hex}",
-                                     actor="pacs")
+                                     site_id=site_id, site_source=site_source, actor="pacs")
         st.clinical_study_id = cs.id
         s.flush()
     return StoreResult(p.sop_uid, p.sop_class_uid, p.study_uid, p.series_uid, it.id, st.id,
@@ -280,8 +289,11 @@ def _date_range(value: str) -> tuple[date | None, date | None]:
     return d, d
 
 
-def search_studies(s: Session, params: dict[str, str], *, limit: int = 100, offset: int = 0) -> list[dict]:
+def search_studies(s: Session, params: dict[str, str], *, limit: int = 100, offset: int = 0,
+                   visible=None) -> list[dict]:
     q = select(PacsStudy)
+    if visible is not None:                         # P0 0.3.2: escopo por unidade no SQL, antes do LIMIT
+        q = q.where(visible(PacsStudy.study_uid))
     pid = params.get("PatientID") or params.get("00100020")
     if pid:
         q = q.where(PacsStudy.patient_id.like(_like(pid), escape="\\") if any(c in pid for c in "*?")

@@ -61,6 +61,7 @@ class Order(TenantMixin, Base):
     accession: Mapped[str | None] = mapped_column(String(32))
     priority: Mapped[str] = mapped_column(String(10), nullable=False, default="routine")   # routine|urgent|stat
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="requested")
+    site_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("tenancy.sites.id"))      # P0 0.3.2
 
 
 class Study(TenantMixin, Base):
@@ -77,6 +78,25 @@ class Study(TenantMixin, Base):
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="received")
     storage_location: Mapped[str | None] = mapped_column(String(40))
     reconciled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # P0 0.3.2: origem da unidade (pedido, atendimento, no_dicom, unica, manual, simulacao); NULL = legado
+    site_source: Mapped[str | None] = mapped_column(String(12))
+    site_set_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    site_set_by: Mapped[str | None] = mapped_column(String(120))
+
+
+class StudySiteAssignment(TenantMixin, Base):
+    """Trilha somente-inserção das atribuições de unidade a estudos (P0 0.3.2)."""
+    __tablename__ = "study_site_assignments"
+    __table_args__ = (Index("ix_clinical_ssa_study", "tenant_id", "study_id", "created_at"), SCHEMA)
+    study_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("clinical.studies.id"), nullable=False)
+    from_site_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
+    to_site_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("tenancy.sites.id"), nullable=False)
+    source: Mapped[str] = mapped_column(String(12), nullable=False)
+    evidence: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    simulation_sha256: Mapped[str | None] = mapped_column(String(64))
+    approved_by: Mapped[str | None] = mapped_column(String(120))
+    actor: Mapped[str] = mapped_column(String(120), nullable=False)
+    actor_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
 
 
 class PatientMerge(TenantMixin, Base):

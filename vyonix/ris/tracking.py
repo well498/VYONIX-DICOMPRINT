@@ -28,8 +28,22 @@ def _minutes(a: datetime | None, b: datetime | None) -> int | None:
     return None if a is None or b is None else max(0, int((b - a).total_seconds() // 60))
 
 
+def _site_cond(sites):
+    """P0 0.3.2: pedido pela unidade do pedido/atendimento, ou pela do estudo conciliado."""
+    from sqlalchemy import or_
+    from vyonix.auth.scope import SENTINEL, where_site
+    from vyonix.clinical.models import Study
+    from vyonix.clinical.service import order_site_expr
+    if sites is None:
+        return where_site(order_site_expr(), None)
+    ids = list(sites) or [SENTINEL]
+    by_study = select(Study.order_id).where(Study.site_id.in_(ids), Study.order_id.is_not(None))
+    return or_(order_site_expr().in_(ids), Order.id.in_(by_study))
+
+
 def exam_center(s: Session, *, date_from: date, date_to: date, modality: str | None = None, stage: str | None = None,
-                late_only: bool = False, limit: int = 500, now: datetime | None = None) -> dict[str, Any]:
+                late_only: bool = False, limit: int = 500, now: datetime | None = None,
+                sites: set | None = None) -> dict[str, Any]:
     from vyonix.pacs.models import PacsInstance, PacsStudy
     from vyonix.report.models import Report
     from vyonix.report.queue import open_by_study, sla_hours
@@ -41,7 +55,8 @@ def exam_center(s: Session, *, date_from: date, date_to: date, modality: str | N
     end = datetime.combine(date_to, time.max, tzinfo=BRT)
     orders = list(s.execute(select(Order, Patient, Procedure).join(Patient, Patient.id == Order.patient_id)
                             .outerjoin(Procedure, Procedure.id == Order.procedure_id)
-                            .where(Order.created_at <= end).order_by(Order.created_at.desc()).limit(5000)))
+                            .where(Order.created_at <= end, _site_cond(sites))
+                            .order_by(Order.created_at.desc()).limit(5000)))
     ids = [o.id for o, _p, _pr in orders]
     sched: dict = {}
     for sc in s.execute(select(Schedule).where(Schedule.order_id.in_(ids)).order_by(Schedule.created_at)).scalars():
