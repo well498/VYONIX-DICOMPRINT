@@ -54,7 +54,9 @@ def panel(s: Session, *, day: date | None = None, with_images: bool = True, site
         out["received"] = [{"study_uid": st.study_uid, "patient_name": st.patient_name, "accession": st.accession,
                             "description": st.description, "instances": int(n),
                             "received_at": st.last_received_at.isoformat()} for st, n in rows]
-        out["quality_issues"] = pacs.quality_overview(s, limit=100, only_issues=True) if sites is None else [
-            x for x in pacs.quality_overview(s, limit=100, only_issues=True)
-            if x.get("study_uid") in {st.study_uid for st, _n in rows}]
+        vis = None
+        if sites is not None:                    # N10: unidade no SQL antes do limite
+            vis = lambda col: col.in_(select(Study.study_instance_uid)            # noqa: E731
+                                      .where(where_site(Study.site_id, sites)))
+        out["quality_issues"] = pacs.quality_overview(s, limit=100, only_issues=True, visible=vis)
     return out

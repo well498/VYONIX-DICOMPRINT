@@ -508,6 +508,76 @@ class UnitIsolation(_prep.Prep):
         names = [p["name"] for p in self.u["recep_a"].get("/api/v1/patients?q=Vinculo").json()]
         self.assertIn("Paciente Sem Vinculo Ficticio", names, "a recepção ainda encontra para cadastrar o pedido")
 
+    def test_p31_lists_filter_before_limit(self):                    # A04 N10 (decisão 6 do proprietário)
+        """Críticos e qualidade: unidade filtrada ANTES do limite — nada autorizado some, nada indevido aparece."""
+        from vyonix.clinical.models import Study
+        from vyonix.report import service as rep
+        from vyonix.report.models import CriticalAlert, Report
+        # qualidade: com limite 1, cada técnico recebe o estudo da SUA unidade (antes: o mais recente de todos, depois
+        # descartado em Python → lista vazia para quem não era da unidade do mais recente)
+        for who, mine, other in (("tec_a", "a", "b"), ("tec_b", "b", "a")):
+            r = self.u[who].get("/api/v1/pacs/quality?limit=1&only_issues=false")
+            self.assertEqual(r.status_code, 200, r.text)
+            got = [x["study_uid"] for x in r.json()["studies"]]
+            self.assertEqual(got, [self.uid[mine]], f"{who}: {got}")
+        r = self.u["tec_ab"].get("/api/v1/pacs/quality?limit=50&only_issues=false")
+        self.assertEqual({x["study_uid"] for x in r.json()["studies"]}, {self.uid["a"], self.uid["b"]})
+        # críticos: um alerta em cada unidade e um em exame sem unidade; limite 1 por escopo
+        with _prep.db.session(self.t) as s:
+            for k in ("a", "b", "n"):
+                rp = Report(study_id=uuid.UUID(self.s[k]), status="final", version=1, body="Sintético.",
+                            author="Dr. Ficticio", finalized_by="Dr. Ficticio")
+                s.add(rp)
+                s.flush()
+                s.add(CriticalAlert(report_id=rp.id, version=1, note=f"critico-{k}"))
+            s.flush()
+            A, B = uuid.UUID(self.A), uuid.UUID(self.B)
+            notes = lambda sc, lim=1: [x["note"] for x in rep.critical_alerts(s, limit=lim, scope=sc)]  # noqa: E731
+            self.assertEqual(notes((False, {A})), ["critico-a"])
+            self.assertEqual(notes((False, {B})), ["critico-b"])
+            self.assertEqual(notes((False, set())), [])
+            self.assertEqual(sorted(notes((False, {A, B}), 50)), ["critico-a", "critico-b"])
+            self.assertEqual(sorted(notes((True, set()), 50)), ["critico-a", "critico-b", "critico-n"])
+            self.assertEqual(sorted(notes(None, 50)), ["critico-a", "critico-b", "critico-n"])
+            s.rollback()
+
+    def test_p32_existing_financial_roles_are_hardened(self):        # decisão 2 do proprietário (12/11/2026)
+        """Perfil Financeiro já existente com permissões clínicas: removidas na atualização, com o estado anterior
+        registrado na auditoria; não pode voltar a recebê-las."""
+        from vyonix.audit import service as audit
+        from vyonix.auth import service as auth
+        from vyonix.auth.models import Role, RolePermission
+        from vyonix.tenancy import service as tenancy
+        legacy = ["ris.schedule.read", "report.read", "pacs.studies.read", "clinical.patients.read"]
+        with _prep.db.session(self.t) as s:                # simula a instalação 0.3.1 (papel já personalizado)
+            r = s.query(Role).filter_by(code="financeiro").one()
+            for p in legacy:
+                s.add(RolePermission(role_id=r.id, permission=p))
+        fin = self.login("fin", NEW)
+        self.assertEqual(fin.get("/api/v1/ris/worklist").status_code, 200, "pré-condição: o legado enxergava a agenda")
+        tenancy.refresh(_prep.db, self.t)                  # o que o `vyonix migrate` faz em cada instituição
+        with _prep.db.session(self.t) as s:
+            r = s.query(Role).filter_by(code="financeiro").one()
+            now = sorted(x.permission for x in s.query(RolePermission).filter_by(role_id=r.id))
+            self.assertEqual(now, ["core.license.read"])
+            ev = audit.query(s, action="role.permissions.hardened", limit=10)
+            self.assertEqual(len(ev), 1)
+            d = ev[0].details
+            self.assertEqual(sorted(d["removed"]), sorted(legacy))
+            self.assertEqual(sorted(d["before"]), sorted(legacy + ["core.license.read"]))
+            self.assertEqual(d["users_with_role"], 1)
+        fin = self.login("fin", NEW)
+        for url in ("/api/v1/ris/worklist", "/api/v1/patients", "/api/v1/report/worklist", DW + "/studies",
+                    f"/api/v1/ris/prep/{self.s['a']}"):
+            self.assertIn(fin.get(url).status_code, DENIED, url)
+        tenancy.refresh(_prep.db, self.t)                  # idempotente: não registra de novo
+        with _prep.db.session(self.t) as s:
+            self.assertEqual(len(audit.query(s, action="role.permissions.hardened", limit=10)), 1)
+            from vyonix.errors import ValidationFailed
+            with self.assertRaises(ValidationFailed):      # não volta a receber permissão clínica
+                auth.save_role(s, code="financeiro", name="Administrador Financeiro",
+                               permissions=["core.license.read", "report.read"], actor="admin")
+
 
 if __name__ == "__main__":
     import unittest

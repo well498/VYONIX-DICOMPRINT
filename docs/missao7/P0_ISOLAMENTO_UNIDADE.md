@@ -93,10 +93,23 @@ A04 encontrou 3 vazamentos P1 e 9 itens P2/P3. Os P1 foram reproduzidos com dado
   - `test_viewer_launch` passou a esperar o vínculo do médico também no modo `organization` (N3);
   - `test_ris_exam_center` dependia da data real e falhava depois de 11/11/2026 também no commit anterior. Foi corrigido sem mudar a regra.
 
-## Pendências e decisões do proprietário
+## Decisões do proprietário de 12/11/2026 e o que foi feito
 
-1. **Financeiro em instalações existentes.** O papel "financeiro" já ativado continua com `ris.schedule.read` até o administrador removê-lo. O ajuste automático alteraria um papel que pode ter sido personalizado, por isso fica para aprovação.
-2. **Compartilhar exame com usuário de outra unidade.** Hoje é recusado. A permissão `ris.exam.share.cross_site` foi reservada, mas não foi criada.
-3. **Simulação dos 20 estudos DEMO.** Rodar na instância do proprietário somente com autorização dele.
-4. **Frontend.** Os menus já seguem as permissões. Faltam os botões por exame (capabilities por unidade) na nova Central.
-5. **Médicos no modo `organization` do Viewer (N3).** Agora só veem imagens das unidades onde têm vínculo vigente. Se o proprietário quiser que médicos vejam a instituição inteira, isso precisa ser decidido e configurado explicitamente.
+| # | Decisão | Situação |
+|---|---|---|
+| 1 | Médico: papel + vínculo vigente + permissão do recurso; o modo `organization` não contorna; sem exceção genérica | Em vigor (N3, teste p28). Registrado no ADR-0015. |
+| 2 | Remover automaticamente as permissões clínicas dos perfis Financeiro existentes, registrando o estado anterior | Feito: `auth.harden_financial_roles`, chamado pelo `vyonix migrate` em cada instituição. Grava `role.permissions.hardened` com a lista anterior, o que saiu, o que ficou e quantos usuários têm o perfil. Ficam `core.*` e `report.production.*`. O perfil não aceita mais permissão clínica (422). Teste p32. |
+| 3 | Compartilhamento entre unidades bloqueado por padrão; preparar a arquitetura da exceção | Continua bloqueado (`409 share_out_of_site`). Desenho no ADR-0015, **não habilitado**. |
+| 4 | Simulação somente leitura dos 20 exames DEMO no computador do proprietário | Ver `SIMULACAO_UNIDADE_DEMO.md` (ou a pendência registrada no relatório consolidado). |
+| 5 | Merge em `develop` e CI | Ver `RELATORIO_CONSOLIDADO_SEGURANCA_0.3.2.md`. |
+| 6 | Críticos e qualidade: filtrar antes do limite | Feito (N10): unidade no SQL antes do `LIMIT` em `/report/critical`, `/pacs/quality` e nas pendências de qualidade do painel do técnico. Teste p31. |
+| 7 | Critérios de liberação da 0.3.2 | Acompanhados no relatório consolidado. A versão continua **bloqueada**. |
+
+Sobre a decisão 2: se o financeiro precisar de dados de agendamento para faturamento, isso será uma permissão administrativa nova, com dados mínimos (sem nome de paciente nem dados clínicos). Ela não foi criada nesta etapa.
+
+## Pendências
+
+1. **Simulação e vinculação dos exames antigos sem unidade.** A aplicação depende da aprovação do proprietário sobre o relatório da simulação.
+2. **Frontend.** Os menus seguem as permissões. Faltam os botões por exame (capabilities por unidade) na nova Central.
+3. **Compartilhamento excepcional entre unidades.** Só o desenho (ADR-0015).
+4. **Permissão administrativa de faturamento** com dados mínimos, se o financeiro precisar.

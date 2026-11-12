@@ -457,7 +457,8 @@ def critical(status: str | None = "open", c: Ctx = Depends(needs("report.read"))
     from vyonix.report import queue
     with c.session() as s:
         sc = _scope(c, s)
-        return {"items": [x for x in rep.critical_alerts(s, status=status or None)
+        # N10: unidade filtrada no SQL antes do limite; a conferência em Python fica como segunda barreira
+        return {"items": [x for x in rep.critical_alerts(s, status=status or None, scope=sc)
                           if queue.allowed(sc, uuid.UUID(x["site_id"]) if x["site_id"] else None)]}
 
 

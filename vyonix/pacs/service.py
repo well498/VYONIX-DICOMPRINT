@@ -555,10 +555,15 @@ def quality(s: Session, study_uid: str, *, now=None) -> dict[str, Any]:
             "possibly_incomplete": receiving or any(i["code"] == "instance_gap" for i in issues)}
 
 
-def quality_overview(s: Session, *, limit: int = 100, only_issues: bool = True) -> list[dict[str, Any]]:
-    """Estudos mais recentes com os indicadores de qualidade (por padrão, só os que têm pendência)."""
+def quality_overview(s: Session, *, limit: int = 100, only_issues: bool = True,
+                     visible=None) -> list[dict[str, Any]]:
+    """Estudos mais recentes com os indicadores de qualidade (por padrão, só os que têm pendência).
+    ``visible``: condição SQL sobre o Study Instance UID, aplicada **antes** do limite (P0 0.3.2, N10)."""
     out = []
-    for st in s.execute(select(PacsStudy).order_by(PacsStudy.last_received_at.desc()).limit(min(limit, MAX_RESULTS))
+    base = select(PacsStudy)
+    if visible is not None:
+        base = base.where(visible(PacsStudy.study_uid))
+    for st in s.execute(base.order_by(PacsStudy.last_received_at.desc()).limit(min(limit, MAX_RESULTS))
                         ).scalars():
         q = quality(s, st.study_uid)
         if q["issues"] or not only_issues:

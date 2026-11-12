@@ -336,7 +336,8 @@ def wado_frames(study_uid: str, series_uid: str, sop_uid: str, frame_list: str,
 def quality_list(only_issues: bool = True, limit: int = 100, c: Ctx = Depends(needs("pacs.studies.read"))):
     from vyonix.pacs import viewing
     with c.session() as s:
-        rows = pacs.quality_overview(s, limit=limit, only_issues=only_issues)
+        rows = pacs.quality_overview(s, limit=limit, only_issues=only_issues,
+                                     visible=lambda col: viewing.visible_cond(s, c.p, col))   # N10: antes do limite
         ok = viewing.allowed_uids(s, c.p, [r["study_uid"] for r in rows])       # A03-001: escopo por vínculo
         return {"studies": [r for r in rows if r["study_uid"] in ok]}
 
