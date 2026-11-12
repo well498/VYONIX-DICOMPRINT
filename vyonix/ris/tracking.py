@@ -30,15 +30,16 @@ def _minutes(a: datetime | None, b: datetime | None) -> int | None:
 
 def _site_cond(sites):
     """P0 0.3.2: pedido pela unidade do pedido/atendimento, ou pela do estudo conciliado."""
-    from sqlalchemy import or_
+    from sqlalchemy import and_, or_
     from vyonix.auth.scope import SENTINEL, where_site
     from vyonix.clinical.models import Study
     from vyonix.clinical.service import order_site_expr
     if sites is None:
         return where_site(order_site_expr(), None)
     ids = list(sites) or [SENTINEL]
+    # revisão A04 N8: a unidade do pedido decide; o estudo só desempata quando o pedido não tem unidade
     by_study = select(Study.order_id).where(Study.site_id.in_(ids), Study.order_id.is_not(None))
-    return or_(order_site_expr().in_(ids), Order.id.in_(by_study))
+    return or_(order_site_expr().in_(ids), and_(order_site_expr().is_(None), Order.id.in_(by_study)))
 
 
 def exam_center(s: Session, *, date_from: date, date_to: date, modality: str | None = None, stage: str | None = None,

@@ -33,10 +33,14 @@ def _scope(c: Ctx, s):
     """Escopo da fila de laudos. Médico: vínculos vigentes. Demais (coordenação, quem distribui, leitura): unidades
     do papel — papel numa unidade não vê a fila de outra (MISSÃO 2 V-02). P0 0.3.2: exame sem unidade só é alcançado
     por papel em todas as unidades (ou médico com vínculo com a organização inteira)."""
+    from vyonix.auth import scope
     from vyonix.report import queue
     sc = queue.scope(s, c.p.user_id, can_assign=c.p.has("report.assign"))
     if sc is not None:
-        return sc
+        # revisão A04 N3: vínculo do médico ∩ unidades do papel (papel numa unidade não alcança outra)
+        roles = scope.sites(c.p, ("report.read", "report.write"))
+        eff = scope.combine(roles, sc)
+        return (True, set()) if eff is None else (False, eff)
     perms = [x for x in ("report.assign", "report.read", "report.write") if c.p.has(x)]
     if not perms or any(c.p.global_has(x) for x in perms):
         return None
@@ -92,13 +96,23 @@ def _author(c: Ctx, s, rid: uuid.UUID, *, action: str, reviewer: bool = False) -
                        shared=shared, action=action)
 
 
+def _assign_at(c: Ctx, s, rid: uuid.UUID) -> bool:
+    """Revisão A04 N4: ``report.assign`` só vale na unidade do exame do laudo (sem unidade = papel em todas)."""
+    from vyonix.auth import scope
+    from vyonix.clinical.models import Study
+    from vyonix.report.models import Report
+    r = s.get(Report, rid)
+    st = s.get(Study, r.study_id) if r is not None else None
+    return st is not None and scope.can(c.p, "report.assign", st.site_id)
+
+
 def _can_read_draft(c: Ctx, s, rid: uuid.UUID) -> None:
     """Conteúdo de rascunho/revisão (e o histórico de revisões): responsável, revisor, compartilhamento ou quem
     distribui (``report.assign``). Laudo liberado segue o escopo de unidade."""
     from vyonix.report.models import Report
     from vyonix.ris import prep
     r = s.get(Report, rid)
-    if r is None or r.status not in ("draft", "review") or c.p.has("report.assign"):
+    if r is None or r.status not in ("draft", "review") or _assign_at(c, s, rid):
         return
     if r.study_id in prep.shared_studies(s, c.p.user_id):     # compartilhamento (inclusive só leitura)
         return
@@ -312,7 +326,7 @@ def return_review(rid: uuid.UUID, body: ReviewReturnIn, c: Ctx = Depends(needs("
 def draft_revisions(rid: uuid.UUID, c: Ctx = Depends(needs("report.read"))):
     with c.session() as s:
         _in_scope(c, s, report_id=rid)
-        if not c.p.has("report.assign"):
+        if not _assign_at(c, s, rid):
             _author(c, s, rid, action="ler_revisoes", reviewer=_is_reviewer(c, s, rid))
         return {"items": rep.revisions(s, rid)}
 
@@ -394,7 +408,7 @@ class BatchIn(BaseModel):
 
 
 @router.post("/reports/finalize-batch")
-def finalize_batch(body: BatchIn, c: Ctx = Depends(needs("report.sign"))):
+def finalize_batch(body: BatchIn, request: Request, c: Ctx = Depends(needs("report.sign"))):
     """Liberação de vários laudos do próprio médico: autorização explícita (``confirm``) e senha uma vez; cada laudo
     é liberado e auditado individualmente (com o identificador do lote); uma falha não afeta os demais."""
     from vyonix.errors import ValidationFailed, VyonixError
@@ -418,6 +432,9 @@ def finalize_batch(body: BatchIn, c: Ctx = Depends(needs("report.sign"))):
                                  batch=batch)
                 results.append({"report_id": str(rid), "ok": True, "version": r.version})
         except VyonixError as exc:
+            info = getattr(exc, "audit_denied", None)
+            if info is not None:                 # revisão A04 N11: recusa por escopo dentro do lote também é auditada
+                request.app.state.deny_log.record(c.plat.db, request, info)
             results.append({"report_id": str(rid), "ok": False, "code": exc.code, "message": str(exc)})
     return {"batch": batch, "released": sum(1 for x in results if x["ok"]), "results": results}
 
@@ -1054,7 +1071,7 @@ def send_to_pacs(rid: uuid.UUID, c: Ctx = Depends(needs("report.write"))):
     from vyonix.report.models import Report
     with c.session() as s:
         _in_scope(c, s, report_id=rid, write=True)
-        if not c.p.has("report.assign"):
+        if not _assign_at(c, s, rid):
             _author(c, s, rid, action="enviar_pacs")
         if not registry.is_enabled(s, "pacs"):
             raise Conflict("O VYONIX PACS não está habilitado nesta organização.")
@@ -1084,7 +1101,9 @@ def _production_target(c: Ctx, s, physician_id: uuid.UUID | None):
         if own is None:
             raise NotFound("Seu usuário não tem cadastro médico nesta instituição: não há produção a mostrar.")
         return own.id
-    c.require("report.production.all")          # produção de outro médico: permissão específica
+    # produção de outro médico: permissão específica, em todas as unidades (revisão A04 N5 — os indicadores
+    # cobrem todas as unidades do médico)
+    c.require_global("report.production.all")
     return physician_id
 
 
@@ -1107,7 +1126,7 @@ def production_report(date_from: date | None = None, date_to: date | None = None
             audit.record(s, action="report.production.view", target_type="physician", target_id=pid,
                          details={"format": format, **data["period"]}, **c.actor)
         if format == "json":
-            data["can_see_all"] = c.p.has("report.production.all")
+            data["can_see_all"] = c.p.global_has("report.production.all")
             return data
         name = f"producao-{data['period']['from']}-a-{data['period']['to']}"
         if format == "csv":
@@ -1121,7 +1140,7 @@ def production_report(date_from: date | None = None, date_to: date | None = None
 
 
 @router.get("/production/physicians")
-def production_physicians(c: Ctx = Depends(needs("report.production.all"))):
+def production_physicians(c: Ctx = Depends(needs_global("report.production.all"))):
     from sqlalchemy import select
     from vyonix.report.models import Physician
     with c.session() as s:

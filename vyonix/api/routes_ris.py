@@ -67,7 +67,7 @@ def _order_site(c: Ctx, s, order_id: uuid.UUID, *perms: str):
 @router.get("/orders")
 def pending(c: Ctx = Depends(needs("ris.schedule.manage"))):
     with c.session() as s:
-        return {"items": ris.pending_orders(s, sites=scope.sites(c.p, "ris.schedule.manage"))}
+        return {"items": ris.pending_orders(s, sites=scope.eff_sites(s, c.p, "ris.schedule.manage"))}
 
 
 class RoomIn(BaseModel):
@@ -117,7 +117,10 @@ def status(sid: uuid.UUID, body: StatusIn, c: Ctx = Depends(needs("ris.schedule.
         from vyonix.ris.models import Schedule
         sc_ = s.get(Schedule, sid)
         if sc_ is not None:                     # P0 0.3.2: agendamento de outra unidade → 404
-            _order_site(c, s, sc_.order_id, "ris.schedule.manage", "ris.exam.perform")
+            # revisão A04 N2: a permissão que autoriza ESTA mudança precisa valer na unidade do pedido
+            perms = ("ris.schedule.manage", "ris.exam.perform") if body.status in (
+                "arrived", "in_progress", "completed") else ("ris.schedule.manage",)
+            _order_site(c, s, sc_.order_id, *perms)
         st = ris.set_status(s, sid, body.status, reason=body.reason, **c.actor)
         return {"id": str(st.id), "status": st.status}
 
@@ -129,7 +132,7 @@ def worklist(date_from: date | None = None, date_to: date | None = None, modalit
     with c.session() as s:
         return {"items": ris.worklist(s, date_from=date_from, date_to=date_to, modality=modality,
                                       station_aet=station_aet, include_done=include_done,
-                                      sites=scope.sites(c.p, "ris.schedule.read"))}
+                                      sites=scope.eff_sites(s, c.p, "ris.schedule.read"))}
 
 
 @router.get("/exam-center")
@@ -144,7 +147,7 @@ def exam_center(date_from: date, date_to: date, modality: str | None = None, sta
         raise ValidationFailed("Etapa inválida.")
     with c.session() as s:
         return tracking.exam_center(s, date_from=date_from, date_to=date_to, modality=modality, stage=stage,
-                                    late_only=late_only, sites=scope.sites(c.p, "ris.schedule.read"))
+                                    late_only=late_only, sites=scope.eff_sites(s, c.p, "ris.schedule.read"))
 
 
 @router.get("/technician-panel")
@@ -153,7 +156,7 @@ def technician_panel(day: date | None = None, c: Ctx = Depends(needs("ris.schedu
     from vyonix.ris import technician
     with c.session() as s:
         return technician.panel(s, day=day, with_images=c.p.has("pacs.studies.read"),
-                                sites=scope.sites(c.p, "ris.schedule.read"))
+                                sites=scope.eff_sites(s, c.p, "ris.schedule.read"))
 
 
 # ------------------------------------------------------------------ Central de Exames: preparação do estudo
@@ -184,8 +187,8 @@ def _prep_scope(c: Ctx, s, study_id: uuid.UUID) -> None:
         if not queue.allowed(sc, st.site_id):
             scope.deny(c, "study", st.id, "report.read", "no_site" if st.site_id is None else "physician_link",
                        physician=True)
-        return
-    _site(c, s, study_id, *_READ_PERMS)             # MISSÃO 2 R-04: não-médico também respeita a unidade
+    # MISSÃO 2 R-04 + revisão A04 N3: o papel também precisa valer na unidade (para o médico, além do vínculo)
+    _site(c, s, study_id, *_READ_PERMS)
 
 
 _READ_PERMS = ("ris.exam.prepare", "ris.schedule.read", "report.read", "report.assign")
@@ -259,7 +262,7 @@ def prep_queue(date_from: date | None = None, date_to: date | None = None, modal
     with c.session() as s:
         return prep.queue(s, c.p.user_id, date_from=date_from, date_to=date_to, modality=modality, station=station,
                           site_id=site_id, stage_filter=stage, priority=priority, patient=patient, accession=accession,
-                          sites=scope.sites(c.p, "ris.exam.prepare"))
+                          sites=scope.eff_sites(s, c.p, "ris.exam.prepare"))
 
 
 @router.get("/studies/{study_id}/timeline")
@@ -284,8 +287,8 @@ def _study_ok_fn(c: Ctx, s):
             return False
         if st.id in shared:
             return True
-        if sc is not None:
-            return queue.allowed(sc, st.site_id)
+        if sc is not None and not queue.allowed(sc, st.site_id):
+            return False
         return scope.can(c.p, _READ_PERMS, st.site_id)
     return ok
 
@@ -299,10 +302,14 @@ def patient_history(patient_id: uuid.UUID, c: Ctx = Depends(needs("clinical.pati
     _prep_reader(c)
     with c.session() as s:
         from vyonix.clinical import service as clinical
-        psites = scope.sites(c.p, "clinical.patients.read")
+        psites = scope.eff_sites(s, c.p, "clinical.patients.read")
         if not clinical.patient_in_scope(s, patient_id, psites, allow_unlinked=False):
             scope.deny(c, "patient", patient_id, "clinical.patients.read", "patient_scope", not_found=True)
-        out = timeline.patient_history(s, patient_id, study_ok=_study_ok_fn(c, s),
+        phys = scope.physician_scope(s, c.p)
+
+        def site_ok(sid) -> bool:                   # pedidos e atendimentos: mesma regra de unidade dos exames
+            return scope.can(c.p, _READ_PERMS, sid) and (phys is None or queue.allowed(phys, sid))
+        out = timeline.patient_history(s, patient_id, study_ok=_study_ok_fn(c, s), site_ok=site_ok,
                                        shared=prep.shared_studies(s, c.p.user_id))
         out["can_view_images"] = c.p.has("pacs.studies.read")
         out["can_read_reports"] = c.p.has("report.read")
@@ -419,6 +426,9 @@ async def prep_attach(study_id: uuid.UUID, request: Request, kind: str = "docume
                       c: Ctx = Depends(needs("ris.exam.prepare"))):
     from vyonix.errors import ValidationFailed
     from vyonix.ris import prep
+    with c.session() as s:                 # revisão A04 N12: autoriza ANTES de ler o corpo (até 25 MB)
+        _require(c, s)
+        _site(c, s, study_id, "ris.exam.prepare")
     data = bytearray()
     async for chunk in request.stream():
         data += chunk
@@ -527,7 +537,9 @@ def _return_allowed(c: Ctx, s, study_id: uuid.UUID) -> None:
     from vyonix.report import authorship
     from vyonix.report.models import Physician
     from sqlalchemy import select as _select
-    if c.p.has("report.assign"):
+    from vyonix.clinical.models import Study
+    st = s.get(Study, study_id)
+    if st is not None and scope.can(c.p, "report.assign", st.site_id):   # revisão A04 N4: na unidade do exame
         return
     resp = authorship.responsible(s, study_id)
     if resp is None:

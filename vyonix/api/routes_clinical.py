@@ -83,15 +83,16 @@ def _patient(s, p, full: bool = False) -> dict:
     return out
 
 
-def _psites(c: Ctx, perm: str) -> set | None:
+def _psites(c: Ctx, perm: str, s=None) -> set | None:
+    """Unidades do papel; com a sessão, também o vínculo vigente do médico (revisão A04 N3)."""
     from vyonix.auth import scope
-    return scope.sites(c.p, (perm,))
+    return scope.eff_sites(s, c.p, (perm,)) if s is not None else scope.sites(c.p, (perm,))
 
 
 def _patient_guard(c: Ctx, s, pid: uuid.UUID, perm: str) -> None:
     """P0 0.3.2: paciente fora das unidades do usuário → 404 (sem revelar existência) + auditoria."""
     from vyonix.auth import scope
-    sites = _psites(c, perm)
+    sites = _psites(c, perm, s)
     if not clinical.patient_in_scope(s, pid, sites, allow_unlinked=c.p.has("clinical.patients.write")):
         clinical.get_patient(s, pid)                     # inexistente: 404 normal
         scope.deny(c, "patient", pid, perm, "patient_scope", not_found=True)
@@ -103,7 +104,7 @@ def _order_guard(c: Ctx, s, oid: uuid.UUID, perm: str):
     o = s.get(Order, oid)
     if o is None:
         raise NotFound("Pedido não encontrado.")
-    c.require_at(perm, clinical.order_site(s, o), target_type="order", target_id=o.id, not_found=True)
+    c.require_at(perm, clinical.order_site(s, o), target_type="order", target_id=o.id, not_found=True, s=s)
     return o
 
 
@@ -127,8 +128,11 @@ def patients(q: str | None = None, identifier: str | None = None, limit: int = 5
              c: Ctx = Depends(needs("clinical.patients.read"))):
     with c.session() as s:
         return [_patient(s, p) for p in clinical.search_patients(
-            s, q=q, identifier=identifier, limit=limit, sites=_psites(c, "clinical.patients.read"),
-            allow_unlinked=c.p.has("clinical.patients.write"))]
+            s, q=q, identifier=identifier, limit=limit, sites=_psites(c, "clinical.patients.read", s),
+            # revisão A04 N6: paciente ainda sem unidade só aparece numa busca dirigida (identificador exato ou
+            # nome com 3+ letras), nunca na listagem aberta de quem é restrito a unidades
+            allow_unlinked=c.p.has("clinical.patients.write") and bool(
+                (identifier or "").strip() or len((q or "").strip()) >= 3))]
 
 
 @router.post("/patients", status_code=201)
@@ -199,7 +203,7 @@ def orders(patient_id: uuid.UUID | None = None, status: str | None = None, acces
            c: Ctx = Depends(needs("clinical.orders.read"))):
     with c.session() as s:
         out = [_order(o) for o in clinical.orders(s, patient_id=patient_id, status=status, accession=accession,
-                                                  sites=_psites(c, "clinical.orders.read"))]
+                                                  sites=_psites(c, "clinical.orders.read", s))]
         if accession:                                   # busca por número de acesso: mostra o paciente para conferência
             from vyonix.clinical.models import Patient
             for o in out:
@@ -218,7 +222,7 @@ def create_order(body: OrderIn, c: Ctx = Depends(needs("clinical.orders.write"))
             from vyonix.clinical.models import Encounter
             enc = s.get(Encounter, data["encounter_id"])
             site = enc.site_id if enc else site
-        mine = _psites(c, "clinical.orders.write")
+        mine = _psites(c, "clinical.orders.write", s)
         if site is None and mine is not None:              # P0 0.3.2: usuário restrito sempre informa a unidade
             if len(mine) != 1:
                 raise ValidationFailed("Informe a unidade do pedido.", details={"field": "site_id"})
@@ -245,7 +249,7 @@ def studies(patient_id: uuid.UUID | None = None, unreconciled: bool = False, una
     with c.session() as s:
         # P0 0.3.2: filtro no SQL antes do limite; estudo sem unidade só para quem tem o papel em todas as unidades
         return [_study(x) for x in clinical.studies(s, patient_id=patient_id, unreconciled=unreconciled,
-                                                    unassigned=unassigned, sites=_psites(c, "clinical.studies.read"))]
+                                                    unassigned=unassigned, sites=_psites(c, "clinical.studies.read", s))]
 
 
 @router.post("/studies/{sid}/reconcile")
@@ -254,6 +258,6 @@ def reconcile(sid: uuid.UUID, body: ReconcileIn, c: Ctx = Depends(needs("clinica
         from vyonix.clinical.models import Study
         st = s.get(Study, sid)
         if st is not None:                                   # S-02 + P0 0.3.2: unidade do estudo e do pedido
-            c.require_at("clinical.studies.reconcile", st.site_id, target_type="study", target_id=st.id)
+            c.require_at("clinical.studies.reconcile", st.site_id, target_type="study", target_id=st.id, s=s)
             _order_guard(c, s, body.order_id, "clinical.studies.reconcile")
         return _study(clinical.reconcile(s, sid, body.order_id, **c.actor))

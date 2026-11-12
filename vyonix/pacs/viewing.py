@@ -57,7 +57,8 @@ def scope_for(s: Session, p) -> PacsScope | None:
     from vyonix.report import queue
     roles = uscope.sites(p, ("pacs.studies.read", "pacs.admin"))
     phys = None
-    if not (p.has("pacs.admin") or p.has("report.assign")) and settings_of(s).get("access") == "linked":
+    if not (p.has("pacs.admin") or p.has("report.assign")):
+        # revisão A04 N3 (P0 0.3.2): o vínculo vigente do médico vale SEMPRE, também no modo "organization"
         phys = queue.scope(s, p.user_id, can_assign=False)
     if roles is None and phys is None:
         return None

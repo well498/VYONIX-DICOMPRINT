@@ -10,7 +10,7 @@ O módulo é `vyonix/auth/scope.py`.
 | Regra do proprietário | Como ficou |
 |---|---|
 | 1. Cada técnico vê só as suas unidades | Toda rota que lê ou altera exame, pedido, agendamento, paciente, laudo ou imagem confere a permissão **na unidade do objeto**. As listas filtram no SQL, antes do LIMIT. |
-| 2. Quem tem várias unidades alcança só essas | `scope.sites()` devolve o conjunto exato de unidades do papel. Papel em todas as unidades = sem filtro. |
+| 2. Quem tem várias unidades alcança só essas | `scope.sites()` devolve o conjunto exato de unidades do papel. Papel em todas as unidades = sem filtro. Para **médico**, vale a interseção papel × vínculo vigente (`scope.eff_sites`), também nas imagens. |
 | 3. Exame sem unidade fica restrito | `site_id NULL` só passa para quem tem a permissão **em todas** as unidades, ou para o médico vinculado à instituição inteira. Isso substitui a exceção V-03 da Missão 2. |
 | 4. Backend, APIs, banco, PACS e visualizadores | Rotas RIS, clínicas e de laudos. No PACS: QIDO filtrado no SQL; WADO, metadata, séries e qualidade com 404; lançador do Viewer e anteriores; Weasis revalidado a cada uso da credencial; STOW sem acrescentar imagens a estudo de outra unidade. |
 | 5. Instituição é a fronteira principal | Continua o RLS por `tenant_id`. A simulação roda no papel da aplicação, com RLS. |
@@ -46,7 +46,7 @@ Todos os 20 estudos DEMO da instância do proprietário estão sem unidade. Depo
 
 ## Banco de dados
 
-A migração `clinical_0001` (novo ramo `clinical`, depois de `core_0004`) só **acrescenta**; não apaga nem altera nada que já existe:
+A migração `clinical_0001` (novo ramo `clinical`, depende de `core_0001`) só **acrescenta**; não apaga nem altera nada que já existe:
 
 - `orders.site_id`;
 - `studies.site_source`, `site_set_at` e `site_set_by`;
@@ -67,9 +67,29 @@ A migração `clinical_0001` (novo ramo `clinical`, depois de `core_0004`) só *
     - código `out_of_scope` do médico;
     - expectativa V-03.
 
+## Revisão independente A04 (09/11/2026) e correções
+
+A04 encontrou 3 vazamentos P1 e 9 itens P2/P3. Os P1 foram reproduzidos com dados fictícios e todos têm teste.
+
+| # | Sev. | Achado | Correção | Teste |
+|---|---|---|---|---|
+| N1 | P1 | Histórico do paciente mostrava pedido/atendimento de outra unidade (accession, solicitante, sala) | Itens de outra unidade aparecem só com data e tipo (`restricted`) | p26 |
+| N2 | P1 | Usuário com papéis diferentes em duas unidades cancelava agendamento da outra | A permissão que autoriza aquela mudança precisa valer na unidade do pedido | p27 |
+| N3 | P1 | Médico com papel em todas as unidades e vínculo só numa via listas e imagens das demais e os exames sem unidade | Interseção papel × vínculo em listas clínicas/RIS, fila de laudos, PACS e visualizadores. **Muda o modo `organization` do Viewer para médicos:** o vínculo passa a valer sempre. | p28 |
+| N4 | P2 | `report.assign` de uma unidade liberava rascunho, revisões, envio ao PACS e devolução de outra | `report.assign` conferido na unidade do exame | — |
+| N5 | P2 | Produção médica de outras unidades com `report.production.all` de uma unidade | Exige a permissão em todas as unidades | p29 |
+| N6 | P2 | Listagem aberta de pacientes sem vínculo para quem cadastra numa unidade | Só em busca dirigida (identificador ou nome com 3+ letras) | p30 |
+| N7 | P2 | Equipamento de uma unidade consultava (C-FIND, MWL, C-MOVE/C-GET) a instituição inteira | Equipamento com unidade cadastrada só enxerga essa unidade | — |
+| N8 | P2 | Central de Exames: pedido da B ligado a estudo da A aparecia na A | A unidade do pedido decide; o estudo só desempata sem unidade no pedido | — |
+| N9 | P2 | C-STORE normal entrava sem unidade | Estudo novo herda a unidade do equipamento cadastrado (`no_dicom`) | — |
+| N11 | P3 | Lote de liberação e lançadores não auditavam a recusa | `access.denied` também nesses caminhos | — |
+| N12 | P3 | Upload de anexo lia até 25 MB antes de autorizar | Autoriza antes de ler o corpo | — |
+| N10 | P3 | Críticos e qualidade filtram depois do limite (só disponibilidade, sem vazamento) | Pendente | — |
+
 ## Pendências e decisões do proprietário
 
 1. **Financeiro em instalações existentes.** O papel "financeiro" já ativado continua com `ris.schedule.read` até o administrador removê-lo. O ajuste automático alteraria um papel que pode ter sido personalizado, por isso fica para aprovação.
 2. **Compartilhar exame com usuário de outra unidade.** Hoje é recusado. A permissão `ris.exam.share.cross_site` foi reservada, mas não foi criada.
 3. **Simulação dos 20 estudos DEMO.** Rodar na instância do proprietário somente com autorização dele.
 4. **Frontend.** Os menus já seguem as permissões. Faltam os botões por exame (capabilities por unidade) na nova Central.
+5. **Médicos no modo `organization` do Viewer (N3).** Agora só veem imagens das unidades onde têm vínculo vigente. Se o proprietário quiser que médicos vejam a instituição inteira, isso precisa ser decidido e configurado explicitamente.

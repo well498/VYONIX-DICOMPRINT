@@ -147,7 +147,7 @@ def priors(s: Session, study_id: uuid.UUID, *, limit: int = 30) -> dict[str, Any
 
 
 def patient_history(s: Session, patient_id: uuid.UUID, *, scope=None, shared: set | None = None,
-                    study_ok=None) -> dict[str, Any]:
+                    study_ok=None, site_ok=None) -> dict[str, Any]:
     """Histórico do paciente na instituição, um item por exame (sem duplicar): estudos com pedido, agendamento,
     imagens no PACS, documentos (séries DOC/SR, anexos da preparação), situação do laudo e atendimento; pedidos ainda
     sem estudo (agendados, cancelados); atendimentos sem pedido. Mais recentes primeiro.
@@ -231,6 +231,11 @@ def patient_history(s: Session, patient_id: uuid.UUID, *, scope=None, shared: se
         if o.encounter_id:
             used_encs.add(o.encounter_id)
         first = ss[0] if ss else None
+        o_site = o.site_id or (encs[o.encounter_id].site_id if o.encounter_id in encs else None)
+        if site_ok is not None and not site_ok(o_site):     # revisão A04 N1: pedido de outra unidade, só data e tipo
+            items.append({"kind": "order", "date": (first.scheduled_at if first else o.created_at).date().isoformat(),
+                          "restricted": True})
+            continue
         items.append({"kind": "order", "date": (first.scheduled_at if first else o.created_at).date().isoformat(),
                       "modality": first.modality if first else None, "restricted": False,
                       "description": (procs[o.procedure_id].name if o.procedure_id in procs else None)
@@ -239,6 +244,10 @@ def patient_history(s: Session, patient_id: uuid.UUID, *, scope=None, shared: se
                       "requester": o.requester, "encounter": enc_of(o)})
     for e in encs.values():
         if e.id in used_encs:
+            continue
+        if site_ok is not None and not site_ok(e.site_id):  # revisão A04 N1: atendimento de outra unidade
+            items.append({"kind": "encounter", "date": (e.arrived_at or e.created_at).date().isoformat(),
+                          "restricted": True})
             continue
         items.append({"kind": "encounter", "date": (e.arrived_at or e.created_at).date().isoformat(),
                       "restricted": False, "encounter": {"number": e.number, "status": e.status,

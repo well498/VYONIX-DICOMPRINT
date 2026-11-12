@@ -134,7 +134,8 @@ class QRServer:
             with self._lock:
                 self._ctx[id(assoc)] = {"tenant": tid, "calling": calling.upper(), "address": address,
                                         "can_receive": bool(node.can_receive), "can_query": True,
-                                        "can_store": bool(node.can_store)}
+                                        "can_store": bool(node.can_store),
+                                        "site": node.site_id}       # revisão A04 N7: escopo do equipamento
         except Exception:  # noqa: BLE001 - na dúvida, recusa
             log.exception("Q/R: falha ao avaliar associação; recusando")
             assoc.acse.send_reject(0x02, 0x01, 0x01)
@@ -188,9 +189,14 @@ class QRServer:
         level = _value(ident, "QueryRetrieveLevel").upper()
         try:
             with self.plat.db.session(info["tenant"]) as s:
-                if level == "STUDY":
+                site = info.get("site")
+                uid_q = _value(ident, "StudyInstanceUID")
+                if site is not None and level in ("SERIES", "IMAGE") and not _in_site(s, uid_q, site):
+                    results = []                     # revisão A04 N7: estudo de outra unidade = inexistente
+                elif level == "STUDY":
                     params = {k: _value(ident, kw) for k, kw in STUDY_KEYS.items() if _value(ident, kw)}
-                    results = pacs.search_studies(s, params, limit=500)
+                    results = pacs.search_studies(s, params, limit=500,
+                                                  visible=(lambda col: _site_uids(col, site)) if site else None)
                 elif level == "SERIES":
                     results = pacs.search_series(s, _value(ident, "StudyInstanceUID"),
                                                  {"Modality": _value(ident, "Modality")} if _value(ident, "Modality") else {})
@@ -242,8 +248,9 @@ class QRServer:
             if not ris.workflow(s)["worklist"]:
                 yield 0xC001, None                                   # worklist desligada no fluxo da instituição
                 return
+            site = info.get("site")
             entries = ris.worklist(
-                s, date_from=d_from, date_to=d_to,
+                s, date_from=d_from, date_to=d_to, sites={site} if site is not None else None,
                 modality=(_value(sps, "Modality") if sps is not None else "") or None,
                 station_aet=(_value(sps, "ScheduledStationAETitle") if sps is not None else "") or None,
                 patient_id=_value(ident, "PatientID").replace("*", "") or None,
@@ -379,6 +386,8 @@ class QRServer:
                     [u for u in _value(ident, "SOPInstanceUID").split(",") if u] or None)
             except NotFound:
                 items = []
+            if info.get("site") is not None and not _in_site(s, _value(ident, "StudyInstanceUID"), info["site"]):
+                items = []                           # revisão A04 N7: equipamento de uma unidade não recupera outra
             refs = [(i.backend_id, i.sha256, i.sop_class_uid, i.transfer_syntax) for i in items]
             host, port = node.host, node.port
             if items:
@@ -431,6 +440,8 @@ class QRServer:
                     [u for u in _value(ident, "SOPInstanceUID").split(",") if u] or None)
             except NotFound:
                 items = []
+            if info.get("site") is not None and not _in_site(s, _value(ident, "StudyInstanceUID"), info["site"]):
+                items = []                           # revisão A04 N7: equipamento de uma unidade não recupera outra
             refs = [(i.backend_id, i.sha256) for i in items]
             if items:
                 pacs.open_study(s, _value(ident, "StudyInstanceUID"), actor=f"dicom:{info['calling']}",
@@ -452,3 +463,17 @@ class QRServer:
             audit.record(s, actor=f"dicom:{info['calling']}", action="pacs.qr.get", target_type="dicom",
                          details={"level": level, "calling_ae": info["calling"], "instances": len(refs),
                                   "sent": sent, "integrity_failures": failed}, ip=info["address"])
+
+
+def _site_uids(col, site):
+    """Equipamento cadastrado numa unidade só enxerga estudos dessa unidade (revisão A04 N7)."""
+    from sqlalchemy import select
+    from vyonix.clinical.models import Study
+    return col.in_(select(Study.study_instance_uid).where(Study.site_id == site))
+
+
+def _in_site(s, study_uid: str, site) -> bool:
+    from sqlalchemy import select
+    from vyonix.clinical.models import Study
+    return bool(study_uid) and s.execute(select(Study.id).where(Study.study_instance_uid == study_uid,
+                                                                Study.site_id == site)).first() is not None

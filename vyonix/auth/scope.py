@@ -71,6 +71,7 @@ def study_scope(s, p, perms) -> StudyScope:
 
 
 def study_ok(sc: StudyScope | None, st) -> bool:
+    """Compartilhado explicitamente, ou (unidade do papel **e**, para médico, vínculo vigente) — revisão A04 N3."""
     if sc is None:
         return True
     if getattr(st, "id", None) in sc.shared:
@@ -78,11 +79,35 @@ def study_ok(sc: StudyScope | None, st) -> bool:
     site = getattr(st, "site_id", None)
     if sc.physician is not None:
         from vyonix.report import queue
-        if queue.allowed(sc.physician, site):
-            return True
+        if not queue.allowed(sc.physician, site):
+            return False
     if sc.roles is None:
         return True
     return site is not None and site in sc.roles
+
+
+def physician_scope(s, p):
+    """Vínculo vigente do médico (``report.queue.scope``): None = não é médico ou distribui laudos."""
+    try:
+        from vyonix.report import queue
+        return queue.scope(s, p.user_id, can_assign=p.has("report.assign"))
+    except Exception:                                         # noqa: BLE001 - módulo de laudos ausente
+        return None
+
+
+def combine(roles: set | None, phys) -> set | None:
+    """Interseção unidades do papel × vínculo do médico (revisão A04 N3). None = todas as unidades."""
+    if phys is None:
+        return roles
+    whole, psites = phys
+    if roles is None:
+        return None if whole else set(psites)
+    return set(roles) if whole else set(roles) & set(psites)
+
+
+def eff_sites(s, p, perms) -> set | None:
+    """Unidades efetivas para listas: papel com a permissão e, se for médico, só onde tem vínculo vigente."""
+    return combine(sites(p, perms), physician_scope(s, p))
 
 
 def deny(c, target_type: str, target_id, perm: str | Iterable[str], reason: str, *, not_found: bool = False,

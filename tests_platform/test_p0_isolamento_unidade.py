@@ -442,6 +442,72 @@ class UnitIsolation(_prep.Prep):
         self.assertEqual(self.u["tec_a"].get(f"/api/v1/ris/prep/{old}").status_code, 200)
         self.assertIn(self.u["tec_b"].get(f"/api/v1/ris/prep/{old}").status_code, DENIED)
 
+    # ------------------------------------------------------------------ revisão independente A04 (N1–N6)
+    def _order_b_without_study(self):
+        from vyonix.clinical import service as clinical
+        from vyonix.ris import service as ris
+        with _prep.db.session(self.t) as s:
+            enc = clinical.create_encounter(s, patient_id=self.pat, site_id=uuid.UUID(self.B), actor="t").id
+            o = clinical.create_order(s, patient_id=self.pat, encounter_id=enc, requester="Dr Solicitante B Fict",
+                                      actor="recepcao")
+            sc = ris.schedule(s, o.id, scheduled_at=datetime.now(timezone.utc) + timedelta(hours=2),
+                              room="SALA-B-FICT", modality="CT", actor="recepcao")
+            return str(o.id), o.accession, str(sc.id)
+
+    def test_p26_history_hides_orders_of_other_unit(self):          # A04 N1
+        _oid, acc, _ = self._order_b_without_study()
+        r = self.u["tec_a"].get(f"/api/v1/ris/patients/{self.pat}/history")
+        self.assertEqual(r.status_code, 200, r.text)
+        body = r.text
+        self.assertNotIn(acc, body, "número de acesso de pedido da B no histórico da A")
+        self.assertNotIn("Dr Solicitante B Fict", body)
+        self.assertNotIn("SALA-B-FICT", body)
+        self.assertTrue(any(x["kind"] == "order" and x["restricted"] for x in r.json()["items"]))
+        r = self.u["tec_b"].get(f"/api/v1/ris/patients/{self.pat}/history")
+        self.assertIn(acc, r.text, "a própria unidade continua vendo o pedido")
+
+    def test_p27_mixed_roles_cannot_cancel_other_unit(self):         # A04 N2
+        _o, _a, sid = self._order_b_without_study()
+        c = self._user("mix_ab", [("recepcionista", self.A), ("tecnico", self.B)])
+        r = c.patch(f"/api/v1/ris/schedules/{sid}/status", json={"status": "cancelled", "reason": "indevido"})
+        self.assertIn(r.status_code, DENIED, r.text)
+        r = c.patch(f"/api/v1/ris/schedules/{sid}/status", json={"status": "arrived"})
+        self.assertEqual(r.status_code, 200, "o técnico da B registra a chegada na B: " + r.text)
+
+    def test_p28_global_role_physician_limited_to_links(self):      # A04 N3
+        c = self._user("med_g", [("medico", None)])
+        pid = self.admin.post("/api/v1/report/physicians", json={
+            "user_id": self._uid_of("med_g"), "full_name": "Dr. Global Ficticio", "crm": "9002",
+            "crm_uf": "PB"}).json()["id"]
+        self.admin.post(f"/api/v1/report/physicians/{pid}/links", json={"site_id": self.A, "valid_from": "2026-01-01"})
+        st = {x["id"] for x in c.get("/api/v1/studies").json()}
+        self.assertIn(self.s["a"], st)
+        self.assertNotIn(self.s["b"], st)
+        self.assertNotIn(self.s["n"], st)
+        u = _uids(c.get(DW + "/studies"))
+        self.assertIn(self.uid["a"], u)
+        self.assertFalse({self.uid["b"], self.uid["n"]} & u, u)
+        self.assertIn(c.get(DW + f"/studies/{self.uid['b']}/metadata").status_code, DENIED)
+        self.assertIn(c.get(f"/api/v1/pacs/viewer/launch?study_uid={self.uid['b']}").status_code, DENIED)
+        self.assertIn(c.get(f"/api/v1/ris/prep/{self.s['b']}").status_code, DENIED)
+        self.assertIn(c.post("/api/v1/report/reports", json={"study_id": self.s["b"]}).status_code, DENIED)
+        wl = {x["study_id"] for x in c.get("/api/v1/report/worklist").json()["items"]}
+        self.assertFalse({self.s["b"], self.s["n"]} & wl, wl)
+
+    def test_p29_production_all_requires_every_unit(self):           # A04 N5
+        c = self._user("sup_a", [("supervisor", self.A)])
+        self.assertIn(c.get("/api/v1/report/production/physicians").status_code, DENIED)
+        self.assertIn(c.get(f"/api/v1/report/production?physician_id={self.med_a_pid}").status_code, DENIED)
+
+    def test_p30_unlinked_patients_only_by_directed_search(self):    # A04 N6
+        from vyonix.clinical import service as clinical
+        with _prep.db.session(self.t) as s:
+            clinical.create_patient(s, name="Paciente Sem Vinculo Ficticio", actor="t")
+        names = [p["name"] for p in self.u["recep_a"].get("/api/v1/patients").json()]
+        self.assertNotIn("Paciente Sem Vinculo Ficticio", names)
+        names = [p["name"] for p in self.u["recep_a"].get("/api/v1/patients?q=Vinculo").json()]
+        self.assertIn("Paciente Sem Vinculo Ficticio", names, "a recepção ainda encontra para cadastrar o pedido")
+
 
 if __name__ == "__main__":
     import unittest

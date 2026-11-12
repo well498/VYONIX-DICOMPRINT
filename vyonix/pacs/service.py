@@ -244,7 +244,10 @@ def sync(s: Session, backend: PacsBackend, *, limit: int = 100, max_batches: int
                 continue
             try:
                 with s.begin_nested():
-                    r = ingest(s, backend, backend.fetch(ch.backend_id), actor="pacs-sync", via="dimse")
+                    # revisão A04 N9: equipamento cadastrado numa unidade → estudo novo herda a unidade dele
+                    nsite = getattr(node, "site_id", None) if node is not None else None
+                    r = ingest(s, backend, backend.fetch(ch.backend_id), actor="pacs-sync", via="dimse",
+                               site_id=nsite, site_source="no_dicom" if nsite else None)
                 out["duplicates" if r.duplicate else "indexed"] += 1
                 if dimse:
                     dnodes.record(s, direction="in", service="store", outcome="accepted", calling_ae=aet,

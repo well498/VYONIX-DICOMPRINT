@@ -613,6 +613,7 @@ def viewer_launch(study_uid: str, layout: str | None = None, prior: str | None =
     anterior autorizado do mesmo paciente. Também devolve os anteriores disponíveis para escolher."""
     from vyonix.pacs import viewing
     with c.session() as s:
+        viewing.require_uid(s, c.p, study_uid, c)          # revisão A04 N11: recusa auditada (access.denied)
         return viewing.launch(s, c.p, study_uid, layout=layout, prior_uid=prior, ip=c.ip, record=not preview)
 
 
@@ -679,6 +680,8 @@ def external_launch(viewer: str, request: Request, study_uid: str, c: Ctx = Depe
     POST (com o token anti-CSRF da sessão): cria credencial, não é um link que outra página possa disparar."""
     from vyonix.pacs import external
     with c.session() as s:
+        from vyonix.pacs import viewing
+        viewing.require_uid(s, c.p, study_uid, c)          # revisão A04 N11: recusa auditada (access.denied)
         return external.launch(s, c.p, study_uid, viewer, base_url=str(request.base_url), ip=c.ip)
 
 
