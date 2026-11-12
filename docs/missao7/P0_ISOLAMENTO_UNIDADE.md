@@ -100,7 +100,7 @@ A04 encontrou 3 vazamentos P1 e 9 itens P2/P3. Os P1 foram reproduzidos com dado
 | 1 | Médico: papel + vínculo vigente + permissão do recurso; o modo `organization` não contorna; sem exceção genérica | Em vigor (N3, teste p28). Registrado no ADR-0015. |
 | 2 | Remover automaticamente as permissões clínicas dos perfis Financeiro existentes, registrando o estado anterior | Feito: `auth.harden_financial_roles`, chamado pelo `vyonix migrate` em cada instituição. Grava `role.permissions.hardened` com a lista anterior, o que saiu, o que ficou e quantos usuários têm o perfil. Ficam `core.*` e `report.production.*`. O perfil não aceita mais permissão clínica (422). Teste p32. |
 | 3 | Compartilhamento entre unidades bloqueado por padrão; preparar a arquitetura da exceção | Continua bloqueado (`409 share_out_of_site`). Desenho no ADR-0015, **não habilitado**. |
-| 4 | Simulação somente leitura dos 20 exames DEMO no computador do proprietário | Ver `SIMULACAO_UNIDADE_DEMO.md` (ou a pendência registrada no relatório consolidado). |
+| 4 | Simulação somente leitura dos 20 exames DEMO no computador do proprietário | **Não executada:** o computador do proprietário não estava acessível em 12/11. Pendência no relatório consolidado. |
 | 5 | Merge em `develop` e CI | Ver `RELATORIO_CONSOLIDADO_SEGURANCA_0.3.2.md`. |
 | 6 | Críticos e qualidade: filtrar antes do limite | Feito (N10): unidade no SQL antes do `LIMIT` em `/report/critical`, `/pacs/quality` e nas pendências de qualidade do painel do técnico. Teste p31. |
 | 7 | Critérios de liberação da 0.3.2 | Acompanhados no relatório consolidado. A versão continua **bloqueada**. |
