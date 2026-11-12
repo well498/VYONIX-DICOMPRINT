@@ -305,7 +305,7 @@ ROLE_TEMPLATES: dict[str, tuple[str, list[str], str]] = {
                                                    "report.physicians.manage", "report.branding.manage",
                                                    "clinical.studies.read", "pacs.studies.read"],
                           "Distribui exames, cadastra médicos e modelos; não libera laudos"),
-    "financeiro": ("Administrador Financeiro", ["core.license.read", "ris.schedule.read"],
+    "financeiro": ("Administrador Financeiro", ["core.license.read"],          # P0 0.3.2 (G1): sem dados clínicos
                    "Contratos e licença da instituição; sem acesso a imagens e laudos"),
     "suporte_tecnico": ("Técnico de Suporte", ["core.settings.read", "core.audit.read", "core.license.read",
                                                "pacs.admin", "print.jobs.read"],

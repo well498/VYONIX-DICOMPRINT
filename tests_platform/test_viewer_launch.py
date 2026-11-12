@@ -117,7 +117,8 @@ class ViewerLaunch(_prep.Prep):
         qido = lambda c: sorted(x["0020000D"]["Value"][0] for x in (c.get(DW + "/studies").json()  # noqa: E731
                                                                     if c.get(DW + "/studies").status_code == 200 else []))
         all4 = sorted(self.U.values())
-        self.assertEqual(qido(self.carla), all4)                    # padrão homologado: organização inteira
+        # P0 0.3.2 (revisão A04 N3): o vínculo vigente do médico vale também no modo "organization"
+        self.assertEqual(qido(self.carla), sorted(self.U[x] for x in (self.old_a, self.cur, self.mr)))
         from vyonix.settings import service as settings
         with db.session(self.t) as s:
             settings.put(s, "pacs", "viewer", {"access": "linked", "allow_personal": True}, actor="admin",

@@ -131,12 +131,12 @@ class M2Security(_prep.Prep):
         self.assertEqual(tec_a.post(u + "/forward").status_code, 403)
         self.assertEqual(tec_a.post(u + "/priority", json={"priority": "stat", "reason": "teste"}).status_code, 403)
         self.assertNotIn(sid, [x["study_id"] for x in tec_a.get("/api/v1/ris/prep").json()["items"]])
-        # exame sem unidade (os recebidos pelo PACS chegam assim): alcançado por papel de qualquer unidade — exigir
-        # papel global deixava a instituição com papéis por unidade sem nenhum exame (A07 V-03)
+        # P0 0.3.2 (regra 3 do proprietário, substitui A07 V-03): exame sem unidade fica restrito a quem atua em
+        # todas as unidades até a vinculação correta da unidade
         sid2 = self.study(2)
         self.set_site(sid2, None)
-        self.assertEqual(tec_a.get(f"/api/v1/ris/prep/{sid2}").status_code, 200)
-        self.assertIn(sid2, [x["study_id"] for x in tec_a.get("/api/v1/ris/prep").json()["items"]])
+        self.assertEqual(tec_a.get(f"/api/v1/ris/prep/{sid2}").status_code, 403)
+        self.assertNotIn(sid2, [x["study_id"] for x in tec_a.get("/api/v1/ris/prep").json()["items"]])
         # na própria unidade continua funcionando
         sid3 = self.study(3)
         self.set_site(sid3, a)

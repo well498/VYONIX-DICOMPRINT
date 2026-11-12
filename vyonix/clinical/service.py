@@ -129,9 +129,36 @@ def update_patient(s: Session, patient_id: uuid.UUID, *, actor: str, expected_ve
     return p
 
 
+def patient_scope_cond(sites: set | None, *, allow_unlinked: bool = False):
+    """P0 0.3.2: paciente é da instituição; quem é restrito a unidades só alcança paciente com pedido, atendimento ou
+    estudo numa unidade sua. ``allow_unlinked`` (quem cadastra): também o paciente ainda sem vínculo com unidade."""
+    from sqlalchemy import or_, true, union
+    if sites is None:
+        return true()
+    ids = list(sites) or [uuid.UUID(int=0)]
+    linked = union(select(Order.patient_id).where(order_site_expr().in_(ids)),
+                   select(Study.patient_id).where(Study.site_id.in_(ids), Study.patient_id.is_not(None)),
+                   select(Encounter.patient_id).where(Encounter.site_id.in_(ids)))
+    cond = Patient.id.in_(linked)
+    if allow_unlinked:
+        any_link = union(select(Order.patient_id).where(order_site_expr().is_not(None)),
+                         select(Study.patient_id).where(Study.site_id.is_not(None), Study.patient_id.is_not(None)),
+                         select(Encounter.patient_id))
+        cond = or_(cond, Patient.id.not_in(any_link))
+    return cond
+
+
+def patient_in_scope(s: Session, patient_id: uuid.UUID, sites: set | None, *, allow_unlinked: bool = False) -> bool:
+    if sites is None:
+        return True
+    return s.execute(select(Patient.id).where(Patient.id == patient_id,
+                                             patient_scope_cond(sites, allow_unlinked=allow_unlinked))).first() is not None
+
+
 def search_patients(s: Session, *, q: str | None = None, identifier: str | None = None, include_merged: bool = False,
-                    limit: int = 50) -> list[Patient]:
-    stmt = select(Patient).order_by(Patient.name).limit(min(limit, 200))
+                    limit: int = 50, sites: set | None = None, allow_unlinked: bool = False) -> list[Patient]:
+    stmt = select(Patient).where(patient_scope_cond(sites, allow_unlinked=allow_unlinked)) \
+        .order_by(Patient.name).limit(min(limit, 200))
     if not include_merged:
         stmt = stmt.where(Patient.merged_into_id.is_(None))
     if identifier:
@@ -275,7 +302,8 @@ def _new_accession(s: Session) -> str:
 
 def create_order(s: Session, *, patient_id: uuid.UUID, procedure_id: uuid.UUID | None = None,
                  encounter_id: uuid.UUID | None = None, requester: str | None = None, priority: str = "routine",
-                 accession: str | None = None, actor: str, actor_id=None, ip=None) -> Order:
+                 accession: str | None = None, site_id: uuid.UUID | None = None, actor: str, actor_id=None,
+                 ip=None) -> Order:
     p = get_patient(s, patient_id)
     if p.merged_into_id:
         raise Conflict("Cadastro mesclado: use o cadastro de destino.")
@@ -287,6 +315,13 @@ def create_order(s: Session, *, patient_id: uuid.UUID, procedure_id: uuid.UUID |
         enc = s.get(Encounter, encounter_id)
         if not enc or enc.patient_id != p.id:
             raise ValidationFailed("Atendimento não pertence a este paciente.")
+        if site_id is not None and site_id != enc.site_id:
+            raise ValidationFailed("A unidade do pedido difere da unidade do atendimento.")
+        site_id = enc.site_id
+    if site_id is None:
+        site_id = single_site(s)                             # P0 0.3.2: instituição de uma unidade só
+    elif not _site_exists(s, site_id):
+        raise NotFound("Unidade não encontrada.")
     if accession:
         accession = accession.strip()
         if not re.fullmatch(r"[A-Za-z0-9._-]{1,16}", accession):     # AccessionNumber DICOM: SH, até 16
@@ -294,11 +329,12 @@ def create_order(s: Session, *, patient_id: uuid.UUID, procedure_id: uuid.UUID |
         if s.execute(select(Order.id).where(Order.accession == accession)).first():
             raise Conflict("Número de acesso já utilizado.")
     o = Order(patient_id=p.id, procedure_id=procedure_id, encounter_id=encounter_id, requester=requester,
-              priority=priority, accession=accession or _new_accession(s), status="requested")
+              priority=priority, accession=accession or _new_accession(s), status="requested", site_id=site_id)
     s.add(o)
     s.flush()
     audit.record(s, actor=actor, actor_id=actor_id, ip=ip, action="order.create", target_type="order",
-                 target_id=o.id, details={"accession": o.accession, "priority": priority})
+                 target_id=o.id, details={"accession": o.accession, "priority": priority,
+                                                "site_id": str(site_id) if site_id else None})
     publish(s, "clinical.order.created.v1", {"order_id": str(o.id), "accession": o.accession}, source="clinical",
             subject_kind="order", subject_id=o.id)
     return o
@@ -323,9 +359,38 @@ def set_order_status(s: Session, order_id: uuid.UUID, status: str, *, actor: str
     return o
 
 
+def order_site_expr():
+    """Unidade do pedido em SQL: a do pedido; senão a do atendimento (P0 0.3.2)."""
+    from sqlalchemy import func
+    enc = select(Encounter.site_id).where(Encounter.id == Order.encounter_id).correlate(Order).scalar_subquery()
+    return func.coalesce(Order.site_id, enc)
+
+
+def order_site(s: Session, o: Order) -> uuid.UUID | None:
+    if o.site_id is not None:
+        return o.site_id
+    if o.encounter_id:
+        e = s.get(Encounter, o.encounter_id)
+        return e.site_id if e else None
+    return None
+
+
+def single_site(s: Session) -> uuid.UUID | None:
+    """A instituição tem exatamente uma unidade ativa? Então tudo pertence a ela."""
+    from vyonix.tenancy.models import Site
+    ids = list(s.execute(select(Site.id).where(Site.active.is_(True)).limit(2)).scalars())
+    return ids[0] if len(ids) == 1 else None
+
+
+def _site_exists(s: Session, site_id: uuid.UUID) -> bool:
+    from vyonix.tenancy.models import Site
+    return s.get(Site, site_id) is not None
+
+
 def orders(s: Session, *, patient_id: uuid.UUID | None = None, status: str | None = None,
-           accession: str | None = None, limit: int = 100) -> list[Order]:
-    q = select(Order).order_by(Order.created_at.desc()).limit(min(limit, 500))
+           accession: str | None = None, limit: int = 100, sites: set | None = None) -> list[Order]:
+    from vyonix.db.site_filter import where_site
+    q = select(Order).where(where_site(order_site_expr(), sites)).order_by(Order.created_at.desc()).limit(min(limit, 500))
     if accession:
         q = q.where(Order.accession == accession.strip())
     if patient_id:
@@ -340,7 +405,7 @@ def orders(s: Session, *, patient_id: uuid.UUID | None = None, status: str | Non
 def register_study(s: Session, *, study_instance_uid: str, accession: str | None = None, modality: str | None = None,
                    study_date: date | None = None, description: str | None = None, site_id: uuid.UUID | None = None,
                    patient_identifier: tuple[str, str] | None = None, storage_location: str | None = None,
-                   actor: str) -> Study:
+                   site_source: str | None = None, actor: str) -> Study:
     """Registra (ou atualiza) um estudo recebido. A conciliação com o pedido acontece pelo consumidor
     de eventos — ou manualmente, se não houver número de acesso correspondente."""
     uid = study_instance_uid.strip()
@@ -354,7 +419,12 @@ def register_study(s: Session, *, study_instance_uid: str, accession: str | None
     st.accession = (accession or "").strip()[:32] or st.accession
     st.modality, st.study_date = modality or st.modality, study_date or st.study_date
     st.description = (description or st.description or "")[:200] or None
-    st.site_id, st.storage_location = site_id or st.site_id, storage_location or st.storage_location
+    st.storage_location = storage_location or st.storage_location
+    if st.site_id is None:                       # P0 0.3.2: unidade definida na entrada nunca é sobrescrita
+        if site_id is None:
+            site_id, site_source = single_site(s), "unica"
+        if site_id is not None:
+            st.site_id, st.site_source, st.site_set_at, st.site_set_by = site_id, site_source or "manual", utcnow(), actor[:120]
     if st.patient_id is None and patient_identifier:
         pi = s.execute(select(PatientIdentifier).where(PatientIdentifier.issuer == patient_identifier[0],
                                                        PatientIdentifier.value == patient_identifier[1])
@@ -383,7 +453,15 @@ def reconcile(s: Session, study_id: uuid.UUID, order_id: uuid.UUID, *, actor: st
     from vyonix.ris.models import ExamPrep
     ep = s.execute(select(ExamPrep).where(ExamPrep.study_id == st.id)).scalar_one_or_none()
     before = rprep.priority_of(s, st, ep)
+    osite = order_site(s, o)
+    site_change = None
+    if osite is not None and st.site_id is not None and osite != st.site_id:
+        raise Conflict("O pedido é de outra unidade que a do estudo. Confira o pedido antes de conciliar.",
+                       code="unit_mismatch")
     st.order_id, st.patient_id, st.reconciled_at = o.id, o.patient_id, utcnow()
+    if st.site_id is None and osite is not None:           # P0 0.3.2: o estudo herda a unidade do pedido
+        st.site_id, st.site_source, st.site_set_at, st.site_set_by = osite, "pedido", utcnow(), actor[:120]
+        site_change = {"previous": None, "new": str(osite)}
     if not st.accession:
         st.accession = o.accession
     if o.status in ("requested", "scheduled", "arrived"):
@@ -391,6 +469,8 @@ def reconcile(s: Session, study_id: uuid.UUID, order_id: uuid.UUID, *, actor: st
     s.flush()
     after = rprep.priority_of(s, st, ep)
     det = {"order_id": str(o.id), "how": how}
+    if site_change:
+        det["site"] = site_change
     if after != before:                            # efeito na prioridade sempre auditado (anterior → novo)
         det["priority"] = {"previous": before, "new": after}
     audit.record(s, actor=actor, actor_id=actor_id, ip=ip, action="study.reconcile", target_type="study",
@@ -401,8 +481,11 @@ def reconcile(s: Session, study_id: uuid.UUID, order_id: uuid.UUID, *, actor: st
 
 
 def studies(s: Session, *, patient_id: uuid.UUID | None = None, unreconciled: bool = False,
-            limit: int = 100) -> list[Study]:
-    q = select(Study).order_by(Study.created_at.desc()).limit(min(limit, 500))
+            limit: int = 100, sites: set | None = None, unassigned: bool = False) -> list[Study]:
+    from vyonix.db.site_filter import where_site
+    q = select(Study).where(where_site(Study.site_id, sites)).order_by(Study.created_at.desc()).limit(min(limit, 500))
+    if unassigned:
+        q = q.where(Study.site_id.is_(None))
     if patient_id:
         q = q.where(Study.patient_id == patient_id)
     if unreconciled:

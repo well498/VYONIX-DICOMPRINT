@@ -156,11 +156,13 @@ def rooms(s: Session, *, include_inactive: bool = False) -> list[dict[str, Any]]
              "default_duration_min": r.default_duration_min, "active": r.active} for r in s.execute(q).scalars()]
 
 
-def pending_orders(s: Session, *, limit: int = 200) -> list[dict[str, Any]]:
+def pending_orders(s: Session, *, limit: int = 200, sites: set | None = None) -> list[dict[str, Any]]:
     """Pedidos ainda sem agendamento (situação "requested"), mais antigos primeiro, para a tela de agendamento."""
+    from vyonix.auth.scope import where_site
+    from vyonix.clinical.service import order_site_expr
     rows = s.execute(select(Order, Patient, Procedure).join(Patient, Patient.id == Order.patient_id)
                      .outerjoin(Procedure, Procedure.id == Order.procedure_id)
-                     .where(Order.status == "requested").order_by(Order.created_at).limit(min(limit, 500)))
+                     .where(Order.status == "requested", where_site(order_site_expr(), sites)).order_by(Order.created_at).limit(min(limit, 500)))
     return [{"order_id": str(o.id), "accession": o.accession, "priority": o.priority, "patient_name": p.name,
              "procedure": proc.name if proc else None, "modality": proc.modality if proc else None,
              "created_at": o.created_at.isoformat()} for o, p, proc in rows]
@@ -191,12 +193,14 @@ def set_status(s: Session, schedule_id: uuid.UUID, status: str, *, actor: str, r
 def worklist(s: Session, *, date_from: date | None = None, date_to: date | None = None, modality: str | None = None,
              station_aet: str | None = None, patient_id: str | None = None, patient_name: str | None = None,
              accession: str | None = None, include_done: bool = False, limit: int = 500,
-             tz: timezone | None = None) -> list[dict[str, Any]]:
+             tz: timezone | None = None, sites: set | None = None) -> list[dict[str, Any]]:
     """Entradas da worklist. As datas são do dia local da clínica (``tz``; padrão UTC−3)."""
     from vyonix.clinical.models import PatientIdentifier
     tz = tz or timezone(timedelta(hours=-3))
+    from vyonix.auth.scope import where_site
+    from vyonix.clinical.service import order_site_expr
     q = (select(Schedule, Order, Patient).join(Order, Order.id == Schedule.order_id)
-         .join(Patient, Patient.id == Order.patient_id))
+         .join(Patient, Patient.id == Order.patient_id).where(where_site(order_site_expr(), sites)))
     if not include_done:
         q = q.where(Schedule.status.in_(ACTIVE))
     if modality:

@@ -396,9 +396,14 @@ def addendum(s: Session, report_id: uuid.UUID, text: str, *, critical: bool = Fa
 CHANNELS = ("telefone", "presencial", "mensagem", "e-mail", "outro")
 
 
-def critical_alerts(s: Session, *, status: str | None = "open", limit: int = 200) -> list[dict[str, Any]]:
+def critical_alerts(s: Session, *, status: str | None = "open", limit: int = 200,
+                    scope=None) -> list[dict[str, Any]]:
+    """``scope``: (organização_inteira, {unidades}) — aplicado no SQL **antes** do limite (P0 0.3.2, N10)."""
     q = (select(CriticalAlert, Report, Study, Patient).join(Report, Report.id == CriticalAlert.report_id)
          .join(Study, Study.id == Report.study_id).outerjoin(Patient, Patient.id == Study.patient_id))
+    if scope is not None and not scope[0]:
+        from vyonix.db.site_filter import where_site
+        q = q.where(where_site(Study.site_id, {x for x in scope[1] if x is not None}))
     if status:
         q = q.where(CriticalAlert.status == status)
     out = []
@@ -559,9 +564,7 @@ def worklist(s: Session, *, status: str | None = None, modality: str | None = No
         whole, sites = scope
         if not whole:
             real = {x for x in sites if x is not None}
-            cond = Study.site_id.in_(real or {uuid.UUID(int=0)})
-            if None in sites:                                  # papel por unidade alcança exame sem unidade (V-03)
-                cond = cond | Study.site_id.is_(None)
+            cond = Study.site_id.in_(real or {uuid.UUID(int=0)})   # P0 0.3.2: sem unidade nunca passa aqui
             q = q.where(cond | Study.id.in_(shared)) if shared else q.where(cond)   # compartilhados com o usuário
     if require_forward:                    # a instituição exige a preparação do técnico antes do laudo
         from vyonix.ris.models import ExamPrep

@@ -60,7 +60,11 @@ class ExamCenter(unittest.TestCase):
             return tracking.exam_center(s, date_from=date(2026, 10, 1), date_to=date(2026, 12, 31), **kw)
 
     def test_stages_flags_and_times(self):
-        res = self.center(now=datetime(2026, 11, 10, 6, 0, tzinfo=BRT) + timedelta(days=1))
+        # "agora" fixo depois do dia dos exames — e nunca antes da criação real dos pedidos (o teste falhava quando
+        # rodado depois de 11/11/2026, porque o pedido urgente era criado "no futuro" em relação a esse instante)
+        now = max(datetime(2026, 11, 10, 6, 0, tzinfo=BRT) + timedelta(days=1),
+                  datetime.now(BRT) + timedelta(hours=2))
+        res = self.center(now=now)
         stage = {x["order_id"]: x["stage"] for x in res["items"]}
         self.assertEqual({k: stage[str(v)] for k, v in self.o.items()},
                          {k: k for k in self.o})

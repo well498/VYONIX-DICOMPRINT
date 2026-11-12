@@ -162,7 +162,7 @@ def main() -> int:
 
     prev = Path(a.previous_setup).resolve() if a.previous_setup and Path(a.previous_setup).exists() else None
     if prev:
-        @step("0a. Instalar a versão anterior (instalador de homologação 0.2.0, a58edb6)")
+        @step("0a. Instalar a versão anterior (instalador de homologação 0.3.1, d1af7f2 — a do proprietário)")
         def _():
             run([prev, "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", f"/DEPLOYCONFIG={cfg}",
                  f"/LOG={OUT / 'setup-anterior.log'}"], env={"VYONIX_ADMIN_PASSWORD": ADMIN_PW})
@@ -172,7 +172,13 @@ def main() -> int:
             p = c.call("POST", "/patients", {"name": "Paciente Da Versao Anterior", "birth_date": "1970-05-05",
                                              "sex": "M", "identifiers": [{"issuer": "PRONTUARIO", "value": "HML-000"}]})
             s["old_patient"] = p["id"]
-            return f"versão anterior instalada e em uso; paciente fictício {p['id']} cadastrado nela"
+            # perfil Financeiro ativado na versão anterior (no 0.3.1 ele ainda recebia a agenda): a atualização tem
+            # de retirar as permissões clínicas e registrar o estado anterior (decisão do proprietário de 12/11/2026)
+            c.call("POST", "/role-templates/financeiro/activate")
+            fin = next(r for r in c.call("GET", "/roles") if r["code"] == "financeiro")
+            s["fin_before"] = sorted(fin["permissions"])
+            return (f"versão anterior instalada e em uso; paciente fictício {p['id']} cadastrado nela; "
+                    f"perfil Financeiro com {s['fin_before']}")
     else:
         STEPS.append({"step": "0a. Instalar a versão anterior", "result": "Não executado",
                       "detail": "instalador anterior indisponível neste pipeline", "seconds": 0})
@@ -187,6 +193,14 @@ def main() -> int:
             c = Client()
             c.login(ADMIN, ADMIN_PW)
             assert c.call("GET", f"/patients/{s['old_patient']}")["name"] == "Paciente Da Versao Anterior"
+            fin = next(r for r in c.call("GET", "/roles") if r["code"] == "financeiro")
+            clinical = [p for p in fin["permissions"] if not p.startswith(("core.", "report.production."))]
+            assert not clinical, f"perfil Financeiro ainda com permissões clínicas depois da atualização: {clinical}"
+            was = [p for p in s.get("fin_before", []) if not p.startswith(("core.", "report.production."))]
+            if was:
+                ev = c.call("GET", "/audit?action=role.permissions.hardened")
+                assert ev and sorted(ev[0]["details"]["before"]) == s["fin_before"], \
+                    f"estado anterior do perfil Financeiro não registrado na auditoria: {ev}"
             bk = list((Path(os.environ.get("ProgramData", r"C:\ProgramData")) / "VYONIX" / "Backups")
                       .glob("antes-da-atualizacao-*"))
             assert bk, "atualização sem backup antes da migração"

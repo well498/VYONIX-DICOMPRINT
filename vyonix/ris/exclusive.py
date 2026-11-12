@@ -27,9 +27,9 @@ def is_technician(principal, site_id: uuid.UUID | None = None) -> bool:
         if r.get("role") != ROLE:
             continue
         sid = r.get("site_id")
-        # papel em todas as unidades vale sempre; papel de uma unidade só vale nela. Exame sem unidade: qualquer
-        # técnico (os estudos do PACS ainda chegam sem unidade — A07 V-03; atribuir a unidade na entrada é pendência)
-        if sid is None or site_id is None or str(sid) == str(site_id):
+        # papel em todas as unidades vale sempre; papel de uma unidade só vale nela. P0 0.3.2: exame sem unidade
+        # fica restrito até a vinculação — só o técnico com papel em todas as unidades
+        if sid is None or (site_id is not None and str(sid) == str(site_id)):
             return True
     return False
 

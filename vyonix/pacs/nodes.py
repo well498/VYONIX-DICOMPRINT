@@ -405,11 +405,16 @@ def decide_holds(s: Session, backend, *, remote_aet: str | None, decision: str, 
         raise NotFound("Nenhuma recepção retida para este AE Title.")
     res = {"indexed": 0, "duplicates": 0, "rejected": 0, "discarded": 0, "missing": 0}
     now = utcnow()
+    # P0 0.3.2 (F8): equipamento cadastrado numa unidade → estudo novo herda essa unidade (evidência "no_dicom")
+    from vyonix.pacs.models import PacsDicomNode as _Node
+    node = s.execute(select(_Node).where(_Node.ae_title == aet)).scalars().first() if aet else None
+    node_site = node.site_id if node is not None else None
     for h in rows:
         if decision == "release":
             try:
                 with s.begin_nested():
-                    r = pacs.ingest(s, backend, backend.fetch(h.backend_id), actor=f"dicom:{aet or '?'}", via="dimse")
+                    r = pacs.ingest(s, backend, backend.fetch(h.backend_id), actor=f"dicom:{aet or '?'}", via="dimse",
+                                    site_id=node_site, site_source="no_dicom" if node_site else None)
                 res["duplicates" if r.duplicate else "indexed"] += 1
             except FileNotFoundError:
                 res["missing"] += 1

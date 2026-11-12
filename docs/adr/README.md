@@ -20,3 +20,4 @@ arquitetura da plataforma correspondem às ADR-0001 a ADR-0009. Uma ADR “Propo
 | [0012](ADR-0012.md) | PACS e Viewer da Entrega 3: Orthanc 1.13 sem plugins AGPL, DICOMweb no CORE, OHIF 3.13 | Aceita (revisada); revisão jurídica da distribuição antes da venda |
 | [0013](ADR-0013.md) | Temas da interface com tokens e contraste WCAG 2.2 AA verificado | Aceita |
 | [0014](ADR-0014.md) | Arquitetura híbrida local + nuvem do PACS (Edge Sync): fila persistente, STOW-RS com mTLS, integridade e isolamento | Proposta (protótipo; habilitação exige aprovação — BLK-16) |
+| [0015](ADR-0015.md) | Isolamento por unidade (papel + vínculo + permissão) e compartilhamento excepcional entre unidades | Isolamento aceito; compartilhamento entre unidades proposto e desligado |

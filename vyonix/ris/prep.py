@@ -170,7 +170,7 @@ def set_check(s: Session, study_id: uuid.UUID, code: str, done: bool, *, actor: 
 
 
 # ------------------------------------------------------------------ duplicidade
-def duplicates(s: Session, st: Study) -> list[dict]:
+def duplicates(s: Session, st: Study, visible=None) -> list[dict]:
     """Outros estudos com o mesmo número de acesso, ou do mesmo paciente com a mesma modalidade e data."""
     conds = []
     if st.accession:
@@ -180,7 +180,8 @@ def duplicates(s: Session, st: Study) -> list[dict]:
                      (Study.modality == st.modality))
     if not conds:
         return []
-    rows = s.execute(select(Study).where(Study.id != st.id, or_(*conds))).scalars()
+    rows = [x for x in s.execute(select(Study).where(Study.id != st.id, or_(*conds))).scalars()
+            if visible is None or visible(x)]              # P0 0.3.2 (P2): só duplicados no escopo do usuário
     return [{"study_id": str(x.id), "study_instance_uid": x.study_instance_uid, "accession": x.accession,
              "modality": x.modality, "study_date": x.study_date.isoformat() if x.study_date else None,
              "reason": "mesmo número de acesso" if st.accession and x.accession == st.accession
@@ -512,7 +513,8 @@ def queue(s: Session, user_id: uuid.UUID, *, date_from=None, date_to=None, modal
     from vyonix.pacs.models import PacsInstance, PacsStudy
     q = select(Study, Patient).outerjoin(Patient, Patient.id == Study.patient_id)
     if sites is not None:
-        q = q.where(Study.site_id.in_(list(sites) or [uuid.uuid4()]) | Study.site_id.is_(None))   # V-03
+        from vyonix.auth.scope import where_site        # P0 0.3.2: exame sem unidade não passa para restrito
+        q = q.where(where_site(Study.site_id, sites))
     if date_from:
         q = q.where(Study.created_at >= datetime.combine(date_from, datetime.min.time()).astimezone())
     if date_to:
@@ -585,7 +587,7 @@ def queue(s: Session, user_id: uuid.UUID, *, date_from=None, date_to=None, modal
     return {"items": items, "totals": totals, "stages": STAGES}
 
 
-def detail(s: Session, study_id: uuid.UUID, user_id: uuid.UUID) -> dict[str, Any]:
+def detail(s: Session, study_id: uuid.UUID, user_id: uuid.UUID, visible=None) -> dict[str, Any]:
     from vyonix.tenancy.models import Organization, Site
     st = _study(s, study_id)
     p = _prep(s, study_id, create=False)
@@ -628,7 +630,7 @@ def detail(s: Session, study_id: uuid.UUID, user_id: uuid.UUID) -> dict[str, Any
         "checklist": [{**i, "done": bool((done.get(i["code"]) or {}).get("done")),
                        "by": (done.get(i["code"]) or {}).get("by")} for i in checklist_items(s, st.modality)],
         "system_checks": system_checks(s, st, p),
-        "duplicates": duplicates(s, st), "duplicate_checked": bool(p and p.duplicate_checked),
+        "duplicates": duplicates(s, st, visible), "duplicate_checked": bool(p and p.duplicate_checked),
         "attachments": [{"id": str(a.id), "kind": a.kind, "media_type": a.media_type, "filename": a.filename,
                          "size": a.size_bytes, "by": a.created_by, "at": a.created_at.isoformat()}
                         for a in s.execute(select(ExamAttachment).where(ExamAttachment.study_id == study_id)

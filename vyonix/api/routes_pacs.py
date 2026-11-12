@@ -137,8 +137,14 @@ async def _stow(request: Request, c: Ctx, only_study: str | None):
 
 
 def _stow_sync(c: Ctx, parts: list[bytes], only_study: str | None, base: str):
+    from vyonix.auth import scope
     backend = _backend(c)
     ok, failed, studies = [], [], set()
+    # P0 0.3.2 (F7): quem envia por unidade só acrescenta a estudos das suas unidades; estudo novo recebe a unidade
+    # do usuário quando ele atua em exatamente uma (senão fica sem unidade, restrito, até a vinculação)
+    allowed = scope.sites(c.p, "pacs.studies.store")
+    stow_site = next(iter(allowed)) if allowed is not None and len(allowed) == 1 else None
+    check = None if allowed is None else (lambda sid: sid is not None and sid in allowed)
     with c.session() as s:
         if not registry.is_enabled(s, "pacs"):
             raise NotLicensed("O módulo VYONIX PACS não está habilitado nesta organização.", code="module_disabled")
@@ -149,7 +155,8 @@ def _stow_sync(c: Ctx, parts: list[bytes], only_study: str | None, base: str):
                     if p.study_uid != only_study:
                         raise pacs.InstanceRejected("A instância é de outro estudo que o indicado na URL.",
                                                     failure=0xA900, sop_uid=p.sop_uid, sop_class_uid=p.sop_class_uid)
-                r = pacs.ingest(s, backend, data, actor=c.p.username, actor_id=c.p.user_id, ip=c.ip, via="stow")
+                r = pacs.ingest(s, backend, data, actor=c.p.username, actor_id=c.p.user_id, ip=c.ip, via="stow",
+                                site_id=stow_site, site_source="manual" if stow_site else None, site_check=check)
             except pacs.InstanceRejected as exc:
                 failed.append(exc)
                 continue
@@ -202,7 +209,7 @@ def _qido_params(request: Request) -> tuple[dict[str, str], int, int]:
 def _visible(c: Ctx, s, study_uid: str) -> None:
     """Escopo opcional do Viewer (``pacs/viewer.access = linked``): estudo fora do vínculo do médico = inexistente."""
     from vyonix.pacs import viewing
-    viewing.require_uid(s, c.p, study_uid)
+    viewing.require_uid(s, c.p, study_uid, c)
 
 
 @router.get(DW + "/studies")
@@ -210,11 +217,8 @@ def qido_studies(request: Request, c: Ctx = Depends(needs("pacs.studies.read")))
     from vyonix.pacs import viewing
     params, limit, offset = _qido_params(request)
     with c.session() as s:
-        out = pacs.search_studies(s, params, limit=limit, offset=offset)
-        if out and viewing.scope_for(s, c.p) is not None:
-            uid = lambda d: ((d.get("0020000D") or {}).get("Value") or [None])[0]  # noqa: E731
-            ok = viewing.allowed_uids(s, c.p, [u for u in (uid(d) for d in out) if u])
-            out = [d for d in out if uid(d) in ok]
+        out = pacs.search_studies(s, params, limit=limit, offset=offset,
+                                  visible=lambda col: viewing.visible_cond(s, c.p, col))
     return _json(out) if out else Response(status_code=204)
 
 
@@ -332,7 +336,8 @@ def wado_frames(study_uid: str, series_uid: str, sop_uid: str, frame_list: str,
 def quality_list(only_issues: bool = True, limit: int = 100, c: Ctx = Depends(needs("pacs.studies.read"))):
     from vyonix.pacs import viewing
     with c.session() as s:
-        rows = pacs.quality_overview(s, limit=limit, only_issues=only_issues)
+        rows = pacs.quality_overview(s, limit=limit, only_issues=only_issues,
+                                     visible=lambda col: viewing.visible_cond(s, c.p, col))   # N10: antes do limite
         ok = viewing.allowed_uids(s, c.p, [r["study_uid"] for r in rows])       # A03-001: escopo por vínculo
         return {"studies": [r for r in rows if r["study_uid"] in ok]}
 
@@ -609,6 +614,7 @@ def viewer_launch(study_uid: str, layout: str | None = None, prior: str | None =
     anterior autorizado do mesmo paciente. Também devolve os anteriores disponíveis para escolher."""
     from vyonix.pacs import viewing
     with c.session() as s:
+        viewing.require_uid(s, c.p, study_uid, c)          # revisão A04 N11: recusa auditada (access.denied)
         return viewing.launch(s, c.p, study_uid, layout=layout, prior_uid=prior, ip=c.ip, record=not preview)
 
 
@@ -675,6 +681,8 @@ def external_launch(viewer: str, request: Request, study_uid: str, c: Ctx = Depe
     POST (com o token anti-CSRF da sessão): cria credencial, não é um link que outra página possa disparar."""
     from vyonix.pacs import external
     with c.session() as s:
+        from vyonix.pacs import viewing
+        viewing.require_uid(s, c.p, study_uid, c)          # revisão A04 N11: recusa auditada (access.denied)
         return external.launch(s, c.p, study_uid, viewer, base_url=str(request.base_url), ip=c.ip)
 
 

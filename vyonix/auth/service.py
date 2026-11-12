@@ -161,12 +161,55 @@ def role_list(s: Session) -> list[dict]:
             for r in s.execute(select(Role).order_by(Role.name)).scalars()]
 
 
+FINANCIAL_ROLE = "financeiro"
+# P0 0.3.2 (decisão do proprietário, 12/11/2026): o perfil Financeiro não recebe permissão que dê acesso a imagens,
+# laudos ou dados clínicos. Ficam as administrativas (``core.*``) e a produção médica (totais e valores).
+FINANCIAL_ALLOWED_PREFIXES = ("core.", "report.production.")
+
+
+def financial_forbidden(permissions) -> list[str]:
+    return sorted(p for p in permissions if not p.startswith(FINANCIAL_ALLOWED_PREFIXES))
+
+
+def harden_financial_roles(s: Session, *, actor: str = "atualização 0.3.2") -> dict | None:
+    """Remove dos perfis Financeiro **já existentes** as permissões clínicas (agenda, exames, imagens, laudos).
+
+    Antes de alterar, grava na auditoria (``role.permissions.hardened``) a lista completa anterior, o que foi
+    removido e quantos usuários têm o perfil — é o registro para a recuperação controlada (o administrador pode
+    recriar um papel próprio com o que for realmente necessário). Idempotente: sem nada a remover, não faz nada."""
+    r = s.execute(select(Role).where(Role.code == FINANCIAL_ROLE)).scalar_one_or_none()
+    if r is None:
+        return None
+    rows = list(s.execute(select(RolePermission).where(RolePermission.role_id == r.id)).scalars())
+    before = sorted(x.permission for x in rows)
+    removed = financial_forbidden(before)
+    if not removed:
+        return None
+    users = s.execute(select(func.count(func.distinct(UserRole.user_id))).where(UserRole.role_id == r.id)).scalar()
+    info = {"before": before, "removed": removed, "kept": sorted(set(before) - set(removed)),
+            "users_with_role": int(users or 0),
+            "impact": "Usuários com o perfil Financeiro deixam de ver agenda, exames, imagens e laudos; "
+                      "licença, administração e produção médica continuam.",
+            "reason": "P0 0.3.2 — financeiro sem dados clínicos (decisão do proprietário de 12/11/2026)"}
+    audit.record(s, actor=actor, action="role.permissions.hardened", target_type="role", target_id=r.code,
+                 details=info)
+    for x in rows:
+        if x.permission in removed:
+            s.delete(x)
+    s.flush()
+    return info
+
+
 def save_role(s: Session, *, code: str, name: str, permissions: list[str], actor: str, actor_id=None,
               ip=None) -> Role:
     allp = all_permissions()
     bad = [p for p in permissions if p not in allp]
     if bad:
         raise ValidationFailed("Permissões desconhecidas.", details={"permissions": bad})
+    if code == FINANCIAL_ROLE and financial_forbidden(permissions):
+        raise ValidationFailed("O perfil Financeiro não pode receber permissões de agenda, exames, imagens ou "
+                               "laudos. Crie um papel próprio se a função exigir dados clínicos.",
+                               details={"permissions": financial_forbidden(permissions)})
     r = s.execute(select(Role).where(Role.code == code)).scalar_one_or_none()
     if r and r.system:
         raise ValidationFailed("Papéis padrão não podem ser alterados; crie um papel novo.")

@@ -64,6 +64,7 @@ def refresh(db: Database, tenant_id: uuid.UUID) -> None:
     with db.session(tenant_id) as s:
         registry.ensure_rows(s)
         auth.ensure_default_roles(s)
+        auth.harden_financial_roles(s)          # P0 0.3.2: registra o estado anterior e remove permissões clínicas
 
 
 def organization(s: Session) -> Organization:

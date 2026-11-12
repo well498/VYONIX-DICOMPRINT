@@ -92,9 +92,14 @@ def create_app(plat: Platform, *, cookie_secure: bool = True, web_dist: Path | N
     app.state.cookie_secure = cookie_secure
     app.state.login_limiter = RateLimiter(20, 60.0)
     app.add_middleware(SecurityHeaders)
+    from vyonix.auth.scope import DenyLog
+    app.state.deny_log = DenyLog()
 
     @app.exception_handler(VyonixError)
     async def _vy(request: Request, exc: VyonixError):
+        info = getattr(exc, "audit_denied", None)
+        if info:                            # P0 0.3.2: tentativa fora do escopo de unidade (sessão própria)
+            app.state.deny_log.record(plat.db, request, info)
         headers = {"Retry-After": "60"} if exc.status == 429 else None
         return JSONResponse({"error": exc.code, "message": str(exc), "details": exc.details}, status_code=exc.status,
                             headers=headers)
@@ -198,6 +203,23 @@ class Ctx:
 
     def require(self, perm: str, site_id: uuid.UUID | None = None) -> None:
         auth.require(self.p, perm, site_id)
+
+    def require_at(self, perms, site_id: uuid.UUID | None, *, target_type: str, target_id=None,
+                   not_found: bool = False, s=None) -> None:
+        """P0 0.3.2: permissão na unidade do objeto (objeto sem unidade = só papel em todas as unidades). Com a
+        sessão ``s``, o médico também precisa de vínculo vigente na unidade (revisão A04 N3)."""
+        from vyonix.auth import scope
+        if not scope.can(self.p, perms, site_id):
+            if not any(self.p.has(x) for x in ((perms,) if isinstance(perms, str) else perms)):
+                auth.require(self.p, perms if isinstance(perms, str) else perms[0])
+            scope.deny(self, target_type, target_id, perms, "no_site" if site_id is None else "site_scope",
+                       not_found=not_found)
+        if s is not None:
+            from vyonix.report import queue
+            phys = scope.physician_scope(s, self.p)
+            if phys is not None and not queue.allowed(phys, site_id):
+                scope.deny(self, target_type, target_id, perms, "no_site" if site_id is None else "physician_link",
+                           not_found=not_found, physician=not not_found)
 
     def require_global(self, perm: str) -> None:
         """Permissão em todas as unidades (ação que vale para a instituição inteira) — MISSÃO 2."""
