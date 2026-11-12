@@ -86,6 +86,13 @@ A04 encontrou 3 vazamentos P1 e 9 itens P2/P3. Os P1 foram reproduzidos com dado
 | N12 | P3 | Upload de anexo lia até 25 MB antes de autorizar | Autoriza antes de ler o corpo | — |
 | N10 | P3 | Críticos e qualidade filtram depois do limite (só disponibilidade, sem vazamento) | Pendente | — |
 
+**Depois das correções da revisão A04** (commit 9b9b25b):
+- `test_p0_isolamento_unidade`: **30 de 30 passam**.
+- Suíte completa: **321 testes, OK** (3 pulados).
+- Dois testes antigos foram ajustados:
+  - `test_viewer_launch` passou a esperar o vínculo do médico também no modo `organization` (N3);
+  - `test_ris_exam_center` dependia da data real e falhava depois de 11/11/2026 também no commit anterior. Foi corrigido sem mudar a regra.
+
 ## Pendências e decisões do proprietário
 
 1. **Financeiro em instalações existentes.** O papel "financeiro" já ativado continua com `ris.schedule.read` até o administrador removê-lo. O ajuste automático alteraria um papel que pode ter sido personalizado, por isso fica para aprovação.
